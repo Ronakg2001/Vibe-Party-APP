@@ -1,0 +1,136 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIBE. | Profile Setup</title>
+  <link rel="stylesheet" href="{% static 'css/signup_flow.css' %}" />
+</head>
+<body>
+  <main class="card">
+    <h1>Add Profile Details</h1>
+    <p class="sub">Profile picture and bio are optional. You can skip now.</p>
+
+    <form id="profileForm" novalidate>
+      <label for="profilePictureUrl">Profile Picture URL</label>
+      <input id="profilePictureUrl" type="url" placeholder="https://example.com/my-photo.jpg" />
+
+      <label for="bio">Bio</label>
+      <textarea id="bio" rows="4" placeholder="Write something about yourself"></textarea>
+
+      <p id="error" class="error"></p>
+      <p id="success" class="success"></p>
+
+      <button id="saveBtn" type="submit">Save And Continue</button>
+      <button id="skipBtn" type="button" class="ghost">Skip</button>
+    </form>
+  </main>
+
+  <script>
+    const profileForm = document.getElementById("profileForm");
+    const saveBtn = document.getElementById("saveBtn");
+    const skipBtn = document.getElementById("skipBtn");
+    const error = document.getElementById("error");
+    const success = document.getElementById("success");
+    const csrfTokenTemplate = "{{ csrf_token }}";
+
+    function getCsrfToken() {
+      if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
+        return csrfTokenTemplate;
+      }
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; csrftoken=`);
+      if (parts.length === 2) {
+        return parts.pop().split(";").shift();
+      }
+      return "";
+    }
+
+    async function postJson(payload) {
+      const response = await fetch("/api/signup/profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Request failed.");
+      }
+      return data;
+    }
+
+    async function submitProfile(payload, loadingText, button) {
+      error.textContent = "";
+      success.textContent = "";
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = loadingText;
+
+      try {
+        const result = await postJson(payload);
+        success.textContent = result.message || "Completed.";
+        if (result.redirectUrl) {
+          window.location.href = result.redirectUrl;
+        }
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+
+    profileForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await submitProfile(
+        {
+          skip: false,
+          profilePictureUrl: document.getElementById("profilePictureUrl").value.trim(),
+          bio: document.getElementById("bio").value.trim()
+        },
+        "Saving...",
+        saveBtn
+      );
+    });
+
+    skipBtn.addEventListener("click", async () => {
+      await submitProfile({ skip: true }, "Skipping...", skipBtn);
+    });
+  </script>
+  <script>
+    (function () {
+      function openHashTarget() {
+        const hash = window.location.hash;
+        if (!hash || hash.length < 2) return;
+        const targetId = decodeURIComponent(hash.slice(1));
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (typeof target.focus === "function") {
+          target.setAttribute("tabindex", "-1");
+          target.focus({ preventScroll: true });
+        }
+      }
+
+      window.routeToId = function (targetId, path) {
+        if (!targetId) return;
+        const encoded = encodeURIComponent(targetId);
+        if (path && path !== window.location.pathname) {
+          window.location.href = `${path}#${encoded}`;
+          return;
+        }
+        window.location.hash = encoded;
+      };
+
+      window.addEventListener("hashchange", openHashTarget);
+      window.addEventListener("DOMContentLoaded", openHashTarget);
+    })();
+  </script>
+</body>
+</html>

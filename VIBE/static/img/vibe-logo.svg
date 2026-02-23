@@ -1,0 +1,15 @@
+<svg width="320" height="96" viewBox="0 0 320 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="vibeTextGradient" x1="16" y1="16" x2="260" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#CBD5E1"/>
+    </linearGradient>
+    <linearGradient id="vibeDotGradient" x1="270" y1="50" x2="294" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E879F9"/>
+      <stop offset="1" stop-color="#D946EF"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="96" rx="18" fill="transparent"/>
+  <text x="16" y="67" font-family="Segoe UI, Tahoma, Verdana, sans-serif" font-size="62" font-weight="900" letter-spacing="-2.5" fill="url(#vibeTextGradient)">VIBE</text>
+  <circle cx="286" cy="61" r="9" fill="url(#vibeDotGradient)"/>
+</svg>

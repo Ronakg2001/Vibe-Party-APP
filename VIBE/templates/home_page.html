@@ -1,0 +1,766 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VIBE. | Social Event App</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Custom Config for Party Theme -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 850: '#151e2e', 900: '#0f172a' },
+                    },
+                    animation: {
+                        'spin-slow': 'spin 3s linear infinite',
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
+</head>
+<body class="bg-slate-900">
+    <div id="party-loader" class="party-loader-overlay" aria-hidden="true">
+        <div class="party-loader-wrap">
+            <div class="bass-speaker">
+                <div class="sound-ripple"></div>
+                <div class="sound-ripple ripple-alt"></div>
+                <div class="speaker-cone">
+                    <div class="speaker-inner"></div>
+                </div>
+            </div>
+            <div class="spark s1"></div>
+            <div class="spark s2"></div>
+            <div class="spark s3"></div>
+            <div class="eq-grid">
+                <div class="eq-bar bar-1"></div>
+                <div class="eq-bar bar-2"></div>
+                <div class="eq-bar bar-3"></div>
+                <div class="eq-bar bar-4"></div>
+                <div class="eq-bar bar-5"></div>
+            </div>
+            <p class="party-loader-text">Tuning the party vibe...</p>
+        </div>
+    </div>
+
+    <div id="app-container" class="md:flex md:max-w-6xl md:mx-auto shadow-2xl shadow-violet-900/10">
+        <!-- Background Orbs (Fixed) -->
+        <div class="fixed inset-0 overflow-hidden pointer-events-none">
+            <div class="orb bg-violet-600 w-64 h-64 -top-10 -left-10"></div>
+            <div class="orb bg-fuchsia-600 w-64 h-64 -bottom-10 -right-10"></div>
+            <div class="orb bg-cyan-600 w-96 h-96 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20 hidden md:block"></div>
+        </div>
+
+        <!-- DESKTOP SIDEBAR (Visible on md+) -->
+        <aside class="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-white/5 bg-slate-900/50 backdrop-blur-xl z-50 p-6">
+            <h1
+                onclick="goToHomeTabAndRefresh()"
+                role="button"
+                tabindex="0"
+                class="text-3xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-1 mb-10 cursor-pointer"
+            >
+                VIBE<span class="text-fuchsia-500">.</span>
+            </h1>
+
+            <nav class="flex flex-col gap-4 flex-1">
+                <button onclick="switchTab('home')" class="nav-btn active group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="home">
+                    <i data-lucide="home" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Home</span>
+                </button>
+                <button onclick="switchTab('search')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="search">
+                    <i data-lucide="search" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Search</span>
+                </button>
+                <button onclick="switchTab('add')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="add">
+                    <i data-lucide="plus-square" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Create</span>
+                </button>
+                <button onclick="switchTab('tickets')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="tickets">
+                    <i data-lucide="ticket" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Tickets</span>
+                </button>
+                <button onclick="switchTab('profile')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="profile">
+                    <i data-lucide="user" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Profile</span>
+                </button>
+            </nav>
+
+            <div class="mt-auto pt-6 border-t border-white/5 space-y-2">
+                 <button type="button" class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 w-full text-left text-gray-400 text-sm">
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                    Settings
+                </button>
+                <button type="button" onclick="handleLogout()" class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 w-full text-left text-red-300 text-sm">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                    Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Column -->
+        <main class="flex-1 relative z-10 w-full md:max-w-xl md:mx-auto md:border-x md:border-white/5 bg-slate-900/30 min-h-screen">
+            
+            <!-- MOBILE HEADER (Hidden on md+) -->
+            <header id="main-header" class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
+                <h1 id="header-title" onclick="goToHomeTabAndRefresh()" role="button" tabindex="0" class="text-2xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-1 cursor-pointer">
+                    VIBE<span class="text-fuchsia-500">.</span>
+                </h1>
+                <div class="flex gap-4">
+                    <div class="relative">
+                        <i data-lucide="heart" class="w-6 h-6 text-white"></i>
+                        <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
+                    </div>
+                    <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                </div>
+            </header>
+
+            <!-- Content Container -->
+            <div class="pt-[70px] md:pt-8 pb-24 md:pb-8 px-0 md:px-0">
+                
+                <!-- HOME VIEW -->
+                <div id="view-home" class="view-section active">
+                    <!-- Stories -->
+                    <div class="flex gap-4 p-4 overflow-x-auto scrollbar-hide border-b border-white/5 md:border-none mb-4">
+                        <div class="flex flex-col items-center gap-1 min-w-[68px]">
+                            <div class="w-[68px] h-[68px] rounded-full p-[2px] border-2 border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:border-fuchsia-500 transition-colors">
+                                <i data-lucide="plus" class="w-6 h-6 text-white/50"></i>
+                            </div>
+                            <span class="text-xs text-white/50">Add Story</span>
+                        </div>
+                        <!-- Mock Stories -->
+                        <div id="stories-container" class="flex gap-4"></div>
+                    </div>
+
+                    <!-- Feed -->
+                    <div id="feed-container" class="flex flex-col gap-6 pb-4 md:max-w-[470px] md:mx-auto"></div>
+                </div>
+
+                <!-- SEARCH VIEW -->
+                <div id="view-search" class="view-section">
+                    <div class="p-2 mb-4 sticky top-[70px] md:top-4 z-10 md:px-4">
+                        <div class="glass-panel rounded-xl flex items-center px-4 py-3 gap-3 border border-white/5 shadow-lg">
+                            <i data-lucide="search" class="w-5 h-5 text-gray-400"></i>
+                            <input type="text" placeholder="Search for parties, DJs..." class="bg-transparent outline-none text-sm w-full text-white placeholder:text-gray-500">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1 px-2 md:px-4" id="explore-grid"></div>
+                </div>
+
+                <!-- ADD VIEW -->
+                <div id="view-add" class="view-section">
+                    <div class="p-5 pt-4 md:max-w-lg md:mx-auto">
+                        <h2 class="text-3xl font-black mb-8 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">Create Vibe</h2>
+                        
+                        <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-8">
+                            <button onclick="togglePostType(false)" id="btn-type-post" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Post</button>
+                            <button onclick="togglePostType(true)" id="btn-type-event" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
+                        </div>
+
+                        <form onsubmit="handlePostSubmit(event)" class="flex flex-col gap-5">
+                            <div class="w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800">
+                                <div class="flex flex-col items-center gap-3">
+                                    <div class="p-4 bg-white/5 rounded-full"><i data-lucide="image-plus" class="w-8 h-8"></i></div>
+                                    <span class="text-sm font-medium">Upload Visuals</span>
+                                </div>
+                            </div>
+
+                            <textarea id="post-caption" placeholder="What's the vibe?" class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
+
+                            <div id="event-fields" class="hidden flex-col gap-4 animation-slide-up">
+                                <div class="relative">
+                                    <i data-lucide="zap" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                    <input id="event-title" type="text" placeholder="Event Title" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                </div>
+                                <div class="flex gap-3">
+                                    <input id="event-date" type="text" placeholder="Date/Time" class="flex-1 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                    <input id="event-price" type="number" placeholder="Price" class="w-24 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                </div>
+                                <div class="relative">
+                                    <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                    <input id="event-location" type="text" placeholder="Location" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it ⚡️</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- TICKETS VIEW -->
+                <div id="view-tickets" class="view-section">
+                    <div class="p-5 pt-4 flex flex-col gap-6 md:grid md:grid-cols-2 md:gap-4 md:px-6" id="tickets-list">
+                        <!-- Tickets injected here -->
+                    </div>
+                    <div id="empty-tickets" class="text-center py-24 text-gray-600 hidden col-span-2">
+                        <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <i data-lucide="disc" class="w-10 h-10 animate-spin-slow opacity-50"></i>
+                        </div>
+                        <p class="font-medium">No passes yet.</p>
+                    </div>
+                </div>
+
+                <!-- PROFILE VIEW -->
+                <div id="view-profile" class="view-section">
+                    <div class="relative">
+                        <div class="h-32 md:h-48 bg-gradient-to-r from-violet-900 via-fuchsia-900 to-slate-900 opacity-80"></div>
+                        <div class="px-5 md:px-8">
+                            <div class="flex justify-between items-end -mt-10 md:-mt-16 mb-4">
+                                <div class="w-24 h-24 md:w-32 md:h-32 rounded-2xl p-1 bg-black">
+                                    <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop" class="w-full h-full rounded-xl object-cover">
+                                </div>
+                                <div class="flex gap-2 mb-1">
+                                    <button class="px-4 py-2 bg-white/10 rounded-lg text-xs md:text-sm font-bold border border-white/5 hover:bg-white/20 transition-colors">Edit Profile</button>
+                                </div>
+                            </div>
+                            <div class="mb-6">
+                                <h2 class="text-xl md:text-2xl font-black text-white">Alex Rivera</h2>
+                                <p class="text-gray-400 text-sm md:text-base mt-1">Chasing sunsets & soundwaves 🌊🎧<br>NYC / LA</p>
+                            </div>
+                            <div class="flex justify-between py-4 border-y border-white/5 mb-6 md:justify-start md:gap-12">
+                                <div class="text-center md:text-left min-w-[80px]">
+                                    <div class="font-bold text-lg text-white" id="profile-posts-count">0</div>
+                                    <div class="text-xs text-gray-500 uppercase">Vibes</div>
+                                </div>
+                                <div class="text-center md:text-left border-x border-white/5 md:border-none px-4 md:px-0 min-w-[80px]">
+                                    <div class="font-bold text-lg text-white">12.5k</div>
+                                    <div class="text-xs text-gray-500 uppercase">Fans</div>
+                                </div>
+                                <div class="text-center md:text-left min-w-[80px]">
+                                    <div class="font-bold text-lg text-white">450</div>
+                                    <div class="text-xs text-gray-500 uppercase">Following</div>
+                                </div>
+                            </div>
+                            <button type="button" onclick="handleLogout()" class="md:hidden mb-6 w-full py-3 rounded-xl font-semibold text-red-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                                Logout
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-0.5 px-0.5 md:gap-4 md:px-8" id="profile-grid"></div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- Right Sidebar (Desktop Suggestion Column) -->
+        <aside class="hidden xl:block w-80 sticky top-0 h-screen p-6 border-l border-white/5">
+             <div class="mb-6">
+                 <h3 class="font-bold text-gray-400 text-sm mb-4 uppercase tracking-wider">Suggested for you</h3>
+                 <div class="space-y-4">
+                     <div class="flex items-center gap-3">
+                         <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden">
+                             <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&h=100&fit=crop" class="w-full h-full object-cover">
+                         </div>
+                         <div class="flex-1">
+                             <div class="font-bold text-sm">techno_bunker</div>
+                             <div class="text-xs text-gray-500">Popular nearby</div>
+                         </div>
+                         <button class="text-xs text-fuchsia-400 font-bold hover:text-white">Follow</button>
+                     </div>
+                     <div class="flex items-center gap-3">
+                         <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden">
+                             <img src="https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&h=100&fit=crop" class="w-full h-full object-cover">
+                         </div>
+                         <div class="flex-1">
+                             <div class="font-bold text-sm">sarah_dance</div>
+                             <div class="text-xs text-gray-500">Follows you</div>
+                         </div>
+                         <button class="text-xs text-fuchsia-400 font-bold hover:text-white">Follow</button>
+                     </div>
+                 </div>
+             </div>
+             <div class="p-4 rounded-xl bg-gradient-to-br from-violet-900/40 to-fuchsia-900/40 border border-white/10">
+                 <h4 class="font-bold mb-2 text-sm">Get the app</h4>
+                 <p class="text-xs text-gray-400 mb-3">Scan for better experience</p>
+                 <div class="w-full aspect-square bg-white p-2 rounded-lg">
+                     <i data-lucide="qr-code" class="w-full h-full text-black"></i>
+                 </div>
+             </div>
+        </aside>
+
+        <!-- MOBILE NAVIGATION DOCK (Hidden on md+) -->
+        <div class="md:hidden fixed bottom-6 w-full px-6 z-50 pointer-events-none">
+            <nav class="pointer-events-auto bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center w-full shadow-2xl shadow-black/50">
+                <button onclick="switchTab('home')" class="nav-btn active flex flex-col items-center justify-center w-10 text-gray-400 transition-all" data-target="home">
+                    <i data-lucide="home" class="w-6 h-6"></i>
+                </button>
+                <button onclick="switchTab('search')" class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all" data-target="search">
+                    <i data-lucide="search" class="w-6 h-6"></i>
+                </button>
+                
+                <div class="relative -top-8">
+                    <button onclick="switchTab('add')" class="w-14 h-14 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-fuchsia-500/40 border-4 border-slate-900 active:scale-90 transition-transform">
+                        <i data-lucide="plus" class="w-7 h-7 text-white stroke-[3px]"></i>
+                    </button>
+                </div>
+
+                <button onclick="switchTab('tickets')" class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all" data-target="tickets">
+                    <i data-lucide="ticket" class="w-6 h-6"></i>
+                </button>
+                <button onclick="switchTab('profile')" class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all" data-target="profile">
+                    <i data-lucide="user" class="w-6 h-6"></i>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Booking Modal -->
+        <div id="booking-modal" class="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+            <div class="bg-slate-900 border-t md:border border-white/10 w-full max-w-[480px] rounded-t-[2.5rem] md:rounded-[2rem] p-8 pb-10 shadow-2xl transform translate-y-full md:translate-y-10 transition-transform duration-300" id="modal-content">
+                <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-8 md:hidden"></div>
+                <!-- Close button for desktop -->
+                <button onclick="closeBookingModal()" class="hidden md:block absolute top-6 right-6 text-gray-500 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+                
+                <div id="modal-event-details"></div> <!-- Dynamic Content -->
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // --- State Management ---
+        const state = {
+            activeTab: 'home',
+            isEventMode: false,
+            currentUser: {
+                username: 'party_alex',
+                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'
+            },
+            posts: [
+                {
+                    id: '1',
+                    username: 'neon_nights',
+                    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop',
+                    image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&h=600&fit=crop',
+                    caption: 'The bass drop was unreal tonight. ⚡️🔊 #Underground',
+                    likes: 1240,
+                    isEvent: false
+                },
+                {
+                    id: '2',
+                    username: 'electric_jungle',
+                    avatar: 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=100&h=100&fit=crop',
+                    image: 'https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop',
+                    caption: 'Secret warehouse party. Location dropping soon.',
+                    likes: 856,
+                    isEvent: true,
+                    eventDetails: { title: 'Neon Jungle Rave', date: 'Oct 24, 10:00 PM', location: 'Warehouse 42, BK', price: 45 }
+                }
+            ],
+            tickets: []
+        };
+        const loaderStartTs = Date.now();
+
+        function goToHomeTabAndRefresh() {
+            window.location.href = "/home/?tab=home";
+        }
+
+        function handleLogout() {
+            window.location.replace("/logout/");
+        }
+
+        function getInitialTabFromUrl() {
+            const tab = new URLSearchParams(window.location.search).get("tab");
+            const allowedTabs = ["home", "search", "add", "tickets", "profile"];
+            if (tab && allowedTabs.includes(tab)) {
+                return tab;
+            }
+            return "home";
+        }
+
+        function hideLoaderWhenReady() {
+            const loader = document.getElementById("party-loader");
+            if (!loader || loader.classList.contains("is-hidden")) return;
+
+            const minVisibleMs = 1200;
+            const elapsed = Date.now() - loaderStartTs;
+            const waitMs = Math.max(0, minVisibleMs - elapsed);
+
+            window.setTimeout(function () {
+                loader.classList.add("is-hidden");
+                window.setTimeout(function () {
+                    loader.remove();
+                }, 420);
+            }, waitMs);
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderFeed();
+            renderStories();
+            renderExplore();
+            renderProfileGrid();
+            renderTicketList();
+            switchTab(getInitialTabFromUrl());
+            lucide.createIcons();
+        });
+
+        window.addEventListener("load", hideLoaderWhenReady);
+
+        // --- Render Functions ---
+
+        function renderStories() {
+            const container = document.getElementById('stories-container');
+            const storiesHTML = Array(5).fill(0).map((_, i) => `
+                <div class="flex flex-col items-center gap-1 min-w-[68px]">
+                    <div class="w-[68px] h-[68px] rounded-full p-[2px] bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-yellow-400 hover:scale-105 transition-transform cursor-pointer">
+                        <div class="w-full h-full rounded-full border-[3px] border-slate-900 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-${1500000000000 + i * 1000}?w=100&h=100&fit=crop" class="w-full h-full object-cover">
+                        </div>
+                    </div>
+                    <span class="text-xs font-medium text-gray-300 truncate w-full text-center">User_${i+1}</span>
+                </div>
+            `).join('');
+            container.innerHTML = storiesHTML;
+        }
+
+        function renderFeed() {
+            const container = document.getElementById('feed-container');
+            container.innerHTML = state.posts.map(post => `
+                <article class="relative mb-6 bg-slate-800/20 md:bg-transparent md:rounded-2xl md:overflow-hidden md:border md:border-white/5">
+                    <div class="px-4 py-3 flex items-center justify-between bg-slate-900/50 md:bg-transparent">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full ring-2 ring-white/10 overflow-hidden cursor-pointer">
+                                <img src="${post.avatar}" class="w-full h-full object-cover">
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-white cursor-pointer hover:underline">${post.username}</p>
+                                ${post.isEvent ? `<div class="flex items-center gap-1 text-xs text-fuchsia-400 font-medium"><i data-lucide="music" class="w-3 h-3"></i> Event Host</div>` : ''}
+                            </div>
+                        </div>
+                        <button class="text-gray-400 hover:text-white"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
+                    </div>
+                    <div class="relative w-full aspect-[4/5] bg-gray-900 group overflow-hidden md:rounded-lg">
+                        <img src="${post.image}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">
+                        <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/90 pointer-events-none"></div>
+                        
+                        <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-10 pointer-events-auto">
+                            <button onclick="toggleLike(this)" class="flex flex-col items-center gap-1 group">
+                                <div class="p-3 rounded-full bg-black/20 backdrop-blur-md text-white transition-colors group-active:text-rose-500 hover:bg-black/40"><i data-lucide="heart" class="w-7 h-7"></i></div>
+                                <span class="text-xs font-bold drop-shadow-md">${post.likes}</span>
+                            </button>
+                            <button class="flex flex-col items-center gap-1">
+                                <div class="p-3 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40"><i data-lucide="message-circle" class="w-7 h-7"></i></div>
+                            </button>
+                            <button class="flex flex-col items-center gap-1">
+                                <div class="p-3 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40"><i data-lucide="send" class="w-7 h-7"></i></div>
+                            </button>
+                        </div>
+
+                        <div class="absolute bottom-0 left-0 right-0 p-5 pr-20 pointer-events-auto">
+                            <p class="text-sm text-gray-200 mb-3 line-clamp-2"><span class="font-bold text-white mr-2">${post.username}</span>${post.caption}</p>
+                            ${post.isEvent ? `
+                            <div class="mt-3 bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-3 flex items-center justify-between group/event hover:bg-white/15 transition-colors cursor-pointer" onclick="openBookingModal('${post.id}')">
+                                <div class="flex gap-3 items-center">
+                                    <div class="bg-fuchsia-600/20 w-10 h-10 rounded-lg flex flex-col items-center justify-center text-fuchsia-400 border border-fuchsia-500/30">
+                                        <span class="text-[10px] font-bold uppercase leading-none">Oct</span><span class="text-lg font-bold leading-none">24</span>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-sm text-white group-hover/event:text-fuchsia-300 transition-colors">${post.eventDetails.title}</h3>
+                                        <p class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${post.eventDetails.location}</p>
+                                    </div>
+                                </div>
+                                <button class="px-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                            </div>` : ''}
+                        </div>
+                    </div>
+                </article>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderExplore() {
+            const grid = document.getElementById('explore-grid');
+            let html = `
+                <div class="col-span-2 row-span-2 relative overflow-hidden rounded-xl h-[280px] md:h-[400px] group cursor-pointer">
+                    <img src="https://images.unsplash.com/photo-1533174072545-e8d4aa97edf9?w=600&h=600&fit=crop" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-4"><span class="font-black text-white text-lg">Trending 🔥</span></div>
+                </div>
+            `;
+            for(let i=0; i<8; i++) {
+                html += `<div class="bg-slate-800 rounded-xl overflow-hidden h-[140px] md:h-[195px] relative group cursor-pointer">
+                    <img src="https://images.unsplash.com/photo-${1520000000000 + i * 1234}?w=300&h=300&fit=crop" class="w-full h-full object-cover opacity-80 transition-all duration-300 group-hover:opacity-100 group-hover:scale-105">
+                    <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
+                </div>`;
+            }
+            grid.innerHTML = html;
+        }
+
+        function renderProfileGrid() {
+            const grid = document.getElementById('profile-grid');
+            const myPosts = state.posts.filter(p => p.username === state.currentUser.username);
+            document.getElementById('profile-posts-count').innerText = myPosts.length;
+            
+            let html = '';
+            myPosts.forEach(post => {
+                 html += `<div class="aspect-square bg-slate-800 relative group overflow-hidden md:rounded-lg cursor-pointer">
+                    <img src="${post.image}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold">
+                        <span class="flex items-center gap-1"><i data-lucide="heart" class="w-4 h-4 fill-white"></i> ${post.likes}</span>
+                    </div>
+                 </div>`;
+            });
+            for(let i=0; i<4; i++) {
+                html += `<div class="aspect-square bg-slate-800 md:rounded-lg overflow-hidden group">
+                    <img src="https://images.unsplash.com/photo-${1510000000000 + i * 500}?w=300&h=300&fit=crop" class="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500 cursor-pointer">
+                </div>`;
+            }
+            grid.innerHTML = html;
+        }
+
+        function renderTicketList() {
+            const container = document.getElementById('tickets-list');
+            const emptyState = document.getElementById('empty-tickets');
+            
+            if (state.tickets.length === 0) {
+                emptyState.classList.remove('hidden');
+                container.innerHTML = '';
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            container.innerHTML = state.tickets.map(ticket => `
+                <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer">
+                    <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative bg-slate-900 rounded-2xl overflow-hidden">
+                        <div class="h-24 w-full relative">
+                            <img src="${ticket.event.image}" class="w-full h-full object-cover opacity-60">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                            <div class="absolute bottom-2 left-4"><h3 class="font-black text-xl italic tracking-wide text-white">${ticket.event.eventDetails.title}</h3></div>
+                        </div>
+                        <div class="p-5 grid grid-cols-3 gap-4">
+                            <div class="col-span-2 space-y-3">
+                                <div><div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div><div class="font-bold text-white">${ticket.event.eventDetails.date}</div></div>
+                                <div class="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs text-cyan-400"><i data-lucide="check" class="w-3 h-3"></i> Confirmed</div>
+                            </div>
+                            <div class="col-span-1 flex flex-col items-center justify-center border-l border-white/10 pl-4">
+                                <i data-lucide="qr-code" class="w-16 h-16 text-white mb-2"></i>
+                                <span class="font-mono text-[10px] text-gray-500">#${ticket.id.substr(0,4)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        // --- Interaction Logic ---
+
+        function switchTab(tabId) {
+            state.activeTab = tabId;
+            
+            // Update Navigation UI (Handles both Mobile and Desktop navs)
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                const icon = btn.querySelector('svg') || btn.querySelector('i');
+                const text = btn.querySelector('span'); // for desktop labels
+
+                if (btn.dataset.target === tabId) {
+                    btn.classList.add('text-fuchsia-400', 'active');
+                    btn.classList.remove('text-gray-400');
+                    // Mobile styling
+                    if (btn.classList.contains('justify-center')) {
+                        btn.classList.add('scale-110');
+                    }
+                    // Icon Glow
+                    if (icon) icon.classList.add('drop-shadow-[0_0_8px_rgba(232,121,249,0.5)]');
+                    // Desktop Text Color
+                    if (text) {
+                        text.classList.remove('group-hover:text-white');
+                        text.classList.add('text-white');
+                    }
+                } else {
+                    btn.classList.remove('text-fuchsia-400', 'active', 'scale-110');
+                    btn.classList.add('text-gray-400');
+                    if (icon) icon.classList.remove('drop-shadow-[0_0_8px_rgba(232,121,249,0.5)]');
+                    if (text) {
+                        text.classList.add('group-hover:text-white');
+                        text.classList.remove('text-white');
+                    }
+                }
+            });
+
+            // Update View Visibility
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${tabId}`).classList.add('active');
+            
+            // Update Header Title based on tab (Mobile Only)
+            const titleEl = document.getElementById('header-title');
+            if (titleEl) {
+                if(tabId === 'home') titleEl.innerHTML = `VIBE<span class="text-fuchsia-500">.</span>`;
+                else if(tabId === 'tickets') titleEl.innerHTML = `<span class="text-lg">Access Passes</span>`;
+                else if(tabId === 'profile') titleEl.innerHTML = `<span class="text-lg">@${state.currentUser.username}</span>`;
+            }
+            
+            // Hide Mobile Header on Search/Add
+            const header = document.getElementById('main-header');
+            if (header) {
+                if(tabId === 'search' || tabId === 'add') header.style.transform = 'translateY(-100%)';
+                else header.style.transform = 'translateY(0)';
+            }
+        }
+
+        function togglePostType(isEvent) {
+            state.isEventMode = isEvent;
+            const btnPost = document.getElementById('btn-type-post');
+            const btnEvent = document.getElementById('btn-type-event');
+            const eventFields = document.getElementById('event-fields');
+
+            if (isEvent) {
+                btnEvent.className = "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/20";
+                btnPost.className = "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white";
+                eventFields.classList.remove('hidden');
+                eventFields.classList.add('flex');
+            } else {
+                btnPost.className = "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg";
+                btnEvent.className = "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white";
+                eventFields.classList.add('hidden');
+                eventFields.classList.remove('flex');
+            }
+        }
+
+        function handlePostSubmit(e) {
+            e.preventDefault();
+            const newPost = {
+                id: Math.random().toString(36),
+                username: state.currentUser.username,
+                avatar: state.currentUser.avatar,
+                image: `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+                caption: document.getElementById('post-caption').value,
+                likes: 0,
+                isEvent: state.isEventMode
+            };
+
+            if (state.isEventMode) {
+                newPost.eventDetails = {
+                    title: document.getElementById('event-title').value,
+                    date: document.getElementById('event-date').value,
+                    location: document.getElementById('event-location').value,
+                    price: document.getElementById('event-price').value
+                };
+            }
+
+            state.posts.unshift(newPost);
+            renderFeed();
+            renderProfileGrid();
+            switchTab('home');
+            e.target.reset(); // clear form
+        }
+
+        let currentBookingEventId = null;
+
+        function openBookingModal(postId) {
+            const event = state.posts.find(p => p.id === postId);
+            currentBookingEventId = postId;
+            
+            const modal = document.getElementById('booking-modal');
+            const content = document.getElementById('modal-content');
+            const details = document.getElementById('modal-event-details');
+            
+            details.innerHTML = `
+                <div class="flex gap-5 mb-8">
+                    <img src="${event.image}" class="w-24 h-32 rounded-2xl object-cover shadow-2xl">
+                    <div class="pt-2">
+                        <h3 class="font-black text-2xl leading-tight text-white mb-2">${event.eventDetails.title}</h3>
+                        <p class="text-fuchsia-400 font-medium mb-1">${event.eventDetails.date}</p>
+                        <p class="text-gray-400 text-sm">${event.eventDetails.location}</p>
+                    </div>
+                </div>
+                <div class="space-y-6">
+                    <div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <span class="font-bold text-gray-300">Tickets</span>
+                        <div class="flex items-center gap-5">
+                            <span class="w-6 text-center font-bold text-xl text-white">1</span>
+                        </div>
+                    </div>
+                    <div class="border-t border-white/10 pt-4 flex justify-between items-center">
+                        <span class="text-xl font-bold text-white">Total</span>
+                        <span class="text-2xl font-black text-fuchsia-400">$${parseInt(event.eventDetails.price) + 4}.00</span>
+                    </div>
+                    <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
+                    <button onclick="closeBookingModal()" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+            // Small timeout to allow display:block to apply before opacity transition
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                // Check if we are on desktop for different animation
+                if (window.innerWidth >= 768) {
+                    content.classList.remove('translate-y-10');
+                } else {
+                    content.classList.remove('translate-y-full');
+                }
+            }, 10);
+        }
+
+        function closeBookingModal() {
+            const modal = document.getElementById('booking-modal');
+            const content = document.getElementById('modal-content');
+            
+            modal.classList.add('opacity-0');
+            
+            if (window.innerWidth >= 768) {
+                content.classList.add('translate-y-10');
+            } else {
+                content.classList.add('translate-y-full');
+            }
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function confirmBooking() {
+            const event = state.posts.find(p => p.id === currentBookingEventId);
+            state.tickets.unshift({
+                id: Math.random().toString(36).substr(2, 9),
+                event: event,
+                qty: 1
+            });
+            renderTicketList();
+            closeBookingModal();
+            setTimeout(() => switchTab('tickets'), 300);
+        }
+
+        function toggleLike(btn) {
+            const icon = btn.querySelector('svg') || btn.querySelector('i'); // Fix: prioritize SVG
+            const wrapper = btn.querySelector('div');
+            
+            if (!icon) return;
+
+            // Simple visual toggle (no state persistence in this basic HTML version)
+            if (wrapper.classList.contains('text-rose-500')) {
+                wrapper.classList.remove('text-rose-500', 'bg-rose-500/20');
+                wrapper.classList.add('text-white', 'bg-black/20');
+                icon.setAttribute('fill', 'none');
+            } else {
+                wrapper.classList.add('text-rose-500', 'bg-rose-500/20');
+                wrapper.classList.remove('text-white', 'bg-black/20');
+                icon.setAttribute('fill', 'currentColor');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+﻿{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIBE. | Sign In / Sign Up</title>
+  <link rel="stylesheet" href="{% static 'css/signup_signin.css' %}" />
+</head>
+<body>
+    <a href="/" class="back-home">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+  </a>
+
+  <div class="orb orb-violet"></div>
+  <div class="orb orb-fuchsia"></div>
+
+  <main class="auth-shell glass-card">
+    <section class="brand">
+      <div>
+        <div class="vibe-brand" onclick="window.location.reload()" role="button" tabindex="0" aria-label="Refresh current page">
+          VIBE<span>.</span>
+        </div>
+        <h1>Feel You Vibe with VIBE</h1>
+        <p>Log in to manage your parties, invites, and group updates in one place. New here? Create an account in under a minute.</p>
+      </div>
+      <p>Secure access for hosts, guests, and event managers.</p>
+    </section>
+
+    <section class="forms">
+      {% if server_note %}
+      <p class="sub">{{ server_note }}</p>
+      {% endif %}
+
+      <form id="mobileForm" class="form-card active" novalidate>
+        <h2>Continue with mobile</h2>
+        <p class="sub">Enter your phone number.</p>
+        <div class="field">
+          <label for="mobileNumber">Mobile Number</label>
+          <input id="mobileNumber" type="tel" placeholder="10-digit mobile number" required />
+        </div>
+        <p id="mobileError" class="error"></p>
+        <p id="mobileSuccess" class="success"></p>
+        <button id="mobileSendBtn" class="btn btn-primary" type="submit">Send OTP</button>
+        <div class="form-links">
+          <button id="goUserPassBtn" class="form-link" type="button">Sign-in with Username/Email</button>
+        </div>
+      </form>
+
+      <form id="mobileOtpForm" class="form-card otp-card" novalidate>
+        <h2>Verify mobile OTP</h2>
+        <p id="mobileOtpSub" class="sub">OTP verification</p>
+        <div class="field">
+          <label for="mobileOtpCode">OTP Code</label>
+          <input id="mobileOtpCode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP" required />
+        </div>
+        <p id="mobileOtpError" class="error"></p>
+        <p id="mobileOtpSuccess" class="success"></p>
+        <button id="mobileVerifyBtn" class="btn btn-primary" type="submit">Verify OTP</button>
+        <div class="otp-actions">
+          <button id="mobileResendBtn" class="btn btn-secondary" type="button">Resend OTP</button>
+          <button id="mobileBackBtn" class="btn btn-secondary" type="button">Back</button>
+        </div>
+      </form>
+
+      <form id="userPassForm" class="form-card" novalidate>
+        <h2>Sign-in with Username/Email</h2>
+        <p class="sub">Enter your Username/Email and Password.</p>
+        <div class="field">
+          <label for="username">Username or Email</label>
+          <input id="username" type="text" placeholder="Enter username or email" required />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" placeholder="Enter password" required />
+        </div>
+        <div class="inline-links">
+          <a class="form-link" href="/signin/forgot_password">Forget Password</a>
+        </div>
+        <p id="userPassError" class="error"></p>
+        <div id="newUserPrompt" class="form-links" style="display:none; margin-top:-8px; margin-bottom:8px;">
+          <button id="goNewUserBtn" class="form-link" type="button">New user? Sign-in with Mobile Number</button>
+        </div>
+        <p id="userPassSuccess" class="success"></p>
+        <button id="userPassLoginBtn" class="btn btn-primary" type="submit">Sign-in</button>
+        <div class="form-links">
+          <button id="backToMobileFromPassBtn" class="form-link" type="button">Sign-in with Mobile Number</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const views = {
+      mobileForm: document.getElementById("mobileForm"),
+      mobileOtpForm: document.getElementById("mobileOtpForm"),
+      userPassForm: document.getElementById("userPassForm")
+    };
+
+    const mobileNumber = document.getElementById("mobileNumber");
+    const mobileSendBtn = document.getElementById("mobileSendBtn");
+    const mobileOtpSub = document.getElementById("mobileOtpSub");
+    const mobileOtpCode = document.getElementById("mobileOtpCode");
+    const mobileVerifyBtn = document.getElementById("mobileVerifyBtn");
+    const mobileResendBtn = document.getElementById("mobileResendBtn");
+
+    const username = document.getElementById("username");
+    const password = document.getElementById("password");
+    const userPassLoginBtn = document.getElementById("userPassLoginBtn");
+
+    const mobileError = document.getElementById("mobileError");
+    const mobileSuccess = document.getElementById("mobileSuccess");
+    const mobileOtpError = document.getElementById("mobileOtpError");
+    const mobileOtpSuccess = document.getElementById("mobileOtpSuccess");
+    const userPassError = document.getElementById("userPassError");
+    const userPassSuccess = document.getElementById("userPassSuccess");
+    const newUserPrompt = document.getElementById("newUserPrompt");
+    const csrfTokenTemplate = "{{ csrf_token }}";
+
+    let mobileContext = { mobile: "" };
+
+    const API_ENDPOINTS = {
+      sendMobileOtp: "/api/auth/mobile/send-otp",
+      verifyMobileOtp: "/api/auth/mobile/verify-otp",
+      resendMobileOtp: "/api/auth/mobile/resend-otp",
+      loginWithPassword: "/api/auth/username/login"
+    };
+    
+    function normalizeMobile(value) {
+      return value.replace(/\D/g, "");
+    }
+
+    function isValidMobile(value) {
+      return /^\d{10}$/.test(normalizeMobile(value));
+    }
+
+    async function postJson(url, payload) {
+      const csrfToken = getCsrfToken();
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(payload)
+      });
+
+      let body = {};
+      try {
+        body = await response.json();
+      } catch (_error) {
+        body = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(body.message || "Request failed. Please try again.");
+      }
+
+      return body;
+    }
+
+    function getCsrfToken() {
+      if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
+        return csrfTokenTemplate;
+      }
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; csrftoken=`);
+      if (parts.length === 2) {
+        return parts.pop().split(";").shift();
+      }
+      return "";
+    }
+
+    function resetMessages() {
+      mobileError.textContent = "";
+      mobileSuccess.textContent = "";
+      mobileOtpError.textContent = "";
+      mobileOtpSuccess.textContent = "";
+      userPassError.textContent = "";
+      userPassSuccess.textContent = "";
+      newUserPrompt.style.display = "none";
+    }
+
+    function setButtonLoading(button, loading, defaultLabel, loadingLabel) {
+      button.disabled = loading;
+      button.textContent = loading ? loadingLabel : defaultLabel;
+    }
+
+    function showView(viewId) {
+      Object.values(views).forEach((view) => view.classList.remove("active"));
+      views[viewId].classList.add("active");
+      resetMessages();
+    }
+
+    function handleAuthResult(result, successTextTarget) {
+      const nextStatus = result.userStatus || result.next || "";
+      const message = result.message || "Authentication successful.";
+      successTextTarget.textContent = message;
+
+      if (result.redirectUrl) {
+        window.location.replace(result.redirectUrl);
+        return;
+      }
+
+      if (nextStatus === "new") {
+        successTextTarget.textContent = `${message} New user flow triggered.`;
+      } else if (nextStatus === "existing") {
+        successTextTarget.textContent = `${message} Existing user flow triggered.`;
+      }
+    }
+
+    function openMobileOtpView(mobile) {
+      mobileContext.mobile = normalizeMobile(mobile);
+      mobileOtpSub.textContent = `Enter the OTP sent to ${mobileContext.mobile}.`;
+      mobileOtpCode.value = "";
+      resetMessages();
+      showView("mobileOtpForm");
+    }
+
+    document.getElementById("goUserPassBtn").addEventListener("click", () => showView("userPassForm"));
+    document.getElementById("backToMobileFromPassBtn").addEventListener("click", () => showView("mobileForm"));
+    document.getElementById("goNewUserBtn").addEventListener("click", () => showView("mobileForm"));
+    document.getElementById("mobileBackBtn").addEventListener("click", () => showView("mobileForm"));
+
+    views.mobileForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const mobile = mobileNumber.value.trim();
+
+      if (!mobile) {
+        mobileError.textContent = "Please enter your mobile number.";
+        return;
+      }
+
+      if (!isValidMobile(mobile)) {
+        mobileError.textContent = "Please enter a valid 10-digit mobile number.";
+        return;
+      }
+
+      resetMessages();
+      setButtonLoading(mobileSendBtn, true, "Send OTP", "Sending...");
+
+      try {
+        await postJson(API_ENDPOINTS.sendMobileOtp, {
+          mobile: normalizeMobile(mobile)
+        });
+        openMobileOtpView(mobile);
+        mobileOtpSuccess.textContent = "OTP sent successfully.";
+      } catch (error) {
+        mobileError.textContent = error.message;
+      } finally {
+        setButtonLoading(mobileSendBtn, false, "Send OTP", "Sending...");
+      }
+    });
+
+    views.mobileOtpForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const otp = mobileOtpCode.value.trim();
+
+      if (!/^\d{6}$/.test(otp)) {
+        mobileOtpError.textContent = "Please enter a valid 6-digit OTP.";
+        return;
+      }
+
+      if (!mobileContext.mobile) {
+        mobileOtpError.textContent = "Mobile session expired. Please request OTP again.";
+        return;
+      }
+
+      resetMessages();
+      setButtonLoading(mobileVerifyBtn, true, "Verify OTP", "Verifying...");
+
+      try {
+        const result = await postJson(API_ENDPOINTS.verifyMobileOtp, {
+          mobile: mobileContext.mobile,
+          otp
+        });
+        handleAuthResult(result, mobileOtpSuccess);
+      } catch (error) {
+        mobileOtpError.textContent = error.message;
+      } finally {
+        setButtonLoading(mobileVerifyBtn, false, "Verify OTP", "Verifying...");
+      }
+    });
+
+    mobileResendBtn.addEventListener("click", async () => {
+      if (!mobileContext.mobile) {
+        mobileOtpError.textContent = "Mobile session expired. Please request OTP again.";
+        return;
+      }
+
+      resetMessages();
+      setButtonLoading(mobileResendBtn, true, "Resend OTP", "Resending...");
+
+      try {
+        await postJson(API_ENDPOINTS.resendMobileOtp, {
+          mobile: mobileContext.mobile
+        });
+        mobileOtpSuccess.textContent = `OTP resent to ${mobileContext.mobile}.`;
+      } catch (error) {
+        mobileOtpError.textContent = error.message;
+      } finally {
+        setButtonLoading(mobileResendBtn, false, "Resend OTP", "Resending...");
+      }
+    });
+
+    views.userPassForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const usernameValue = username.value.trim();
+      const passwordValue = password.value.trim();
+
+      if (!usernameValue || !passwordValue) {
+        userPassError.textContent = "Please enter username and password.";
+        return;
+      }
+
+      resetMessages();
+      setButtonLoading(userPassLoginBtn, true, "Sign-in", "Signing in...");
+
+      try {
+        const result = await postJson(API_ENDPOINTS.loginWithPassword, {
+          identifier: usernameValue,
+          password: passwordValue
+        });
+        handleAuthResult(result, userPassSuccess);
+      } catch (error) {
+        userPassError.textContent = error.message;
+        if (error.message && error.message.toLowerCase().includes("invalid username/email or password")) {
+          newUserPrompt.style.display = "flex";
+        }
+      } finally {
+        setButtonLoading(userPassLoginBtn, false, "Sign-in", "Signing in...");
+      }
+    });
+  </script>
+  <script>
+    (function () {
+      function openHashTarget() {
+        const hash = window.location.hash;
+        if (!hash || hash.length < 2) return;
+        const targetId = decodeURIComponent(hash.slice(1));
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (typeof target.focus === "function") {
+          target.setAttribute("tabindex", "-1");
+          target.focus({ preventScroll: true });
+        }
+      }
+
+      window.routeToId = function (targetId, path) {
+        if (!targetId) return;
+        const encoded = encodeURIComponent(targetId);
+        if (path && path !== window.location.pathname) {
+          window.location.href = `${path}#${encoded}`;
+          return;
+        }
+        window.location.hash = encoded;
+      };
+
+      window.addEventListener("hashchange", openHashTarget);
+      window.addEventListener("DOMContentLoaded", openHashTarget);
+    })();
+  </script>
+</body>
+</html>
