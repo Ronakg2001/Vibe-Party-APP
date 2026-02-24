@@ -1,9 +1,15 @@
+from decimal import Decimal, InvalidOperation
+from math import asin, cos, radians, sin, sqrt
+
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 from django.template import loader
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
+
+from .models import Event
+from .utils import _error, _json_body
 
 
 def index_page(request):
@@ -35,7 +41,16 @@ def Home_page(request):
         return redirect("/signin/")
 
     template = loader.get_template('home_page.html')
-    response = HttpResponse(template.render({}, request))
+    profile = getattr(request.user, "profile", None)
+    response = HttpResponse(
+        template.render(
+            {
+                "current_username": request.user.username,
+                "current_avatar_url": getattr(profile, "profile_picture_url", "") if profile else "",
+            },
+            request,
+        )
+    )
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
@@ -75,3 +90,127 @@ def logout_view(request):
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
     return response
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    hav = sin(dlat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2) ** 2
+    return 6371.0 * 2 * asin(sqrt(hav))
+
+
+def _serialize_event(event, distance_km=None):
+    lat = float(event.latitude)
+    lon = float(event.longitude)
+    data = {
+        "id": event.id,
+        "hostUsername": event.host.username,
+        "title": event.title,
+        "description": event.description,
+        "startLabel": event.start_label,
+        "locationName": event.location_name,
+        "latitude": lat,
+        "longitude": lon,
+        "price": float(event.price),
+        "imageUrl": event.image_url,
+        "mapUrl": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
+    }
+    if distance_km is not None:
+        data["distanceKm"] = round(distance_km, 2)
+    return data
+
+
+@require_POST
+def create_event_api(request):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    payload = _json_body(request)
+    title = str(payload.get("title", "")).strip()
+    description = str(payload.get("description", "")).strip()
+    start_label = str(payload.get("startLabel", "")).strip()
+    location_name = str(payload.get("locationName", "")).strip()
+    image_url = str(payload.get("imageUrl", "")).strip()
+
+    if not title:
+        return _error("Event title is required.")
+    if not location_name:
+        return _error("Event location is required.")
+
+    try:
+        latitude = float(payload.get("latitude"))
+        longitude = float(payload.get("longitude"))
+    except (TypeError, ValueError):
+        return _error("Valid latitude and longitude are required.")
+
+    if latitude < -90 or latitude > 90 or longitude < -180 or longitude > 180:
+        return _error("Latitude/longitude values are out of valid range.")
+
+    try:
+        price = Decimal(str(payload.get("price", 0) or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return _error("Price must be a valid number.")
+
+    if price < 0:
+        return _error("Price cannot be negative.")
+
+    event = Event.objects.create(
+        host=request.user,
+        title=title,
+        description=description,
+        start_label=start_label,
+        location_name=location_name,
+        latitude=latitude,
+        longitude=longitude,
+        price=price,
+        image_url=image_url,
+    )
+
+    return JsonResponse(
+        {
+            "message": "Event created successfully.",
+            "event": _serialize_event(event),
+        }
+    )
+
+
+@require_GET
+def nearby_events_api(request):
+    try:
+        latitude = float(request.GET.get("latitude", ""))
+        longitude = float(request.GET.get("longitude", ""))
+    except (TypeError, ValueError):
+        return _error("latitude and longitude query params are required.")
+
+    if latitude < -90 or latitude > 90 or longitude < -180 or longitude > 180:
+        return _error("Latitude/longitude values are out of valid range.")
+
+    try:
+        radius_km = float(request.GET.get("radiusKm", "10"))
+    except ValueError:
+        return _error("radiusKm must be a number.")
+    if radius_km <= 0 or radius_km > 500:
+        return _error("radiusKm must be between 0 and 500.")
+
+    nearby = []
+    for event in Event.objects.filter(is_active=True).select_related("host"):
+        distance_km = _haversine_km(
+            latitude,
+            longitude,
+            float(event.latitude),
+            float(event.longitude),
+        )
+        if distance_km <= radius_km:
+            nearby.append((distance_km, event))
+
+    nearby.sort(key=lambda item: item[0])
+    serialized = [_serialize_event(event, distance) for distance, event in nearby]
+
+    return JsonResponse(
+        {
+            "radiusKm": radius_km,
+            "count": len(serialized),
+            "events": serialized,
+        }
+    )

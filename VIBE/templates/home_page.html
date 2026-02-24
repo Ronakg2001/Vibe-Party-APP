@@ -154,6 +154,15 @@
                     </div>
 
                     <!-- Feed -->
+                    <div class="px-4 md:max-w-[470px] md:mx-auto mb-4">
+                        <div class="glass-panel rounded-xl border border-white/5 p-3 space-y-3">
+                            <div class="flex items-center gap-2">
+                                <button id="location-toggle-btn" type="button" class="px-3 py-2 rounded-lg text-xs font-bold bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-600/30 transition-colors">Location: On</button>
+                                <span class="text-xs text-gray-400">Nearby events are shown within 30 km.</span>
+                            </div>
+                            <p id="location-status" class="text-xs text-gray-400">Location not detected yet.</p>
+                        </div>
+                    </div>
                     <div id="feed-container" class="flex flex-col gap-6 pb-4 md:max-w-[470px] md:mx-auto"></div>
                 </div>
 
@@ -201,6 +210,10 @@
                                     <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
                                     <input id="event-location" type="text" placeholder="Location" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
                                 </div>
+                                <label class="text-xs text-gray-400 flex items-center gap-2">
+                                    <input id="event-use-current-location" type="checkbox" checked class="accent-fuchsia-500">
+                                    Use my current location as exact event pin
+                                </label>
                             </div>
 
                             <button type="submit" class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it ⚡️</button>
@@ -340,37 +353,192 @@
     <!-- Application Logic -->
     <script>
         // --- State Management ---
+        const defaultAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop';
+        const csrfTokenTemplate = "{{ csrf_token }}";
+        const currentAvatarTemplate = "{{ current_avatar_url|default:''|escapejs }}";
         const state = {
             activeTab: 'home',
             isEventMode: false,
             currentUser: {
-                username: 'party_alex',
-                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'
+                username: "{{ current_username|default:'party_alex'|escapejs }}",
+                avatar: currentAvatarTemplate || defaultAvatar
             },
+            locationEnabled: true,
+            userLocation: null,
+            nearbyRadiusKm: 30,
+            nearbyEventPosts: [],
             posts: [
                 {
-                    id: '1',
+                    id: 'local-1',
                     username: 'neon_nights',
                     avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop',
                     image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&h=600&fit=crop',
-                    caption: 'The bass drop was unreal tonight. ⚡️🔊 #Underground',
+                    caption: 'The bass drop was unreal tonight.',
                     likes: 1240,
                     isEvent: false
                 },
                 {
-                    id: '2',
+                    id: 'local-event-1',
                     username: 'electric_jungle',
                     avatar: 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=100&h=100&fit=crop',
                     image: 'https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop',
-                    caption: 'Secret warehouse party. Location dropping soon.',
+                    caption: 'Secret warehouse party. Limited slots tonight.',
                     likes: 856,
                     isEvent: true,
-                    eventDetails: { title: 'Neon Jungle Rave', date: 'Oct 24, 10:00 PM', location: 'Warehouse 42, BK', price: 45 }
+                    eventDetails: {
+                        title: 'Neon Jungle Rave',
+                        date: 'Oct 24, 10:00 PM',
+                        location: 'Warehouse 42, BK',
+                        price: 45,
+                        mapUrl: 'https://www.google.com/maps/search/?api=1&query=40.7128,-74.0060'
+                    }
                 }
             ],
             tickets: []
         };
         const loaderStartTs = Date.now();
+
+        function getCsrfToken() {
+            if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
+                return csrfTokenTemplate;
+            }
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; csrftoken=`);
+            if (parts.length === 2) {
+                return parts.pop().split(';').shift();
+            }
+            return '';
+        }
+
+        async function getJson(url) {
+            const response = await fetch(url, { credentials: 'same-origin' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || 'Request failed.');
+            }
+            return data;
+        }
+
+        async function postJson(url, payload) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || 'Request failed.');
+            }
+            return data;
+        }
+
+        function getAllPosts() {
+            return [...state.nearbyEventPosts, ...state.posts];
+        }
+
+        function getPostById(postId) {
+            return getAllPosts().find((post) => post.id === postId);
+        }
+
+        function setLocationStatus(message, isError = false) {
+            const statusEl = document.getElementById('location-status');
+            if (!statusEl) return;
+            statusEl.textContent = message;
+            statusEl.className = `text-xs ${isError ? 'text-rose-300' : 'text-gray-400'}`;
+        }
+
+        function renderLocationToggleButton() {
+            const btn = document.getElementById('location-toggle-btn');
+            if (!btn) return;
+            if (state.locationEnabled) {
+                btn.textContent = 'Location: On';
+                btn.className = "px-3 py-2 rounded-lg text-xs font-bold bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-600/30 transition-colors";
+            } else {
+                btn.textContent = 'Location: Off';
+                btn.className = "px-3 py-2 rounded-lg text-xs font-bold bg-slate-700/60 text-gray-300 border border-white/10 hover:bg-slate-700 transition-colors";
+            }
+        }
+
+        function serverEventToPost(eventData) {
+            return {
+                id: `event-${eventData.id}`,
+                username: eventData.hostUsername || 'host',
+                avatar: defaultAvatar,
+                image: eventData.imageUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+                caption: eventData.description || 'Live event nearby.',
+                likes: 0,
+                isEvent: true,
+                eventDetails: {
+                    title: eventData.title,
+                    date: eventData.startLabel || 'Date TBD',
+                    location: eventData.locationName,
+                    price: eventData.price,
+                    mapUrl: eventData.mapUrl,
+                    distanceKm: eventData.distanceKm
+                }
+            };
+        }
+
+        async function loadNearbyEvents() {
+            if (!state.locationEnabled) {
+                state.nearbyEventPosts = [];
+                renderFeed();
+                setLocationStatus('Location is OFF. Turn it ON to auto-detect nearby events.');
+                return;
+            }
+            if (!state.userLocation) {
+                setLocationStatus('Waiting for location detection...');
+                return;
+            }
+            const radiusKm = 30;
+            state.nearbyRadiusKm = radiusKm;
+
+            try {
+                const data = await getJson(`/api/events/nearby?latitude=${state.userLocation.latitude}&longitude=${state.userLocation.longitude}&radiusKm=${radiusKm}`);
+                state.nearbyEventPosts = (data.events || []).map(serverEventToPost);
+                setLocationStatus(`Showing ${data.count || 0} nearby event(s) within ${radiusKm} km.`);
+                renderFeed();
+            } catch (error) {
+                setLocationStatus(error.message || 'Failed to load nearby events.', true);
+            }
+        }
+
+        async function detectUserLocationAndLoad() {
+            if (!state.locationEnabled) {
+                state.nearbyEventPosts = [];
+                renderFeed();
+                setLocationStatus('Location is OFF. Turn it ON to auto-detect nearby events.');
+                return;
+            }
+            if (!navigator.geolocation) {
+                setLocationStatus('Geolocation is not supported on this device.', true);
+                return;
+            }
+            const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+            if (!window.isSecureContext && !isLocalHost) {
+                setLocationStatus('Location needs HTTPS or localhost. Open app on http://localhost:8000 (same PC) or use an HTTPS tunnel.', true);
+                return;
+            }
+            setLocationStatus('Detecting your location...');
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    state.userLocation = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    };
+                    setLocationStatus(`Location detected (${state.userLocation.latitude.toFixed(4)}, ${state.userLocation.longitude.toFixed(4)}).`);
+                    await loadNearbyEvents();
+                },
+                (error) => {
+                    setLocationStatus(`Location access failed: ${error.message}`, true);
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
 
         function goToHomeTabAndRefresh() {
             window.location.href = "/home/?tab=home";
@@ -412,8 +580,28 @@
             renderExplore();
             renderProfileGrid();
             renderTicketList();
+            renderLocationToggleButton();
+            document.getElementById('location-toggle-btn')?.addEventListener('click', async () => {
+                state.locationEnabled = !state.locationEnabled;
+                renderLocationToggleButton();
+                if (state.locationEnabled) {
+                    await detectUserLocationAndLoad();
+                } else {
+                    state.userLocation = null;
+                    state.nearbyEventPosts = [];
+                    renderFeed();
+                    setLocationStatus('Location is OFF. Nearby detection stopped.');
+                }
+            });
             switchTab(getInitialTabFromUrl());
             lucide.createIcons();
+            if (!state.locationEnabled) {
+                setLocationStatus('Location is OFF. Nearby detection stopped.');
+            } else if (window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+                detectUserLocationAndLoad();
+            } else {
+                setLocationStatus('Location auto-detect disabled on insecure origin. Use localhost/HTTPS.');
+            }
         });
 
         window.addEventListener("load", hideLoaderWhenReady);
@@ -437,7 +625,7 @@
 
         function renderFeed() {
             const container = document.getElementById('feed-container');
-            container.innerHTML = state.posts.map(post => `
+            container.innerHTML = getAllPosts().map(post => `
                 <article class="relative mb-6 bg-slate-800/20 md:bg-transparent md:rounded-2xl md:overflow-hidden md:border md:border-white/5">
                     <div class="px-4 py-3 flex items-center justify-between bg-slate-900/50 md:bg-transparent">
                         <div class="flex items-center gap-3">
@@ -478,10 +666,13 @@
                                     </div>
                                     <div>
                                         <h3 class="font-bold text-sm text-white group-hover/event:text-fuchsia-300 transition-colors">${post.eventDetails.title}</h3>
-                                        <p class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${post.eventDetails.location}</p>
+                                        <p class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${post.eventDetails.location}${post.eventDetails.distanceKm !== undefined ? ` (${post.eventDetails.distanceKm} km)` : ''}</p>
                                     </div>
                                 </div>
-                                <button class="px-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                                <div class="flex items-center gap-2">
+                                    ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
+                                    <button class="px-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                                </div>
                             </div>` : ''}
                         </div>
                     </div>
@@ -509,7 +700,7 @@
 
         function renderProfileGrid() {
             const grid = document.getElementById('profile-grid');
-            const myPosts = state.posts.filter(p => p.username === state.currentUser.username);
+            const myPosts = getAllPosts().filter(p => p.username === state.currentUser.username);
             document.getElementById('profile-posts-count').innerText = myPosts.length;
             
             let html = '';
@@ -639,7 +830,7 @@
             }
         }
 
-        function handlePostSubmit(e) {
+        async function handlePostSubmit(e) {
             e.preventDefault();
             const newPost = {
                 id: Math.random().toString(36),
@@ -652,12 +843,38 @@
             };
 
             if (state.isEventMode) {
-                newPost.eventDetails = {
-                    title: document.getElementById('event-title').value,
-                    date: document.getElementById('event-date').value,
-                    location: document.getElementById('event-location').value,
-                    price: document.getElementById('event-price').value
-                };
+                const useCurrentLocation = document.getElementById('event-use-current-location')?.checked;
+                if (!useCurrentLocation) {
+                    setLocationStatus('Please keep "Use my current location" enabled for exact event pin.', true);
+                    return;
+                }
+                if (!state.userLocation) {
+                    setLocationStatus('Please detect your location before creating an event.', true);
+                    return;
+                }
+
+                try {
+                    const result = await postJson('/api/events/create', {
+                        title: document.getElementById('event-title').value.trim(),
+                        description: document.getElementById('post-caption').value.trim(),
+                        startLabel: document.getElementById('event-date').value.trim(),
+                        locationName: document.getElementById('event-location').value.trim(),
+                        price: document.getElementById('event-price').value || 0,
+                        latitude: state.userLocation?.latitude,
+                        longitude: state.userLocation?.longitude
+                    });
+                    if (result?.event) {
+                        state.nearbyEventPosts.unshift(serverEventToPost(result.event));
+                        renderFeed();
+                        renderProfileGrid();
+                        switchTab('home');
+                        e.target.reset();
+                        return;
+                    }
+                } catch (error) {
+                    setLocationStatus(error.message || 'Failed to create event.', true);
+                    return;
+                }
             }
 
             state.posts.unshift(newPost);
@@ -670,7 +887,8 @@
         let currentBookingEventId = null;
 
         function openBookingModal(postId) {
-            const event = state.posts.find(p => p.id === postId);
+            const event = getPostById(postId);
+            if (!event || !event.eventDetails) return;
             currentBookingEventId = postId;
             
             const modal = document.getElementById('booking-modal');
@@ -684,6 +902,7 @@
                         <h3 class="font-black text-2xl leading-tight text-white mb-2">${event.eventDetails.title}</h3>
                         <p class="text-fuchsia-400 font-medium mb-1">${event.eventDetails.date}</p>
                         <p class="text-gray-400 text-sm">${event.eventDetails.location}</p>
+                        ${event.eventDetails.mapUrl ? `<a href="${event.eventDetails.mapUrl}" target="_blank" rel="noopener" class="inline-block mt-2 text-xs text-cyan-300 hover:text-cyan-200">Open in Maps</a>` : ''}
                     </div>
                 </div>
                 <div class="space-y-6">
@@ -733,7 +952,8 @@
         }
 
         function confirmBooking() {
-            const event = state.posts.find(p => p.id === currentBookingEventId);
+            const event = getPostById(currentBookingEventId);
+            if (!event) return;
             state.tickets.unshift({
                 id: Math.random().toString(36).substr(2, 9),
                 event: event,
