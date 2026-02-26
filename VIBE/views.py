@@ -1,7 +1,6 @@
 from decimal import Decimal, InvalidOperation
 from math import asin, cos, radians, sin, sqrt
 
-from django.conf import settings
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 from django.template import loader
@@ -94,14 +93,7 @@ def custom_location_page(request):
     if not request.user.is_authenticated:
         return redirect("/signin/")
     template = loader.get_template("custom_location.html")
-    return HttpResponse(
-        template.render(
-            {
-                "google_maps_api_key": getattr(settings, "GOOGLE_MAPS_API_KEY", ""),
-            },
-            request,
-        )
-    )
+    return HttpResponse(template.render({}, request))
 
 
 @never_cache
@@ -216,8 +208,32 @@ def nearby_events_api(request):
     if radius_km <= 0 or radius_km > 500:
         return _error("radiusKm must be between 0 and 500.")
 
+    north = request.GET.get("north")
+    south = request.GET.get("south")
+    east = request.GET.get("east")
+    west = request.GET.get("west")
+    use_bbox = all(v is not None for v in [north, south, east, west])
+
+    queryset = Event.objects.filter(is_active=True).select_related("host")
+    if use_bbox:
+        try:
+            north_f = float(north)
+            south_f = float(south)
+            east_f = float(east)
+            west_f = float(west)
+        except (TypeError, ValueError):
+            return _error("north/south/east/west must be valid numbers.")
+        if south_f > north_f:
+            return _error("south cannot be greater than north.")
+        queryset = queryset.filter(
+            latitude__gte=south_f,
+            latitude__lte=north_f,
+            longitude__gte=west_f,
+            longitude__lte=east_f,
+        )
+
     nearby = []
-    for event in Event.objects.filter(is_active=True).select_related("host"):
+    for event in queryset:
         distance_km = _haversine_km(
             latitude,
             longitude,

@@ -124,6 +124,4 @@ STATICFILES_DIRS = [
     ]
 #STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
-# Maps
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
