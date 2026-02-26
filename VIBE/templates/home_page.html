@@ -40,6 +40,16 @@
     </script>
 
     <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
+    <style>
+        .loc-liquid-off { background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.22); }
+        .loc-on { background: rgba(22, 139, 163, 0.85); border: 1px solid rgba(74, 200, 222, 0.65); }
+        .loc-burst { animation: locBurst 0.45s ease-out; }
+        @keyframes locBurst {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 194, 197, 0.537); }
+            60% { transform: scale(1.15); box-shadow: 0 0 0 14px rgba(34, 192, 197, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 197, 0); }
+        }
+    </style>
 </head>
 <body class="bg-slate-900">
     <div id="party-loader" class="party-loader-overlay" aria-hidden="true">
@@ -124,20 +134,36 @@
             
             <!-- MOBILE HEADER (Hidden on md+) -->
             <header id="main-header" class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
-                <h1 id="header-title" onclick="goToHomeTabAndRefresh()" role="button" tabindex="0" class="text-2xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-1 cursor-pointer">
-                    VIBE<span class="text-fuchsia-500">.</span>
-                </h1>
+                <button id="mobile-location-label" onclick="openCustomLocationPage()" class="px-3 py-1.5 max-w-[55vw] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90 hover:bg-white/20 transition-colors">Set location</button>
                 <div class="flex gap-4">
                     <div class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
                         <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
                     </div>
                     <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                    <button id="mobile-location-btn" type="button" onclick="toggleLocationFromHeader('mobile-location-btn')" class="w-8 h-8 rounded-full loc-liquid-off backdrop-blur-md text-white grid place-items-center transition-all">
+                        <i data-lucide="navigation" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- DESKTOP HEADER (Visible on md+) -->
+            <header id="desktop-main-header" class="hidden md:flex sticky top-0 z-40 px-5 py-4 justify-between items-center glass border-b border-white/5">
+                <button id="desktop-location-label" onclick="openCustomLocationPage()" class="px-3 py-1.5 max-w-[55%] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90 hover:bg-white/20 transition-colors">Set location</button>
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <i data-lucide="heart" class="w-6 h-6 text-white"></i>
+                        <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
+                    </div>
+                    <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                    <button id="desktop-location-btn" type="button" onclick="toggleLocationFromHeader('desktop-location-btn')" class="w-8 h-8 rounded-full loc-liquid-off backdrop-blur-md text-white grid place-items-center transition-all">
+                        <i data-lucide="navigation" class="w-4 h-4"></i>
+                    </button>
                 </div>
             </header>
 
             <!-- Content Container -->
-            <div class="pt-[70px] md:pt-8 pb-24 md:pb-8 px-0 md:px-0">
+            <div class="pt-[70px] md:pt-4 pb-24 md:pb-8 px-0 md:px-0">
                 
                 <!-- HOME VIEW -->
                 <div id="view-home" class="view-section active">
@@ -154,15 +180,6 @@
                     </div>
 
                     <!-- Feed -->
-                    <div class="px-4 md:max-w-[470px] md:mx-auto mb-4">
-                        <div class="glass-panel rounded-xl border border-white/5 p-3 space-y-3">
-                            <div class="flex items-center gap-2">
-                                <button id="location-toggle-btn" type="button" class="px-3 py-2 rounded-lg text-xs font-bold bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-600/30 transition-colors">Location: On</button>
-                                <span class="text-xs text-gray-400">Nearby events are shown within 30 km.</span>
-                            </div>
-                            <p id="location-status" class="text-xs text-gray-400">Location not detected yet.</p>
-                        </div>
-                    </div>
                     <div id="feed-container" class="flex flex-col gap-6 pb-4 md:max-w-[470px] md:mx-auto"></div>
                 </div>
 
@@ -364,6 +381,7 @@
                 avatar: currentAvatarTemplate || defaultAvatar
             },
             locationEnabled: true,
+            customLocationName: '',
             userLocation: null,
             nearbyRadiusKm: 30,
             nearbyEventPosts: [],
@@ -447,19 +465,64 @@
         function setLocationStatus(message, isError = false) {
             const statusEl = document.getElementById('location-status');
             if (!statusEl) return;
+            if (!isError) {
+                statusEl.textContent = '';
+                statusEl.classList.add('hidden');
+                return;
+            }
             statusEl.textContent = message;
-            statusEl.className = `text-xs ${isError ? 'text-rose-300' : 'text-gray-400'}`;
+            statusEl.className = 'text-xs text-rose-300';
+            statusEl.classList.remove('hidden');
         }
 
-        function renderLocationToggleButton() {
-            const btn = document.getElementById('location-toggle-btn');
-            if (!btn) return;
+        function getLocationLabel() {
+            if (state.customLocationName) {
+                return state.customLocationName;
+            }
+            if (state.userLocation) {
+                return `${state.userLocation.latitude.toFixed(2)}, ${state.userLocation.longitude.toFixed(2)}`;
+            }
+            return 'Set location';
+        }
+
+        function openCustomLocationPage() {
+            window.location.href = '/location/custom/?next=/home/?tab=home';
+        }
+
+        function renderTopLocationUi() {
+            const labelText = getLocationLabel();
+            const mobileLabel = document.getElementById('mobile-location-label');
+            const desktopLabel = document.getElementById('desktop-location-label');
+            if (mobileLabel) mobileLabel.textContent = labelText;
+            if (desktopLabel) desktopLabel.textContent = labelText;
+
+            ['mobile-location-btn', 'desktop-location-btn'].forEach((id) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                btn.classList.remove('loc-on', 'loc-liquid-off');
+                btn.classList.add(state.locationEnabled ? 'loc-on' : 'loc-liquid-off');
+            });
+        }
+
+        function toggleLocationFromHeader(buttonId) {
+            state.locationEnabled = !state.locationEnabled;
+            const btn = document.getElementById(buttonId);
+            if (btn) {
+                btn.classList.remove('loc-burst');
+                void btn.offsetWidth;
+                btn.classList.add('loc-burst');
+            }
+            renderTopLocationUi();
+
             if (state.locationEnabled) {
-                btn.textContent = 'Location: On';
-                btn.className = "px-3 py-2 rounded-lg text-xs font-bold bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-600/30 transition-colors";
+                setLocationStatus('Location is ON. Detecting location...');
+                detectUserLocationAndLoad();
             } else {
-                btn.textContent = 'Location: Off';
-                btn.className = "px-3 py-2 rounded-lg text-xs font-bold bg-slate-700/60 text-gray-300 border border-white/10 hover:bg-slate-700 transition-colors";
+                state.userLocation = null;
+                state.nearbyEventPosts = [];
+                renderFeed();
+                setLocationStatus('Location is OFF. Nearby detection stopped.');
+                renderTopLocationUi();
             }
         }
 
@@ -502,6 +565,7 @@
                 state.nearbyEventPosts = (data.events || []).map(serverEventToPost);
                 setLocationStatus(`Showing ${data.count || 0} nearby event(s) within ${radiusKm} km.`);
                 renderFeed();
+                renderTopLocationUi();
             } catch (error) {
                 setLocationStatus(error.message || 'Failed to load nearby events.', true);
             }
@@ -531,6 +595,7 @@
                         longitude: position.coords.longitude
                     };
                     setLocationStatus(`Location detected (${state.userLocation.latitude.toFixed(4)}, ${state.userLocation.longitude.toFixed(4)}).`);
+                    renderTopLocationUi();
                     await loadNearbyEvents();
                 },
                 (error) => {
@@ -575,24 +640,13 @@
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
+            state.customLocationName = localStorage.getItem('vibe_custom_location_name') || '';
+            renderTopLocationUi();
             renderFeed();
             renderStories();
             renderExplore();
             renderProfileGrid();
             renderTicketList();
-            renderLocationToggleButton();
-            document.getElementById('location-toggle-btn')?.addEventListener('click', async () => {
-                state.locationEnabled = !state.locationEnabled;
-                renderLocationToggleButton();
-                if (state.locationEnabled) {
-                    await detectUserLocationAndLoad();
-                } else {
-                    state.userLocation = null;
-                    state.nearbyEventPosts = [];
-                    renderFeed();
-                    setLocationStatus('Location is OFF. Nearby detection stopped.');
-                }
-            });
             switchTab(getInitialTabFromUrl());
             lucide.createIcons();
             if (!state.locationEnabled) {
@@ -794,14 +848,6 @@
             // Update View Visibility
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
             document.getElementById(`view-${tabId}`).classList.add('active');
-            
-            // Update Header Title based on tab (Mobile Only)
-            const titleEl = document.getElementById('header-title');
-            if (titleEl) {
-                if(tabId === 'home') titleEl.innerHTML = `VIBE<span class="text-fuchsia-500">.</span>`;
-                else if(tabId === 'tickets') titleEl.innerHTML = `<span class="text-lg">Access Passes</span>`;
-                else if(tabId === 'profile') titleEl.innerHTML = `<span class="text-lg">@${state.currentUser.username}</span>`;
-            }
             
             // Hide Mobile Header on Search/Add
             const header = document.getElementById('main-header');

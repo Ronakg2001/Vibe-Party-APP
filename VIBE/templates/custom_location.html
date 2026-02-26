@@ -1,0 +1,241 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Set Custom Location</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-900 text-white">
+  <main class="max-w-lg mx-auto px-5 py-10">
+    <a href="/home/?tab=home" class="inline-flex items-center gap-2 text-sm text-cyan-300 hover:text-cyan-200 mb-6">
+      <span>&larr;</span>
+      <span>Back to Home</span>
+    </a>
+    <section class="rounded-2xl border border-white/10 bg-slate-800/50 backdrop-blur-md p-6">
+      <h1 class="text-2xl font-black mb-2">Custom Location</h1>
+      <p class="text-sm text-gray-400 mb-6">Enter a location and set map center/bounds for your area.</p>
+
+      <form id="custom-location-form" class="space-y-4">
+        <label for="location-name" class="text-sm text-gray-300">Location name</label>
+        <input id="location-name" type="text" maxlength="80" placeholder="e.g. Mumbai, Andheri West" class="w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 outline-none focus:border-cyan-400 text-sm">
+        <p id="maps-error" class="hidden text-xs text-rose-300"></p>
+
+        <div class="rounded-xl overflow-hidden border border-white/10 bg-slate-900/50">
+          <div id="map-canvas" class="w-full h-72"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="p-3 rounded-lg bg-slate-900/70 border border-white/10">
+            <div class="text-gray-400 mb-1">Map Center</div>
+            <div id="map-center-text" class="text-cyan-200 font-mono">--</div>
+          </div>
+          <div class="p-3 rounded-lg bg-slate-900/70 border border-white/10">
+            <div class="text-gray-400 mb-1">Bounding Box</div>
+            <div id="map-bbox-text" class="text-cyan-200 font-mono leading-5">--</div>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button type="submit" class="px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save location</button>
+          <button id="clear-location" type="button" class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const form = document.getElementById("custom-location-form");
+      const input = document.getElementById("location-name");
+      const clearBtn = document.getElementById("clear-location");
+      const mapsError = document.getElementById("maps-error");
+      const centerText = document.getElementById("map-center-text");
+      const bboxText = document.getElementById("map-bbox-text");
+      const next = new URLSearchParams(window.location.search).get("next") || "/home/?tab=home";
+      const nameKey = "vibe_custom_location_name";
+      const centerKey = "vibe_custom_location_center";
+      const boundsKey = "vibe_custom_location_bounds";
+      const mapsApiKey = "{{ google_maps_api_key|default:''|escapejs }}";
+
+      let map = null;
+      let marker = null;
+      let geocoder = null;
+      let selectedCenter = null;
+      let selectedBounds = null;
+
+      function formatCoord(value) {
+        return Number(value).toFixed(6);
+      }
+
+      function setCenterAndBoundsFromMap() {
+        if (!map) return;
+        const center = map.getCenter();
+        const bounds = map.getBounds();
+        if (!center || !bounds) return;
+
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+
+        selectedCenter = {
+          lat: center.lat(),
+          lng: center.lng(),
+        };
+        selectedBounds = {
+          north: ne.lat(),
+          east: ne.lng(),
+          south: sw.lat(),
+          west: sw.lng(),
+        };
+
+        centerText.textContent = `${formatCoord(selectedCenter.lat)}, ${formatCoord(selectedCenter.lng)}`;
+        bboxText.textContent = `N:${formatCoord(selectedBounds.north)} E:${formatCoord(selectedBounds.east)} S:${formatCoord(selectedBounds.south)} W:${formatCoord(selectedBounds.west)}`;
+      }
+
+      function setMarker(latLng) {
+        if (!marker) return;
+        marker.setPosition(latLng);
+      }
+
+      function geocodeLocationText(text) {
+        if (!geocoder || !text) return;
+        geocoder.geocode({ address: text }, (results, status) => {
+          if (status === "OK" && results && results.length > 0) {
+            const best = results[0];
+            if (best.geometry.viewport) {
+              map.fitBounds(best.geometry.viewport);
+            } else if (best.geometry.location) {
+              map.setCenter(best.geometry.location);
+              map.setZoom(14);
+            }
+            if (best.geometry.location) {
+              setMarker(best.geometry.location);
+            }
+            setCenterAndBoundsFromMap();
+          }
+        });
+      }
+
+      function initMap() {
+        const defaultCenter = { lat: 20.5937, lng: 78.9629 };
+        map = new google.maps.Map(document.getElementById("map-canvas"), {
+          center: defaultCenter,
+          zoom: 5,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+
+        marker = new google.maps.Marker({
+          position: defaultCenter,
+          map,
+          draggable: true,
+        });
+
+        geocoder = new google.maps.Geocoder();
+
+        map.addListener("idle", setCenterAndBoundsFromMap);
+        map.addListener("click", (event) => {
+          if (!event.latLng) return;
+          setMarker(event.latLng);
+          map.panTo(event.latLng);
+          setCenterAndBoundsFromMap();
+        });
+        marker.addListener("dragend", () => {
+          const p = marker.getPosition();
+          if (!p) return;
+          map.panTo(p);
+          setCenterAndBoundsFromMap();
+        });
+
+        const storedCenter = localStorage.getItem(centerKey);
+        const storedBounds = localStorage.getItem(boundsKey);
+        try {
+          if (storedBounds) {
+            const b = JSON.parse(storedBounds);
+            if (b && typeof b.north === "number" && typeof b.east === "number" && typeof b.south === "number" && typeof b.west === "number") {
+              const bounds = new google.maps.LatLngBounds(
+                { lat: b.south, lng: b.west },
+                { lat: b.north, lng: b.east }
+              );
+              map.fitBounds(bounds);
+            }
+          } else if (storedCenter) {
+            const c = JSON.parse(storedCenter);
+            if (c && typeof c.lat === "number" && typeof c.lng === "number") {
+              const center = { lat: c.lat, lng: c.lng };
+              map.setCenter(center);
+              map.setZoom(14);
+              marker.setPosition(center);
+            }
+          }
+        } catch (err) {
+        }
+
+        setTimeout(setCenterAndBoundsFromMap, 350);
+      }
+
+      function loadMaps() {
+        if (!mapsApiKey) {
+          mapsError.textContent = "Google Maps API key missing. Set GOOGLE_MAPS_API_KEY in your environment.";
+          mapsError.classList.remove("hidden");
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsApiKey)}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+        script.onload = initMap;
+        script.onerror = function () {
+          mapsError.textContent = "Failed to load Google Maps script.";
+          mapsError.classList.remove("hidden");
+        };
+        document.head.appendChild(script);
+      }
+
+      input.value = localStorage.getItem(nameKey) || "";
+      loadMaps();
+
+      input.addEventListener("change", function () {
+        geocodeLocationText(input.value.trim());
+      });
+      input.addEventListener("blur", function () {
+        geocodeLocationText(input.value.trim());
+      });
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const value = input.value.trim();
+        if (value) {
+          localStorage.setItem(nameKey, value);
+        } else {
+          localStorage.removeItem(nameKey);
+        }
+
+        if (selectedCenter) {
+          localStorage.setItem(centerKey, JSON.stringify(selectedCenter));
+        } else {
+          localStorage.removeItem(centerKey);
+        }
+        if (selectedBounds) {
+          localStorage.setItem(boundsKey, JSON.stringify(selectedBounds));
+        } else {
+          localStorage.removeItem(boundsKey);
+        }
+        window.location.href = next;
+      });
+
+      clearBtn.addEventListener("click", function () {
+        localStorage.removeItem(nameKey);
+        localStorage.removeItem(centerKey);
+        localStorage.removeItem(boundsKey);
+        input.value = "";
+        selectedCenter = null;
+        selectedBounds = null;
+        centerText.textContent = "--";
+        bboxText.textContent = "--";
+      });
+    })();
+  </script>
+</body>
+</html>

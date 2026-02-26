@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from math import asin, cos, radians, sin, sqrt
 
+from django.conf import settings
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 from django.template import loader
@@ -12,9 +13,17 @@ from .models import Event
 from .utils import _error, _json_body
 
 
+@never_cache
 def index_page(request):
+    if request.user.is_authenticated:
+        return redirect("/home/")
+
     template = loader.get_template('index.html')
-    return HttpResponse(template.render({}, request))
+    response = HttpResponse(template.render({}, request))
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
 
 @never_cache
 def Signup_signin_page(request):
@@ -79,6 +88,20 @@ def signup_profile_page(request):
 def party_loader_demo_page(request):
     template = loader.get_template("party_loader_demo.html")
     return HttpResponse(template.render({}, request))
+
+@never_cache
+def custom_location_page(request):
+    if not request.user.is_authenticated:
+        return redirect("/signin/")
+    template = loader.get_template("custom_location.html")
+    return HttpResponse(
+        template.render(
+            {
+                "google_maps_api_key": getattr(settings, "GOOGLE_MAPS_API_KEY", ""),
+            },
+            request,
+        )
+    )
 
 
 @never_cache
