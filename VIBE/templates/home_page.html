@@ -249,15 +249,16 @@
                         <div class="px-5 md:px-8">
                             <div class="flex justify-between items-end -mt-10 md:-mt-16 mb-4">
                                 <div class="w-24 h-24 md:w-32 md:h-32 rounded-2xl p-1 bg-black">
-                                    <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop" class="w-full h-full rounded-xl object-cover">
+                                    <img id="profile-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop" class="w-full h-full rounded-xl object-cover">
                                 </div>
                                 <div class="flex gap-2 mb-1">
                                     <button class="px-4 py-2 bg-white/10 rounded-lg text-xs md:text-sm font-bold border border-white/5 hover:bg-white/20 transition-colors">Edit Profile</button>
                                 </div>
                             </div>
                             <div class="mb-6">
-                                <h2 class="text-xl md:text-2xl font-black text-white">Alex Rivera</h2>
-                                <p class="text-gray-400 text-sm md:text-base mt-1">Chasing sunsets & soundwaves 🌊🎧<br>NYC / LA</p>
+                                <h2 id="profile-display-name" class="text-xl md:text-2xl font-black text-white">Alex Rivera</h2>
+                                <p id="profile-handle" class="text-gray-400 text-sm md:text-base mt-1">@username</p>
+                                <p id="profile-bio" class="text-gray-400 text-sm md:text-base mt-1">Chasing sunsets & soundwaves.</p>
                             </div>
                             <div class="flex justify-between py-4 border-y border-white/5 mb-6 md:justify-start md:gap-12">
                                 <div class="text-center md:text-left min-w-[80px]">
@@ -395,7 +396,9 @@
             isEventMode: false,
             currentUser: {
                 username: "{{ current_username|default:'party_alex'|escapejs }}",
-                avatar: currentAvatarTemplate || defaultAvatar
+                avatar: currentAvatarTemplate || defaultAvatar,
+                fullName: "{{ current_username|default:'party_alex'|escapejs }}",
+                bio: ''
             },
             locationEnabled: true,
             customLocationName: '',
@@ -470,6 +473,33 @@
                 throw new Error(data.message || 'Request failed.');
             }
             return data;
+        }
+
+        function renderCurrentUserProfile() {
+            const avatarEl = document.getElementById('profile-avatar');
+            const nameEl = document.getElementById('profile-display-name');
+            const handleEl = document.getElementById('profile-handle');
+            const bioEl = document.getElementById('profile-bio');
+
+            if (avatarEl) avatarEl.src = state.currentUser.avatar || defaultAvatar;
+            if (nameEl) nameEl.textContent = state.currentUser.fullName || state.currentUser.username;
+            if (handleEl) handleEl.textContent = `@${state.currentUser.username || ''}`;
+            if (bioEl) bioEl.textContent = state.currentUser.bio || 'No bio added yet.';
+        }
+
+        async function loadCurrentUserProfile() {
+            try {
+                const data = await getJson('/api/profile/me');
+                const profile = data?.profile || {};
+                state.currentUser.username = profile.username || state.currentUser.username;
+                state.currentUser.fullName = profile.full_name || state.currentUser.username;
+                state.currentUser.bio = profile.bio || '';
+                state.currentUser.avatar = profile.profile_picture_url || state.currentUser.avatar || defaultAvatar;
+            } catch (error) {
+                // Keep existing template-backed values if API fails.
+            }
+            renderCurrentUserProfile();
+            renderProfileGrid();
         }
 
         function getAllPosts() {
@@ -974,8 +1004,10 @@
             renderFeed();
             renderStories();
             renderExplore();
+            renderCurrentUserProfile();
             renderProfileGrid();
             renderTicketList();
+            loadCurrentUserProfile();
             switchTab(getInitialTabFromUrl());
             lucide.createIcons();
             if (!state.locationEnabled) {
@@ -1183,6 +1215,9 @@
             if (header) {
                 if(tabId === 'search' || tabId === 'add') header.style.transform = 'translateY(-100%)';
                 else header.style.transform = 'translateY(0)';
+            }
+            if (tabId === 'profile') {
+                loadCurrentUserProfile();
             }
         }
 

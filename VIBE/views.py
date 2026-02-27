@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from math import asin, cos, radians, sin, sqrt
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 from django.template import loader
@@ -8,6 +9,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from . import mongo_store
 from .models import Event
 from .utils import _error, _json_body
 
@@ -50,11 +52,15 @@ def Home_page(request):
 
     template = loader.get_template('home_page.html')
     profile = getattr(request.user, "profile", None)
+    mongo_profile = mongo_store.profile_for_user(request.user.id)
     response = HttpResponse(
         template.render(
             {
                 "current_username": request.user.username,
-                "current_avatar_url": getattr(profile, "profile_picture_url", "") if profile else "",
+                "current_avatar_url": (
+                    (mongo_profile or {}).get("profile_picture_url")
+                    or (getattr(profile, "profile_picture_url", "") if profile else "")
+                ),
             },
             request,
         )
@@ -181,6 +187,7 @@ def create_event_api(request):
         price=price,
         image_url=image_url,
     )
+    mongo_store.sync_event(event.id)
 
     return JsonResponse(
         {
@@ -253,3 +260,67 @@ def nearby_events_api(request):
             "events": serialized,
         }
     )
+
+
+@require_GET
+def search_users_api(request):
+    query = str(request.GET.get("q", "")).strip()
+    if not query:
+        return _error("q query param is required.")
+
+    try:
+        limit = int(request.GET.get("limit", "20"))
+    except ValueError:
+        return _error("limit must be an integer.")
+
+    if limit <= 0 or limit > 100:
+        return _error("limit must be between 1 and 100.")
+
+    docs = mongo_store.search_profiles(query=query, limit=limit)
+    if docs:
+        return JsonResponse({"source": "mongo", "count": len(docs), "users": docs})
+
+    # Fallback keeps endpoint usable before Mongo backfill/config is complete.
+    User = get_user_model()
+    fallback_qs = User.objects.filter(username__icontains=query).values(
+        "id", "username", "first_name"
+    ).order_by("username")[:limit]
+    users = [
+        {
+            "sql_user_id": row["id"],
+            "username": row["username"],
+            "full_name": row["first_name"] or "",
+            "profile_picture_url": "",
+        }
+        for row in fallback_qs
+    ]
+    return JsonResponse({"source": "sql-fallback", "count": len(users), "users": users})
+
+
+@require_GET
+def current_profile_api(request):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    mongo_profile = mongo_store.profile_for_user(request.user.id)
+    if mongo_profile:
+        return JsonResponse({"source": "mongo", "profile": mongo_profile})
+
+    profile = getattr(request.user, "profile", None)
+    payload = {
+        "sql_user_id": request.user.id,
+        "username": request.user.username,
+        "email": (request.user.email or "").lower(),
+        "full_name": (request.user.first_name or "").strip(),
+        "mobile": getattr(profile, "mobile", "") if profile else "",
+        "sex": getattr(profile, "sex", "") if profile else "",
+        "date_of_birth": (
+            profile.date_of_birth.isoformat()
+            if profile and getattr(profile, "date_of_birth", None)
+            else None
+        ),
+        "bio": getattr(profile, "bio", "") if profile else "",
+        "profile_picture_url": getattr(profile, "profile_picture_url", "") if profile else "",
+        "gov_id_verified": bool(getattr(profile, "gov_id_verified", False)),
+    }
+    return JsonResponse({"source": "sql-fallback", "profile": payload})

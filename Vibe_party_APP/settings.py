@@ -124,4 +124,8 @@ STATICFILES_DIRS = [
     ]
 #STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
+# MongoDB is optional. Keep SQL as the auth/primary relational store.
+MONGO_URI = os.environ.get("MONGO_URI", "")
+MONGO_DB_NAME = os.environ.get("MONGO_DB_NAME", "party_connect_hub")
+
 

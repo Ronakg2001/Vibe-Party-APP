@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
+from . import mongo_store
 from .models import UserProfile
 
 from .utils import _json_body, _error, _generate_otp, _calculate_age
@@ -229,6 +230,7 @@ def register_user_details(request):
         mobile=pending_mobile,
         gov_id_number=gov_id,
     )
+    mongo_store.sync_user_profile(user.id)
 
     login(request, user)
     request.session.pop("pending_signup_mobile", None)
@@ -266,6 +268,8 @@ def complete_profile_setup(request):
             profile.profile_picture_url = profile_picture_url
         profile.bio = bio
         profile.save()
+
+    mongo_store.sync_user_profile(request.user.id)
 
     request.session.pop("pending_profile_setup", None)
     request.session.modified = True
