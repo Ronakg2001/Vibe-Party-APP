@@ -194,13 +194,13 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
 }
 
 .loc-liquid-off {
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: solid rgba(255, 255, 255, 0.14);
+  border: 1px;
 }
 
 .loc-on {
-  background: rgba(22, 139, 163, 0.85);
-  border: 1px solid rgba(74, 200, 222, 0.65);
+  background: solid rgba(69, 7, 151, 0.85);
+  border: 1px;
 }
 
 .loc-burst {

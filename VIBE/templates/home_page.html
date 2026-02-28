@@ -46,23 +46,30 @@
             position: relative;
             overflow: visible;
             transition: transform 180ms ease, color 220ms ease, opacity 220ms ease;
-            color: rgba(255, 255, 255, 0.78);
-            opacity: 0.9;
+            color: #ffffff;
+            opacity: 1;
         }
         .location-fab:hover {
-            color: #ffffff;
+            color: #d946ef;
             opacity: 1;
         }
         .location-fab.is-pressing {
             transform: scale(0.92);
         }
         .location-fab.loc-liquid-off {
-            background: transparent;
-            border: 0;
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
         }
         .location-fab.loc-on {
-            color: #66e8ff;
+            color:  #d946ef;
             opacity: 1;
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
+        }
+        .location-fab.icon-burst {
+            animation: navIconBurst 0.4s ease-in-out;
         }
         .location-nav-icon {
             width: 22px;
@@ -70,9 +77,9 @@
             display: block;
         }
         .location-nav-icon .nav-icon-outline {
-            fill: none;
+            fill: transparent;
             stroke: currentColor;
-            stroke-width: 1.9;
+            stroke-width: 2;
             stroke-linejoin: round;
         }
         .location-nav-icon .nav-icon-fill {
@@ -80,15 +87,18 @@
             opacity: 0;
             transform-origin: 50% 50%;
             transform: scale(0.25);
+            transition: opacity 180ms ease, transform 180ms ease;
         }
         .location-fab.loc-on .location-nav-icon .nav-icon-fill {
-            animation: navFillPulse 1.15s ease-in-out infinite;
+            opacity: 1;
+            transform: scale(1);
         }
-        @keyframes navFillPulse {
-            0% { opacity: 0.12; transform: scale(0.3); }
-            50% { opacity: 0.78; transform: scale(1); }
-            100% { opacity: 0.18; transform: scale(0.45); }
+        @keyframes navIconBurst {
+            0% { transform: scale(1); }
+            45% { transform: scale(1.26); }
+            100% { transform: scale(1); }
         }
+
     </style>
 </head>
 <body class="bg-slate-900">
@@ -184,7 +194,7 @@
                 </button>
                 <div class="flex gap-4 items-center">
                     <button id="mobile-location-btn" type="button" onclick="handleLocationToggleTap(event, 'mobile-location-btn')" class="location-fab w-6 h-6 grid place-items-center" aria-label="Location">
-                        <svg class="location-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <svg class="location-nav-icon" aria-hidden="true">
                             <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                             <path class="nav-icon-fill" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                         </svg>
@@ -445,7 +455,7 @@
                     </div>
                     <div class="rounded-xl border border-white/10 bg-slate-900/60 p-2.5">
                         <input id="location-modal-input" type="text" maxlength="80" placeholder="Search location" class="w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-white/10 outline-none focus:border-cyan-400 text-sm text-white">
-                        <button id="location-modal-detected-inline" type="button" onclick="useDetectedLocationInModal()" class="mt-2 block text-left text-xs text-cyan-300 hover:text-cyan-200 transition-colors">Detected: Not detected yet</button>
+                        <button id="location-modal-detected-inline" type="button" onclick="useDetectedLocationInModal()" class="mt-2 block text-left text-xs text-cyan-300 hover:text-cyan-200 transition-colors">Location: Off </button>
                     </div>
                     <div id="location-modal-suggestions" class="hidden rounded-xl border border-white/10 bg-slate-900/90 divide-y divide-white/5 overflow-hidden"></div>
                     <p class="text-[11px] text-gray-400">Click or drag marker on map to choose exact location.</p>
@@ -926,8 +936,8 @@
             const desktopLocationBtn = document.getElementById('desktop-location-btn');
             if (desktopLocationBtn) {
                 desktopLocationBtn.title = state.detectedLocationName
-                    ? `Detected: ${state.detectedLocationName}`
-                    : 'Detected location not available yet';
+                    ? `Location: ${state.detectedLocationName}`
+                    : 'Location: Off';
             }
             updateLocationModalMeta();
         }
@@ -935,9 +945,9 @@
         function animateLocationToggleButton(buttonId) {
             const btn = document.getElementById(buttonId);
             if (btn) {
-                btn.classList.remove('loc-burst');
+                btn.classList.remove('icon-burst');
                 void btn.offsetWidth;
-                btn.classList.add('loc-burst');
+                btn.classList.add('icon-burst');
             }
         }
 
@@ -967,8 +977,8 @@
             const detectedLabel = document.getElementById('location-modal-detected-inline');
             if (detectedLabel) {
                 detectedLabel.textContent = state.detectedLocationName
-                    ? `Detected: ${state.detectedLocationName}`
-                    : 'Detected: Not detected yet';
+                    ? `Location: ${state.detectedLocationName}`
+                    : 'Location: Off';
             }
             const track = document.getElementById('location-modal-enabled-track');
             const knob = document.getElementById('location-modal-enabled-knob');
@@ -1033,6 +1043,7 @@
                 return;
             }
             clearLocationButtonHold();
+            setLocationEnabled(!state.locationEnabled);
             animateLocationToggleButton(buttonId);
         }
 
