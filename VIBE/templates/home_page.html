@@ -41,6 +41,55 @@
 
     <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+    <style>
+        .location-fab {
+            position: relative;
+            overflow: visible;
+            transition: transform 180ms ease, color 220ms ease, opacity 220ms ease;
+            color: rgba(255, 255, 255, 0.78);
+            opacity: 0.9;
+        }
+        .location-fab:hover {
+            color: #ffffff;
+            opacity: 1;
+        }
+        .location-fab.is-pressing {
+            transform: scale(0.92);
+        }
+        .location-fab.loc-liquid-off {
+            background: transparent;
+            border: 0;
+        }
+        .location-fab.loc-on {
+            color: #66e8ff;
+            opacity: 1;
+        }
+        .location-nav-icon {
+            width: 22px;
+            height: 22px;
+            display: block;
+        }
+        .location-nav-icon .nav-icon-outline {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.9;
+            stroke-linejoin: round;
+        }
+        .location-nav-icon .nav-icon-fill {
+            fill: currentColor;
+            opacity: 0;
+            transform-origin: 50% 50%;
+            transform: scale(0.25);
+        }
+        .location-fab.loc-on .location-nav-icon .nav-icon-fill {
+            animation: navFillPulse 1.15s ease-in-out infinite;
+        }
+        @keyframes navFillPulse {
+            0% { opacity: 0.12; transform: scale(0.3); }
+            50% { opacity: 0.78; transform: scale(1); }
+            100% { opacity: 0.18; transform: scale(0.45); }
+        }
+    </style>
 </head>
 <body class="bg-slate-900">
     <div id="party-loader" class="party-loader-overlay" aria-hidden="true">
@@ -125,31 +174,44 @@
             
             <!-- MOBILE HEADER (Hidden on md+) -->
             <header id="main-header" class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
-                <button id="mobile-location-label" onclick="openLocationModal()" class="px-3 py-1.5 max-w-[55vw] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90 hover:bg-white/20 transition-colors">Set location</button>
-                <div class="flex gap-4">
+                <button
+                    onclick="goToHomeTabAndRefresh()"
+                    role="button"
+                    tabindex="0"
+                    class="text-xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-0.5"
+                >
+                    VIBE<span class="text-fuchsia-500">.</span>
+                </button>
+                <div class="flex gap-4 items-center">
+                    <button id="mobile-location-btn" type="button" onclick="handleLocationToggleTap(event, 'mobile-location-btn')" class="location-fab w-6 h-6 grid place-items-center" aria-label="Location">
+                        <svg class="location-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
+                            <path class="nav-icon-fill" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
+                        </svg>
+                    </button>
                     <div class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
                         <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
                     </div>
                     <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
-                    <button id="mobile-location-btn" type="button" onclick="toggleLocationFromHeader('mobile-location-btn')" class="w-8 h-8 rounded-full loc-liquid-off backdrop-blur-md text-white grid place-items-center transition-all">
-                        <i data-lucide="navigation" class="w-4 h-4"></i>
-                    </button>
                 </div>
             </header>
 
             <!-- DESKTOP HEADER (Visible on md+) -->
             <header id="desktop-main-header" class="hidden md:flex sticky top-0 z-40 px-5 py-4 justify-between items-center glass border-b border-white/5">
-                <button id="desktop-location-label" onclick="openLocationModal()" class="px-3 py-1.5 max-w-[55%] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90 hover:bg-white/20 transition-colors">Set location</button>
+                <p id="desktop-location-display" class="px-3 py-1.5 max-w-[55%] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90">Set location</p>
                 <div class="flex items-center gap-4">
+                    <button id="desktop-location-btn" type="button" onclick="handleLocationToggleTap(event, 'desktop-location-btn')" class="location-fab w-6 h-6 grid place-items-center" aria-label="Location">
+                        <svg class="location-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
+                            <path class="nav-icon-fill" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
+                        </svg>
+                    </button>
                     <div class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
                         <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
                     </div>
                     <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
-                    <button id="desktop-location-btn" type="button" onclick="toggleLocationFromHeader('desktop-location-btn')" class="w-8 h-8 rounded-full loc-liquid-off backdrop-blur-md text-white grid place-items-center transition-all">
-                        <i data-lucide="navigation" class="w-4 h-4"></i>
-                    </button>
                 </div>
             </header>
 
@@ -216,7 +278,7 @@
                                 </div>
                                 <div class="relative">
                                     <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                    <input id="event-location" type="text" placeholder="Location" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                    <input id="event-location" type="text" readonly onclick="openLocationModal('event')" placeholder="Select location from map" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10 cursor-pointer">
                                 </div>
                                 <label class="text-xs text-gray-400 flex items-center gap-2">
                                     <input id="event-use-current-location" type="checkbox" checked class="accent-fuchsia-500">
@@ -358,8 +420,8 @@
         </div>
 
         <!-- Location Popup Modal -->
-        <div id="location-modal" class="fixed inset-0 z-[70] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
-            <div id="location-modal-card" class="absolute left-1/2 top-1/2 w-[94%] max-w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-slate-900/95 p-4 md:p-6 shadow-2xl transform scale-95 transition-transform duration-300">
+        <div id="location-modal" class="fixed inset-0 z-[70] hidden opacity-0 transition-opacity duration-300 bg-slate-950/55 backdrop-blur-xl">
+            <div id="location-modal-card" class="absolute left-1/2 top-1/2 w-[94%] max-w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/15 bg-gradient-to-br from-slate-900/88 via-slate-900/80 to-violet-950/65 backdrop-blur-2xl p-4 md:p-6 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-black text-white">Set Location</h3>
                     <button type="button" onclick="closeLocationModal()" class="text-gray-400 hover:text-white">
@@ -367,13 +429,27 @@
                     </button>
                 </div>
                 <div class="space-y-3">
-                    <input id="location-modal-input" type="text" maxlength="80" placeholder="Search location in India..." class="w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 outline-none focus:border-cyan-400 text-sm text-white">
-                    <div id="location-modal-suggestions" class="hidden rounded-xl border border-white/10 bg-slate-900/90 divide-y divide-white/5 overflow-hidden"></div>
-                    <p class="text-[11px] text-gray-400">Click or drag marker on map to choose exact location.</p>
-                    <p id="location-modal-error" class="hidden text-xs text-rose-300"></p>
+                    <div class="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2">
+                        <div>
+                            <p class="text-sm font-semibold text-white">Location</p>
+                        </div>
+                        <button id="location-modal-enabled-toggle" type="button" onclick="toggleLocationModalEnabled()" class="inline-flex items-center gap-2">
+                            <span id="location-modal-enabled-track" class="relative h-7 w-12 rounded-full bg-[#34a853] transition-colors duration-300">
+                                <span id="location-modal-enabled-knob" class="absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transform transition-transform duration-300"></span>
+                            </span>
+                            <span id="location-modal-enabled-text" class="text-xs font-semibold text-emerald-300">ON</span>
+                        </button>
+                    </div>
                     <div class="rounded-xl overflow-hidden border border-white/10 bg-slate-900/50">
                         <div id="location-modal-map" class="w-full h-72"></div>
                     </div>
+                    <div class="rounded-xl border border-white/10 bg-slate-900/60 p-2.5">
+                        <input id="location-modal-input" type="text" maxlength="80" placeholder="Search location" class="w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-white/10 outline-none focus:border-cyan-400 text-sm text-white">
+                        <button id="location-modal-detected-inline" type="button" onclick="useDetectedLocationInModal()" class="mt-2 block text-left text-xs text-cyan-300 hover:text-cyan-200 transition-colors">Detected: Not detected yet</button>
+                    </div>
+                    <div id="location-modal-suggestions" class="hidden rounded-xl border border-white/10 bg-slate-900/90 divide-y divide-white/5 overflow-hidden"></div>
+                    <p class="text-[11px] text-gray-400">Click or drag marker on map to choose exact location.</p>
+                    <p id="location-modal-error" class="hidden text-xs text-rose-300"></p>
                     <div class="flex gap-3 pt-1">
                         <button type="button" onclick="saveLocationModal()" class="px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save location</button>
                         <button type="button" onclick="clearLocationModal()" class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
@@ -571,6 +647,13 @@
         let locationModalSelectedBounds = null;
         let locationModalSearchTimer = null;
         let locationModalAbortController = null;
+        let locationModalContext = 'default';
+        const LOCATION_HOLD_MS = 550;
+        const locationHoldState = {
+            activeButtonId: null,
+            timerId: null,
+            suppressTapButtonId: null
+        };
 
         function getLocalityLabelFromAddress(address) {
             if (!address) return '';
@@ -743,15 +826,22 @@
             updateLocationModalFromMap();
         }
 
-        function openLocationModal() {
+        function openLocationModal(context = 'default') {
             const modal = document.getElementById('location-modal');
             const card = document.getElementById('location-modal-card');
             if (!modal || !card) return;
+            locationModalContext = context;
             initLocationModalMap();
             const input = document.getElementById('location-modal-input');
             if (input) {
-                input.value = state.customLocationName || state.detectedLocationName || '';
+                if (context === 'event') {
+                    const eventLocationInput = document.getElementById('event-location');
+                    input.value = (eventLocationInput?.value || '').trim() || state.detectedLocationName || '';
+                } else {
+                    input.value = state.customLocationName || state.detectedLocationName || '';
+                }
             }
+            updateLocationModalMeta();
             showLocationModalError('');
             modal.classList.remove('hidden');
             setTimeout(() => {
@@ -776,6 +866,14 @@
         function saveLocationModal() {
             const input = document.getElementById('location-modal-input');
             const value = (input?.value || '').trim();
+            if (locationModalContext === 'event') {
+                const eventLocationInput = document.getElementById('event-location');
+                if (eventLocationInput) {
+                    eventLocationInput.value = value;
+                }
+                closeLocationModal();
+                return;
+            }
             if (value) {
                 localStorage.setItem('vibe_custom_location_name', value);
             } else {
@@ -794,6 +892,16 @@
         }
 
         function clearLocationModal() {
+            if (locationModalContext === 'event') {
+                const eventLocationInput = document.getElementById('event-location');
+                if (eventLocationInput) {
+                    eventLocationInput.value = '';
+                }
+                const input = document.getElementById('location-modal-input');
+                if (input) input.value = '';
+                hideLocationModalSuggestions();
+                return;
+            }
             localStorage.removeItem('vibe_custom_location_name');
             localStorage.removeItem('vibe_custom_location_center');
             localStorage.removeItem('vibe_custom_location_bounds');
@@ -806,9 +914,7 @@
 
         function renderTopLocationUi() {
             const labelText = getLocationLabel();
-            const mobileLabel = document.getElementById('mobile-location-label');
-            const desktopLabel = document.getElementById('desktop-location-label');
-            if (mobileLabel) mobileLabel.textContent = labelText;
+            const desktopLabel = document.getElementById('desktop-location-display');
             if (desktopLabel) desktopLabel.textContent = labelText;
 
             ['mobile-location-btn', 'desktop-location-btn'].forEach((id) => {
@@ -817,19 +923,33 @@
                 btn.classList.remove('loc-on', 'loc-liquid-off');
                 btn.classList.add(state.locationEnabled ? 'loc-on' : 'loc-liquid-off');
             });
+            const desktopLocationBtn = document.getElementById('desktop-location-btn');
+            if (desktopLocationBtn) {
+                desktopLocationBtn.title = state.detectedLocationName
+                    ? `Detected: ${state.detectedLocationName}`
+                    : 'Detected location not available yet';
+            }
+            updateLocationModalMeta();
         }
 
-        function toggleLocationFromHeader(buttonId) {
-            state.locationEnabled = !state.locationEnabled;
+        function animateLocationToggleButton(buttonId) {
             const btn = document.getElementById(buttonId);
             if (btn) {
                 btn.classList.remove('loc-burst');
                 void btn.offsetWidth;
                 btn.classList.add('loc-burst');
             }
+        }
+
+        function setLocationEnabled(enabled) {
+            if (state.locationEnabled === enabled) {
+                renderTopLocationUi();
+                return;
+            }
+            state.locationEnabled = enabled;
             renderTopLocationUi();
 
-            if (state.locationEnabled) {
+            if (enabled) {
                 setLocationStatus('Location is ON. Detecting location...');
                 detectUserLocationAndLoad();
             } else {
@@ -841,6 +961,100 @@
                 setLocationStatus('Location is OFF. Nearby detection stopped.');
                 renderTopLocationUi();
             }
+        }
+
+        function updateLocationModalMeta() {
+            const detectedLabel = document.getElementById('location-modal-detected-inline');
+            if (detectedLabel) {
+                detectedLabel.textContent = state.detectedLocationName
+                    ? `Detected: ${state.detectedLocationName}`
+                    : 'Detected: Not detected yet';
+            }
+            const track = document.getElementById('location-modal-enabled-track');
+            const knob = document.getElementById('location-modal-enabled-knob');
+            const text = document.getElementById('location-modal-enabled-text');
+            if (track && knob && text) {
+                const on = !!state.locationEnabled;
+                track.classList.toggle('bg-[#34a853]', on);
+                track.classList.toggle('bg-[#5f6368]', !on);
+                knob.classList.toggle('translate-x-0', !on);
+                knob.classList.toggle('translate-x-5', on);
+                text.textContent = on ? 'ON' : 'OFF';
+                text.classList.toggle('text-emerald-300', on);
+                text.classList.toggle('text-gray-300', !on);
+            }
+        }
+
+        function toggleLocationModalEnabled() {
+            setLocationEnabled(!state.locationEnabled);
+        }
+
+        async function useDetectedLocationInModal() {
+            if (!state.detectedLocationName) return;
+            const input = document.getElementById('location-modal-input');
+            if (input) {
+                input.value = state.detectedLocationName;
+            }
+            if (state.userLocation && locationModalMap && locationModalMarker) {
+                const latLng = L.latLng(state.userLocation.latitude, state.userLocation.longitude);
+                locationModalMap.setView(latLng, 14);
+                locationModalMarker.setLatLng(latLng);
+                updateLocationModalFromMap();
+                return;
+            }
+            const results = await locationModalSearch(state.detectedLocationName, 1);
+            if (results.length > 0) {
+                applyLocationModalResult(results[0]);
+            }
+        }
+
+        function startLocationButtonHold(buttonId) {
+            clearLocationButtonHold();
+            locationHoldState.activeButtonId = buttonId;
+            locationHoldState.timerId = window.setTimeout(() => {
+                locationHoldState.suppressTapButtonId = buttonId;
+                openLocationModal();
+            }, LOCATION_HOLD_MS);
+        }
+
+        function clearLocationButtonHold() {
+            if (locationHoldState.timerId) {
+                clearTimeout(locationHoldState.timerId);
+            }
+            locationHoldState.activeButtonId = null;
+            locationHoldState.timerId = null;
+        }
+
+        function handleLocationToggleTap(event, buttonId) {
+            if (locationHoldState.suppressTapButtonId === buttonId) {
+                event.preventDefault();
+                locationHoldState.suppressTapButtonId = null;
+                clearLocationButtonHold();
+                return;
+            }
+            clearLocationButtonHold();
+            animateLocationToggleButton(buttonId);
+        }
+
+        function bindLocationButtonGestures(buttonId) {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+            btn.addEventListener('pointerdown', () => {
+                btn.classList.add('is-pressing');
+                startLocationButtonHold(buttonId);
+            });
+            btn.addEventListener('pointerup', () => {
+                btn.classList.remove('is-pressing');
+                clearLocationButtonHold();
+            });
+            btn.addEventListener('pointerleave', () => {
+                btn.classList.remove('is-pressing');
+                clearLocationButtonHold();
+            });
+            btn.addEventListener('pointercancel', () => {
+                btn.classList.remove('is-pressing');
+                clearLocationButtonHold();
+            });
         }
 
         function serverEventToPost(eventData) {
@@ -1000,6 +1214,8 @@
                     }
                 });
             }
+            bindLocationButtonGestures('mobile-location-btn');
+            bindLocationButtonGestures('desktop-location-btn');
             renderTopLocationUi();
             renderFeed();
             renderStories();
