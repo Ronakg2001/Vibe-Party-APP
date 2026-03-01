@@ -192,32 +192,81 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     opacity: 1;
   }
 }
-
-.loc-liquid-off {
-  background: solid rgba(255, 255, 255, 0.14);
-  border: 1px;
+/* Extracted from home_page.html inline style */
+.location-fab {
+    position: relative;
+    overflow: visible;
+    transition: transform 180ms ease, color 220ms ease, opacity 220ms ease;
+    color: #ffffff;
+    opacity: 1;
 }
-
-.loc-on {
-  background: solid rgba(69, 7, 151, 0.85);
-  border: 1px;
+.location-fab:hover {
+    color: #d946ef;
+    opacity: 1;
 }
-
-.loc-burst {
-  animation: locBurst 0.45s ease-out;
+.location-fab.is-pressing {
+    transform: scale(0.92);
 }
-
-@keyframes locBurst {
-  0% {
+.location-fab.loc-liquid-off {
+    color: white;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.location-fab.loc-on {
+    color:  #d946ef;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.location-fab.loc-liquid-off .location-nav-icon .nav-icon-fill {
+    opacity: 0;
+    transform: scale(0.25);
+}
+.location-fab.loc-on .location-nav-icon .nav-icon-outline {
+    stroke: #d946ef;
+}
+.location-fab.icon-burst {
+    animation: navIconFly 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.location-nav-icon {
+    width: 22px;
+    height: 22px;
+    display: block;
+}
+.location-nav-icon.icon-fly {
+    animation: navIconFly 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.location-nav-icon .nav-icon-outline {
+    fill: transparent;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+.location-nav-icon .nav-icon-fill {
+    fill: currentColor;
+    opacity: 0;
+    transform-origin: 50% 50%;
+    transform: scale(0.25);
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+.location-fab.loc-on .location-nav-icon .nav-icon-fill {
+    opacity: 1;
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(34, 194, 197, 0.537);
-  }
-  60% {
-    transform: scale(1.15);
-    box-shadow: 0 0 0 14px rgba(34, 192, 197, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(34, 197, 197, 0);
-  }
+}
+@keyframes navIconFly {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+        filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
+    }
+    50% {
+        transform: translate(6px, -9px) rotate(-14deg) scale(1.08);
+        filter: drop-shadow(0 6px 8px rgba(102, 232, 255, 0.32));
+    }
+    100% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+        filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
+    }
 }
