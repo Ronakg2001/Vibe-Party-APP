@@ -25,9 +25,11 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 20% 20%, rgba(217, 70, 239, 0.18), transparent 35%),
-    radial-gradient(circle at 80% 70%, rgba(34, 211, 238, 0.16), transparent 30%),
-    linear-gradient(165deg, #1a1140 0%, #090f1f 60%);
+    radial-gradient(circle at 20% 20%, rgba(217, 70, 239, 0.12), transparent 38%),
+    radial-gradient(circle at 80% 70%, rgba(34, 211, 238, 0.1), transparent 34%),
+    rgba(10, 18, 34, 0.45);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
   transition: opacity 0.38s ease, visibility 0.38s ease;
 }
 
@@ -189,4 +191,82 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     transform: scaleY(1);
     opacity: 1;
   }
+}
+/* Extracted from home_page.html inline style */
+.location-fab {
+    position: relative;
+    overflow: visible;
+    transition: transform 180ms ease, color 220ms ease, opacity 220ms ease;
+    color: #ffffff;
+    opacity: 1;
+}
+.location-fab:hover {
+    color: #d946ef;
+    opacity: 1;
+}
+.location-fab.is-pressing {
+    transform: scale(0.92);
+}
+.location-fab.loc-liquid-off {
+    color: white;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.location-fab.loc-on {
+    color:  #d946ef;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.location-fab.loc-liquid-off .location-nav-icon .nav-icon-fill {
+    opacity: 0;
+    transform: scale(0.25);
+}
+.location-fab.loc-on .location-nav-icon .nav-icon-outline {
+    stroke: #d946ef;
+}
+.location-fab.icon-burst {
+    animation: navIconFly 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.location-nav-icon {
+    width: 22px;
+    height: 22px;
+    display: block;
+}
+.location-nav-icon.icon-fly {
+    animation: navIconFly 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.location-nav-icon .nav-icon-outline {
+    fill: transparent;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+.location-nav-icon .nav-icon-fill {
+    fill: currentColor;
+    opacity: 0;
+    transform-origin: 50% 50%;
+    transform: scale(0.25);
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+.location-fab.loc-on .location-nav-icon .nav-icon-fill {
+    opacity: 1;
+    transform: scale(1);
+}
+@keyframes navIconFly {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+        filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
+    }
+    50% {
+        transform: translate(6px, -9px) rotate(-14deg) scale(1.08);
+        filter: drop-shadow(0 6px 8px rgba(102, 232, 255, 0.32));
+    }
+    100% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+        filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
+    }
 }
