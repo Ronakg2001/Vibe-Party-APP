@@ -61,7 +61,9 @@ def _get_db():
             db.user_profiles.create_index([("email", ASCENDING)])
             db.user_profiles.create_index([("search_text", ASCENDING)])
             db.events.create_index([("sql_event_id", ASCENDING)], unique=True)
+            db.events.create_index([("event_id", ASCENDING)], unique=True)
             db.events.create_index([("host_sql_user_id", ASCENDING), ("created_at", ASCENDING)])
+            db.events.create_index([("status", ASCENDING), ("event_category", ASCENDING)])
             db.events.create_index([("location", GEOSPHERE)])
             _index_initialized = True
         except PyMongoError:
@@ -77,6 +79,7 @@ def is_enabled():
 
 def _build_profile_doc(user, profile):
     full_name = (user.first_name or "").strip()
+    hosted_events_count = Event.objects.filter(host_id=user.id).count()
     return {
         "sql_user_id": user.id,
         "username": user.username,
@@ -88,6 +91,7 @@ def _build_profile_doc(user, profile):
         "bio": profile.bio or "",
         "profile_picture_url": profile.profile_picture_url or "",
         "gov_id_verified": bool(profile.gov_id_verified),
+        "hosted_events_count": hosted_events_count,
         "search_text": " ".join(
             part for part in [user.username, user.email, full_name, profile.mobile] if part
         ).lower(),
@@ -144,22 +148,40 @@ def search_profiles(query, limit=20):
 def _serialize_event_doc(event):
     lat = float(event.latitude)
     lon = float(event.longitude)
+    media_assets = [
+        {
+            "media_type": item.media_type,
+            "file_url": item.file_url,
+            "sort_order": item.sort_order,
+        }
+        for item in event.media_items.all()
+    ]
+    cover_image = media_assets[0]["file_url"] if media_assets else event.image_url or ""
     return {
         "sql_event_id": event.id,
+        "event_id": str(event.event_uid),
+        "user_id": event.host_id,
         "host_sql_user_id": event.host_id,
         "host_username": event.host.username,
         "title": event.title,
         "description": event.description or "",
         "start_label": event.start_label or "",
+        "end_label": event.end_label or "",
+        "event_category": event.event_category or "party",
         "location_name": event.location_name,
         "location": {"type": "Point", "coordinates": [lon, lat]},
         "latitude": lat,
         "longitude": lon,
         "price": _to_float(event.price),
-        "image_url": event.image_url or "",
+        "currency": event.currency or "INR",
+        "max_attendees": int(event.max_attendees or 0),
+        "tickets_sold": int(event.tickets_sold or 0),
+        "status": event.status or "published",
+        "image_url": cover_image,
+        "media_assets": media_assets,
         "is_active": bool(event.is_active),
         "created_at": event.created_at or _utc_now(),
-        "updated_at": _utc_now(),
+        "updated_at": event.updated_at or _utc_now(),
     }
 
 
@@ -169,7 +191,7 @@ def sync_event(event_id):
         return False
 
     try:
-        event = Event.objects.select_related("host").get(id=event_id)
+        event = Event.objects.select_related("host").prefetch_related("media_items").get(id=event_id)
     except Event.DoesNotExist:
         db.events.delete_one({"sql_event_id": event_id})
         return True

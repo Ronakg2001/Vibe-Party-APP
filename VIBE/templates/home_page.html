@@ -38,7 +38,6 @@
                 <div class="eq-bar bar-4"></div>
                 <div class="eq-bar bar-5"></div>
             </div>
-            <p class="party-loader-text">Tuning the party vibe...</p>
         </div>
     </div>
 
@@ -64,19 +63,19 @@
             <nav class="flex flex-col gap-4 flex-1">
                 <button onclick="switchTab('home')" class="nav-btn active group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="home">
                     <i data-lucide="home" class="w-6 h-6 transition-colors"></i>
-                    <span class="font-bold text-lg group-hover:text-white transition-colors">Home</span>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">For You</span>
                 </button>
                 <button onclick="switchTab('search')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="search">
-                    <i data-lucide="search" class="w-6 h-6 transition-colors"></i>
-                    <span class="font-bold text-lg group-hover:text-white transition-colors">Search</span>
+                    <i data-lucide="compass" class="w-6 h-6 transition-colors"></i>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">Discover</span>
                 </button>
                 <button onclick="switchTab('add')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="add">
-                    <i data-lucide="plus-square" class="w-6 h-6 transition-colors"></i>
+                    <i data-lucide="rocket" class="w-6 h-6 transition-colors"></i>
                     <span class="font-bold text-lg group-hover:text-white transition-colors">Create</span>
                 </button>
                 <button onclick="switchTab('tickets')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="tickets">
                     <i data-lucide="ticket" class="w-6 h-6 transition-colors"></i>
-                    <span class="font-bold text-lg group-hover:text-white transition-colors">Tickets</span>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">My Events</span>
                 </button>
                 <button onclick="switchTab('profile')" class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400" data-target="profile">
                     <i data-lucide="user" class="w-6 h-6 transition-colors"></i>
@@ -185,12 +184,15 @@
                         </div>
 
                         <form onsubmit="handlePostSubmit(event)" class="flex flex-col gap-5">
-                            <div class="w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800">
+                            <label for="event-media-input" class="w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800">
                                 <div class="flex flex-col items-center gap-3">
                                     <div class="p-4 bg-white/5 rounded-full"><i data-lucide="image-plus" class="w-8 h-8"></i></div>
-                                    <span class="text-sm font-medium">Upload Visuals</span>
+                                    <span class="text-sm font-medium">Upload Visuals (Max 10)</span>
                                 </div>
-                            </div>
+                            </label>
+                            <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*">
+                            <div id="event-media-hint" class="text-xs text-gray-400">No media selected.</div>
+                            <div id="event-media-list" class="hidden rounded-xl border border-white/10 bg-slate-900/60 divide-y divide-white/5 overflow-hidden"></div>
 
                             <textarea id="post-caption" placeholder="What's the vibe?" class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
 
@@ -199,9 +201,22 @@
                                     <i data-lucide="zap" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
                                     <input id="event-title" type="text" placeholder="Event Title" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
                                 </div>
-                                <div class="flex gap-3">
-                                    <input id="event-date" type="text" placeholder="Date/Time" class="flex-1 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
-                                    <input id="event-price" type="number" placeholder="Price" class="w-24 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                <div class="relative">
+                                    <i data-lucide="layout-grid" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                    <select id="event-type" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                        <option value="local event">Local event</option>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div class="relative md:col-span-1">
+                                        <i data-lucide="calendar-days" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                        <input id="event-date" type="date" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                    </div>
+                                    <div class="relative md:col-span-1">
+                                        <i data-lucide="clock-3" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                        <input id="event-time" type="time" class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                    </div>
+                                    <input id="event-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Price" class="no-number-spinner w-full p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
                                 </div>
                                 <div class="relative">
                                     <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
@@ -220,14 +235,30 @@
 
                 <!-- TICKETS VIEW -->
                 <div id="view-tickets" class="view-section">
-                    <div class="p-5 pt-4 flex flex-col gap-6 md:grid md:grid-cols-2 md:gap-4 md:px-6" id="tickets-list">
-                        <!-- Tickets injected here -->
-                    </div>
-                    <div id="empty-tickets" class="text-center py-24 text-gray-600 hidden col-span-2">
-                        <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <i data-lucide="disc" class="w-10 h-10 animate-spin-slow opacity-50"></i>
+                    <div class="p-5 pt-4 md:px-6">
+                        <h2 class="text-3xl font-black mb-6 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">My Events</h2>
+                        <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-6 max-w-xs">
+                            <button type="button" onclick="switchMyEventsTab('tickets')" id="btn-my-events-tickets" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Tickets</button>
+                            <button type="button" onclick="switchMyEventsTab('event')" id="btn-my-events-event" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
                         </div>
-                        <p class="font-medium">No passes yet.</p>
+                    </div>
+                    <div id="tickets-panel" class="p-5 pt-0 md:px-6">
+                        <div id="tickets-list" class="flex flex-col gap-6 md:grid md:grid-cols-2 md:gap-4"></div>
+                        <div id="empty-tickets" class="text-center py-24 text-gray-600 hidden col-span-2">
+                            <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <i data-lucide="disc" class="w-10 h-10 animate-spin-slow opacity-50"></i>
+                            </div>
+                            <p class="font-medium">No passes yet.</p>
+                        </div>
+                    </div>
+                    <div id="event-panel" class="hidden p-5 pt-0 md:px-6">
+                        <div id="hosted-events-list" class="flex flex-col gap-6 md:grid md:grid-cols-2 md:gap-4"></div>
+                        <div id="empty-hosted-events" class="text-center py-24 text-gray-600 hidden col-span-2">
+                            <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <i data-lucide="calendar-days" class="w-10 h-10 opacity-50"></i>
+                            </div>
+                            <p class="font-medium">No hosted events yet.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -317,12 +348,12 @@
                     <i data-lucide="home" class="w-6 h-6"></i>
                 </button>
                 <button onclick="switchTab('search')" class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all" data-target="search">
-                    <i data-lucide="search" class="w-6 h-6"></i>
+                    <i data-lucide="compass" class="w-6 h-6"></i>
                 </button>
                 
                 <div class="relative -top-8">
                     <button onclick="switchTab('add')" class="w-14 h-14 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-fuchsia-500/40 border-4 border-slate-900 active:scale-90 transition-transform">
-                        <i data-lucide="plus" class="w-7 h-7 text-white stroke-[3px]"></i>
+                        <i data-lucide="rocket" class="w-7 h-7 text-white stroke-[2px]"></i>
                     </button>
                 </div>
 

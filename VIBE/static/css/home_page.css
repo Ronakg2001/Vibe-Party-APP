@@ -256,6 +256,17 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     opacity: 1;
     transform: scale(1);
 }
+
+.no-number-spinner::-webkit-outer-spin-button,
+.no-number-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.no-number-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
 @keyframes navIconFly {
     0% {
         transform: translate(0, 0) rotate(0deg) scale(1);

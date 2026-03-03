@@ -14,7 +14,9 @@ const csrfTokenTemplate = bootConfig.csrfToken || '';
 const currentAvatarTemplate = bootConfig.currentAvatarUrl || '';
 const state = {
     activeTab: 'home',
+    myEventsTab: 'tickets',
     isEventMode: false,
+    pendingEventMedia: [],
     currentUser: {
         username: currentUsernameTemplate,
         avatar: currentAvatarTemplate || defaultAvatar,
@@ -108,6 +110,26 @@ function renderCurrentUserProfile() {
     if (bioEl) bioEl.textContent = state.currentUser.bio || 'No bio added yet.';
 }
 
+async function postFormData(url, formData) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        credentials: 'same-origin',
+        body: formData
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed.');
+    }
+    return data;
+}
+
+function getHostedEvents() {
+    return getAllPosts().filter((post) => post.isEvent && post.username === state.currentUser.username);
+}
+
 async function loadCurrentUserProfile() {
     try {
         const data = await getJson('/api/profile/me');
@@ -121,6 +143,7 @@ async function loadCurrentUserProfile() {
     }
     renderCurrentUserProfile();
     renderProfileGrid();
+    renderHostedEventList();
 }
 
 function getAllPosts() {
@@ -610,6 +633,7 @@ function bindLocationButtonGestures(buttonId) {
 }
 
 function serverEventToPost(eventData) {
+    const mediaUrls = eventData.mediaUrls || [];
     return {
         id: `event-${eventData.id}`,
         username: eventData.hostUsername || 'host',
@@ -624,7 +648,9 @@ function serverEventToPost(eventData) {
             location: eventData.locationName,
             price: eventData.price,
             mapUrl: eventData.mapUrl,
-            distanceKm: eventData.distanceKm
+            distanceKm: eventData.distanceKm,
+            eventType: eventData.eventCategory || 'local event',
+            mediaCount: mediaUrls.length
         }
     };
 }
@@ -775,6 +801,13 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCurrentUserProfile();
     renderProfileGrid();
     renderTicketList();
+    renderHostedEventList();
+    switchMyEventsTab('tickets');
+    const eventMediaInput = document.getElementById('event-media-input');
+    if (eventMediaInput) {
+        eventMediaInput.addEventListener('change', handleEventMediaInputChange);
+    }
+    renderSelectedEventMedia();
     loadCurrentUserProfile();
     switchTab(getInitialTabFromUrl());
     lucide.createIcons();
@@ -939,6 +972,66 @@ function renderTicketList() {
     lucide.createIcons();
 }
 
+function renderHostedEventList() {
+    const container = document.getElementById('hosted-events-list');
+    const emptyState = document.getElementById('empty-hosted-events');
+    if (!container || !emptyState) return;
+
+    const hostedEvents = getHostedEvents();
+    if (hostedEvents.length === 0) {
+        emptyState.classList.remove('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    emptyState.classList.add('hidden');
+    container.innerHTML = hostedEvents.map((eventPost) => `
+        <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer" onclick="openBookingModal('${eventPost.id}')">
+            <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 via-violet-600 to-fuchsia-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
+            <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
+                <div class="h-28 w-full relative">
+                    <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
+                    <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                    <div class="absolute bottom-3 left-4">
+                        <h3 class="font-black text-lg tracking-wide text-white">${eventPost.eventDetails.title}</h3>
+                        <p class="text-xs text-gray-300 mt-0.5">${eventPost.eventDetails.location}</p>
+                    </div>
+                </div>
+                <div class="p-4 flex items-center justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div>
+                        <div class="font-bold text-white text-sm">${eventPost.eventDetails.date}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
+                        <div class="font-black text-fuchsia-400">$${eventPost.eventDetails.price}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function switchMyEventsTab(tabId) {
+    state.myEventsTab = tabId === 'event' ? 'event' : 'tickets';
+    const ticketsBtn = document.getElementById('btn-my-events-tickets');
+    const eventBtn = document.getElementById('btn-my-events-event');
+    const ticketsPanel = document.getElementById('tickets-panel');
+    const eventPanel = document.getElementById('event-panel');
+
+    if (state.myEventsTab === 'tickets') {
+        if (ticketsBtn) ticketsBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg';
+        if (eventBtn) eventBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white';
+        if (ticketsPanel) ticketsPanel.classList.remove('hidden');
+        if (eventPanel) eventPanel.classList.add('hidden');
+    } else {
+        if (eventBtn) eventBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/20';
+        if (ticketsBtn) ticketsBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white';
+        if (eventPanel) eventPanel.classList.remove('hidden');
+        if (ticketsPanel) ticketsPanel.classList.add('hidden');
+    }
+}
+
 // --- Interaction Logic ---
 
 function switchTab(tabId) {
@@ -987,6 +1080,11 @@ function switchTab(tabId) {
     if (tabId === 'profile') {
         loadCurrentUserProfile();
     }
+    if (tabId === 'tickets') {
+        renderTicketList();
+        renderHostedEventList();
+        switchMyEventsTab(state.myEventsTab);
+    }
 }
 
 function togglePostType(isEvent) {
@@ -1006,6 +1104,46 @@ function togglePostType(isEvent) {
         eventFields.classList.add('hidden');
         eventFields.classList.remove('flex');
     }
+}
+
+function renderSelectedEventMedia() {
+    const hint = document.getElementById('event-media-hint');
+    const list = document.getElementById('event-media-list');
+    if (!hint || !list) return;
+    if (state.pendingEventMedia.length === 0) {
+        hint.textContent = 'No media selected.';
+        list.classList.add('hidden');
+        list.innerHTML = '';
+        return;
+    }
+    hint.textContent = `${state.pendingEventMedia.length} file(s) selected.`;
+    list.classList.remove('hidden');
+    list.innerHTML = state.pendingEventMedia.map((file, idx) => {
+        const typeLabel = (file.type || '').startsWith('video/') ? 'Video' : 'Image';
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+        return `<div class="px-3 py-2 flex items-center justify-between gap-3"><div class="text-sm text-white truncate">${idx + 1}. ${file.name}</div><div class="text-xs text-gray-400">${typeLabel} - ${sizeMb} MB</div></div>`;
+    }).join('');
+}
+
+function handleEventMediaInputChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length > 10) {
+        alert('You can upload a maximum of 10 images/videos.');
+        event.target.value = '';
+        state.pendingEventMedia = [];
+        renderSelectedEventMedia();
+        return;
+    }
+    const invalidFile = files.find((file) => !(file.type || '').startsWith('image/') && !(file.type || '').startsWith('video/'));
+    if (invalidFile) {
+        alert('Only image and video files are allowed.');
+        event.target.value = '';
+        state.pendingEventMedia = [];
+        renderSelectedEventMedia();
+        return;
+    }
+    state.pendingEventMedia = files;
+    renderSelectedEventMedia();
 }
 
 async function handlePostSubmit(e) {
@@ -1030,23 +1168,39 @@ async function handlePostSubmit(e) {
             setLocationStatus('Please detect your location before creating an event.', true);
             return;
         }
+        const priceValue = Number(document.getElementById('event-price').value || 0);
+        if (!Number.isFinite(priceValue) || priceValue < 0) {
+            setLocationStatus('Price cannot be less than 0.', true);
+            return;
+        }
+        const selectedDate = document.getElementById('event-date').value;
+        const selectedTime = document.getElementById('event-time').value;
+        const startLabel = [selectedDate, selectedTime].filter(Boolean).join(' ');
 
         try {
-            const result = await postJson('/api/events/create', {
-                title: document.getElementById('event-title').value.trim(),
-                description: document.getElementById('post-caption').value.trim(),
-                startLabel: document.getElementById('event-date').value.trim(),
-                locationName: document.getElementById('event-location').value.trim(),
-                price: document.getElementById('event-price').value || 0,
-                latitude: state.userLocation?.latitude,
-                longitude: state.userLocation?.longitude
+            const formData = new FormData();
+            formData.append('title', document.getElementById('event-title').value.trim());
+            formData.append('description', document.getElementById('post-caption').value.trim());
+            formData.append('startLabel', startLabel);
+            formData.append('locationName', document.getElementById('event-location').value.trim());
+            formData.append('price', String(priceValue));
+            formData.append('latitude', String(state.userLocation?.latitude || ''));
+            formData.append('longitude', String(state.userLocation?.longitude || ''));
+            formData.append('eventCategory', document.getElementById('event-type').value || 'local event');
+            formData.append('currency', 'INR');
+            state.pendingEventMedia.forEach((file) => {
+                formData.append('eventMedia', file);
             });
+            const result = await postFormData('/api/events/create', formData);
             if (result?.event) {
                 state.nearbyEventPosts.unshift(serverEventToPost(result.event));
                 renderFeed();
                 renderProfileGrid();
+                renderHostedEventList();
                 switchTab('home');
                 e.target.reset();
+                state.pendingEventMedia = [];
+                renderSelectedEventMedia();
                 return;
             }
         } catch (error) {
@@ -1058,6 +1212,7 @@ async function handlePostSubmit(e) {
     state.posts.unshift(newPost);
     renderFeed();
     renderProfileGrid();
+    renderHostedEventList();
     switchTab('home');
     e.target.reset(); // clear form
 }
