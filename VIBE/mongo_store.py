@@ -156,7 +156,8 @@ def _serialize_event_doc(event):
         }
         for item in event.media_items.all()
     ]
-    cover_image = media_assets[0]["file_url"] if media_assets else event.image_url or ""
+    image_assets = [item["file_url"] for item in media_assets if item["media_type"] == "image"]
+    cover_image = image_assets[0] if image_assets else (media_assets[0]["file_url"] if media_assets else event.image_url or "")
     return {
         "sql_event_id": event.id,
         "event_id": str(event.event_uid),

@@ -12,6 +12,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.core.files.storage import default_storage
 from django.utils.text import slugify
+from django.conf import settings
+from urllib.parse import urlparse
 
 from . import mongo_store
 from .models import Event, EventMedia
@@ -130,7 +132,8 @@ def _serialize_event(event, distance_km=None):
     lon = float(event.longitude)
     media_items = list(event.media_items.all()) if hasattr(event, "media_items") else []
     media_urls = [item.file_url for item in media_items]
-    cover_url = media_urls[0] if media_urls else event.image_url
+    image_media = [item.file_url for item in media_items if item.media_type == EventMedia.MediaType.IMAGE]
+    cover_url = image_media[0] if image_media else (media_urls[0] if media_urls else event.image_url)
     data = {
         "id": event.id,
         "eventId": str(event.event_uid),
@@ -265,7 +268,8 @@ def create_event_api(request):
 
     if created_media:
         EventMedia.objects.bulk_create(created_media)
-        event.image_url = created_media[0].file_url
+        first_image = next((item.file_url for item in created_media if item.media_type == EventMedia.MediaType.IMAGE), None)
+        event.image_url = first_image or created_media[0].file_url
         event.save(update_fields=["image_url", "updated_at"])
 
     mongo_store.sync_event(event.id)
@@ -277,6 +281,37 @@ def create_event_api(request):
             "event": _serialize_event(Event.objects.select_related("host").prefetch_related("media_items").get(id=event.id)),
         }
     )
+
+
+@require_http_methods(["DELETE"])
+def delete_event_api(request, event_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    try:
+        event = Event.objects.select_related("host").prefetch_related("media_items").get(id=event_id)
+    except Event.DoesNotExist:
+        return _error("Event not found.", status=404)
+
+    if event.host_id != request.user.id:
+        return _error("You are not allowed to delete this event.", status=403)
+
+    media_urls = [item.file_url for item in event.media_items.all()]
+    for media_url in media_urls:
+        try:
+            parsed = urlparse(media_url)
+            media_path = parsed.path or ""
+            if media_path.startswith(settings.MEDIA_URL):
+                rel_path = media_path[len(settings.MEDIA_URL):].lstrip("/")
+                if rel_path:
+                    default_storage.delete(rel_path)
+        except Exception:
+            # Do not block deletion if storage cleanup fails.
+            pass
+
+    event.delete()
+    mongo_store.sync_user_profile(request.user.id)
+    return JsonResponse({"message": "Event deleted successfully.", "eventId": event_id})
 
 
 @require_GET

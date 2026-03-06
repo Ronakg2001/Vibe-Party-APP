@@ -17,6 +17,16 @@ const state = {
     myEventsTab: 'tickets',
     isEventMode: false,
     pendingEventMedia: [],
+    pendingEventMediaPreviewUrls: [],
+    pendingMediaIndex: 0,
+    pendingSwipeStartX: 0,
+    postMediaIndexes: {},
+    postSwipeStartX: {},
+    hostedMenuEventPostId: null,
+    hostedPressTimerId: null,
+    hostedSuppressClickPostId: null,
+    uploadActivityItems: [],
+    uploadActivitySeq: 0,
     currentUser: {
         username: currentUsernameTemplate,
         avatar: currentAvatarTemplate || defaultAvatar,
@@ -27,6 +37,7 @@ const state = {
     customLocationName: '',
     detectedLocationName: '',
     userLocation: null,
+    eventLocationPoint: null,
     nearbyRadiusKm: 30,
     nearbyEventPosts: [],
     posts: [
@@ -126,6 +137,73 @@ async function postFormData(url, formData) {
     return data;
 }
 
+async function deleteJson(url) {
+    const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed.');
+    }
+    return data;
+}
+
+function renderUploadActivity() {
+    const container = document.getElementById('upload-activity');
+    if (!container) return;
+    if (state.uploadActivityItems.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    container.classList.remove('hidden');
+    container.innerHTML = state.uploadActivityItems.map((item) => `
+        <div class="mb-2 rounded-xl border border-white/10 bg-slate-800/70 p-3">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-white">${item.label}</span>
+                <span class="text-[11px] ${item.status === 'error' ? 'text-rose-300' : item.status === 'done' ? 'text-emerald-300' : 'text-gray-300'}">${Math.round(item.progress)}%</span>
+            </div>
+            <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full ${item.status === 'error' ? 'bg-rose-500' : 'bg-gradient-to-r from-cyan-400 to-fuchsia-500'} transition-all duration-300" style="width:${Math.max(2, Math.min(100, item.progress))}%"></div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function startUploadActivity(label) {
+    const id = `upload-${Date.now()}-${++state.uploadActivitySeq}`;
+    const item = { id, label, progress: 5, status: 'uploading', timerId: null };
+    item.timerId = setInterval(() => {
+        if (item.progress < 92) {
+            item.progress = Math.min(92, item.progress + (Math.random() * 9));
+            renderUploadActivity();
+        }
+    }, 260);
+    state.uploadActivityItems.unshift(item);
+    renderUploadActivity();
+    return id;
+}
+
+function finishUploadActivity(id, success = true) {
+    const item = state.uploadActivityItems.find((entry) => entry.id === id);
+    if (!item) return;
+    if (item.timerId) {
+        clearInterval(item.timerId);
+        item.timerId = null;
+    }
+    item.progress = success ? 100 : Math.min(item.progress, 100);
+    item.status = success ? 'done' : 'error';
+    renderUploadActivity();
+    setTimeout(() => {
+        state.uploadActivityItems = state.uploadActivityItems.filter((entry) => entry.id !== id);
+        renderUploadActivity();
+    }, success ? 1200 : 2200);
+}
+
 function getHostedEvents() {
     return getAllPosts().filter((post) => post.isEvent && post.username === state.currentUser.username);
 }
@@ -156,7 +234,12 @@ function getPostById(postId) {
 
 function setLocationStatus(message, isError = false) {
     const statusEl = document.getElementById('location-status');
-    if (!statusEl) return;
+    if (!statusEl) {
+        if (isError && message) {
+            alert(message);
+        }
+        return;
+    }
     if (!isError) {
         statusEl.textContent = '';
         statusEl.classList.add('hidden');
@@ -439,6 +522,12 @@ function saveLocationModal() {
         if (eventLocationInput) {
             eventLocationInput.value = value;
         }
+        if (locationModalSelectedCenter) {
+            state.eventLocationPoint = {
+                latitude: Number(locationModalSelectedCenter.lat),
+                longitude: Number(locationModalSelectedCenter.lng),
+            };
+        }
         closeLocationModal();
         return;
     }
@@ -465,6 +554,7 @@ function clearLocationModal() {
         if (eventLocationInput) {
             eventLocationInput.value = '';
         }
+        state.eventLocationPoint = null;
         const input = document.getElementById('location-modal-input');
         if (input) input.value = '';
         hideLocationModalSuggestions();
@@ -634,11 +724,18 @@ function bindLocationButtonGestures(buttonId) {
 
 function serverEventToPost(eventData) {
     const mediaUrls = eventData.mediaUrls || [];
+    const primaryUrl = mediaUrls[0] || eventData.imageUrl || '';
+    const mediaTypeForUrl = (url) => (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image');
+    const primaryIsVideo = mediaTypeForUrl(primaryUrl) === 'video';
     return {
         id: `event-${eventData.id}`,
         username: eventData.hostUsername || 'host',
         avatar: defaultAvatar,
-        image: eventData.imageUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+        image: eventData.imageUrl || primaryUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+        mediaType: primaryIsVideo ? 'video' : 'image',
+        mediaUrl: primaryUrl || '',
+        mediaUrls: mediaUrls.length > 0 ? mediaUrls : (primaryUrl ? [primaryUrl] : []),
+        mediaTypes: mediaUrls.length > 0 ? mediaUrls.map(mediaTypeForUrl) : (primaryUrl ? [mediaTypeForUrl(primaryUrl)] : []),
         caption: eventData.description || 'Live event nearby.',
         likes: 0,
         isEvent: true,
@@ -792,10 +889,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.hosted-event-menu') && !event.target.closest('[onpointerdown*="startHostedEventPress"]')) {
+            if (state.hostedMenuEventPostId) {
+                state.hostedMenuEventPostId = null;
+                renderHostedEventList();
+            }
+        }
+    });
     bindLocationButtonGestures('mobile-location-btn');
     bindLocationButtonGestures('desktop-location-btn');
     renderTopLocationUi();
     renderFeed();
+    renderUploadActivity();
     renderStories();
     renderExplore();
     renderCurrentUserProfile();
@@ -806,6 +912,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventMediaInput = document.getElementById('event-media-input');
     if (eventMediaInput) {
         eventMediaInput.addEventListener('change', handleEventMediaInputChange);
+    }
+    const createPostForm = document.getElementById('create-post-form');
+    if (createPostForm) {
+        createPostForm.addEventListener('submit', handlePostSubmit);
     }
     renderSelectedEventMedia();
     loadCurrentUserProfile();
@@ -839,6 +949,137 @@ function renderStories() {
     container.innerHTML = storiesHTML;
 }
 
+function getPostMediaItems(post) {
+    if (Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0) {
+        const types = Array.isArray(post.mediaTypes) ? post.mediaTypes : [];
+        return post.mediaUrls.map((url, idx) => ({
+            url,
+            type: types[idx] || (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image')
+        }));
+    }
+    if (post.mediaUrl) {
+        return [{ url: post.mediaUrl, type: post.mediaType || 'image' }];
+    }
+    if (post.image) {
+        return [{ url: post.image, type: post.mediaType || 'image' }];
+    }
+    return [];
+}
+
+function shiftPostMedia(postId, delta) {
+    const post = getPostById(postId);
+    if (!post) return;
+    const items = getPostMediaItems(post);
+    if (items.length <= 1) return;
+    const current = state.postMediaIndexes[postId] || 0;
+    const next = (current + delta + items.length) % items.length;
+    state.postMediaIndexes[postId] = next;
+    renderFeed();
+}
+
+function startPostSwipe(event, postId) {
+    state.postSwipeStartX[postId] = event.touches?.[0]?.clientX || 0;
+}
+
+function endPostSwipe(event, postId) {
+    const startX = state.postSwipeStartX[postId] || 0;
+    const endX = event.changedTouches?.[0]?.clientX || startX;
+    const diff = endX - startX;
+    if (Math.abs(diff) < 35) return;
+    shiftPostMedia(postId, diff < 0 ? 1 : -1);
+}
+
+function startPendingMediaSwipe(event) {
+    state.pendingSwipeStartX = event.touches?.[0]?.clientX || 0;
+}
+
+function endPendingMediaSwipe(event) {
+    const endX = event.changedTouches?.[0]?.clientX || state.pendingSwipeStartX;
+    const diff = endX - state.pendingSwipeStartX;
+    if (Math.abs(diff) < 35) return;
+    shiftPendingMedia(diff < 0 ? 1 : -1);
+}
+
+function shiftPendingMedia(delta) {
+    const slideCount = state.pendingEventMedia.length + 1; // extra end slide for add/change
+    if (slideCount <= 1) return;
+    const next = (state.pendingMediaIndex + delta + slideCount) % slideCount;
+    state.pendingMediaIndex = next;
+    renderSelectedEventMedia();
+}
+
+function renderPostMediaStage(post) {
+    const items = getPostMediaItems(post);
+    const safeCount = items.length || 1;
+    const idxRaw = state.postMediaIndexes[post.id] || 0;
+    const idx = Math.max(0, Math.min(idxRaw, safeCount - 1));
+    const current = items[idx] || { url: post.image, type: 'image' };
+    const mediaTag = current.type === 'video'
+        ? `<video src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105" controls playsinline preload="metadata"></video>`
+        : `<img src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">`;
+    const controls = safeCount > 1
+        ? `<button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', -1)" class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&lsaquo;</button>
+           <button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', 1)" class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&rsaquo;</button>
+           <div class="absolute top-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10 z-20">${idx + 1} / ${safeCount}</div>`
+        : '';
+    return `<div class="absolute inset-0" ontouchstart="startPostSwipe(event, '${post.id}')" ontouchend="endPostSwipe(event, '${post.id}')">${mediaTag}${controls}</div>`;
+}
+
+function isDuplicatePendingMedia(file) {
+    return state.pendingEventMedia.some((item) =>
+        item.name === file.name &&
+        item.size === file.size &&
+        item.lastModified === file.lastModified
+    );
+}
+
+function getVideoDurationSeconds(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+            const duration = Number(video.duration || 0);
+            URL.revokeObjectURL(url);
+            resolve(duration);
+        };
+        video.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Could not read video metadata.'));
+        };
+        video.src = url;
+    });
+}
+
+async function validateIncomingMedia(files) {
+    const accepted = [];
+    const longVideoNames = [];
+    const invalidTypeNames = [];
+
+    for (const file of files) {
+        const type = (file.type || '').toLowerCase();
+        if (type.startsWith('image/')) {
+            accepted.push(file);
+            continue;
+        }
+        if (!type.startsWith('video/')) {
+            invalidTypeNames.push(file.name || 'unknown');
+            continue;
+        }
+        try {
+            const seconds = await getVideoDurationSeconds(file);
+            if (seconds > 90) {
+                longVideoNames.push(file.name || 'video');
+                continue;
+            }
+            accepted.push(file);
+        } catch (_) {
+            invalidTypeNames.push(file.name || 'unknown');
+        }
+    }
+    return { accepted, longVideoNames, invalidTypeNames };
+}
+
 function renderFeed() {
     const container = document.getElementById('feed-container');
     container.innerHTML = getAllPosts().map(post => `
@@ -856,7 +1097,7 @@ function renderFeed() {
                 <button class="text-gray-400 hover:text-white"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
             </div>
             <div class="relative w-full aspect-[4/5] bg-gray-900 group overflow-hidden md:rounded-lg">
-                <img src="${post.image}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">
+                ${renderPostMediaStage(post)}
                 <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/90 pointer-events-none"></div>
                 
                 <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-10 pointer-events-auto">
@@ -972,6 +1213,56 @@ function renderTicketList() {
     lucide.createIcons();
 }
 
+function startHostedEventPress(event, postId) {
+    if (event?.target?.closest('.hosted-event-menu')) return;
+    clearTimeout(state.hostedPressTimerId);
+    state.hostedPressTimerId = setTimeout(() => {
+        state.hostedMenuEventPostId = postId;
+        state.hostedSuppressClickPostId = postId;
+        renderHostedEventList();
+    }, 550);
+}
+
+function cancelHostedEventPress() {
+    clearTimeout(state.hostedPressTimerId);
+}
+
+function handleHostedEventCardClick(postId) {
+    if (state.hostedSuppressClickPostId === postId) {
+        state.hostedSuppressClickPostId = null;
+        return;
+    }
+    if (state.hostedMenuEventPostId && state.hostedMenuEventPostId !== postId) {
+        state.hostedMenuEventPostId = null;
+        renderHostedEventList();
+    }
+    openBookingModal(postId);
+}
+
+async function deleteHostedEvent(postId) {
+    const eventId = Number(String(postId || '').replace('event-', ''));
+    if (!Number.isFinite(eventId) || eventId <= 0) {
+        setLocationStatus('Unable to delete this event.', true);
+        return;
+    }
+    if (!window.confirm('Delete this event? This action cannot be undone.')) {
+        return;
+    }
+    try {
+        await deleteJson(`/api/events/${eventId}`);
+        state.nearbyEventPosts = state.nearbyEventPosts.filter((item) => item.id !== postId);
+        state.posts = state.posts.filter((item) => item.id !== postId);
+        state.tickets = state.tickets.filter((ticket) => ticket?.event?.id !== postId);
+        state.hostedMenuEventPostId = null;
+        renderFeed();
+        renderHostedEventList();
+        renderTicketList();
+        renderProfileGrid();
+    } catch (error) {
+        setLocationStatus(error.message || 'Failed to delete event.', true);
+    }
+}
+
 function renderHostedEventList() {
     const container = document.getElementById('hosted-events-list');
     const emptyState = document.getElementById('empty-hosted-events');
@@ -985,31 +1276,46 @@ function renderHostedEventList() {
     }
 
     emptyState.classList.add('hidden');
-    container.innerHTML = hostedEvents.map((eventPost) => `
-        <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer" onclick="openBookingModal('${eventPost.id}')">
-            <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 via-violet-600 to-fuchsia-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
-            <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
-                <div class="h-28 w-full relative">
-                    <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
-                    <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
-                    <div class="absolute bottom-3 left-4">
-                        <h3 class="font-black text-lg tracking-wide text-white">${eventPost.eventDetails.title}</h3>
-                        <p class="text-xs text-gray-300 mt-0.5">${eventPost.eventDetails.location}</p>
+    container.innerHTML = hostedEvents.map((eventPost) => {
+        const menuVisible = state.hostedMenuEventPostId === eventPost.id;
+        return `
+        <div class="relative">
+            <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+                onclick="handleHostedEventCardClick('${eventPost.id}')"
+                onpointerdown="startHostedEventPress(event, '${eventPost.id}')"
+                onpointerup="cancelHostedEventPress()"
+                onpointerleave="cancelHostedEventPress()"
+                onpointercancel="cancelHostedEventPress()">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 via-violet-600 to-fuchsia-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
+                <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
+                    <div class="h-28 w-full relative">
+                        <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                        <div class="absolute bottom-3 left-4">
+                            <h3 class="font-black text-lg tracking-wide text-white">${eventPost.eventDetails.title}</h3>
+                            <p class="text-xs text-gray-300 mt-0.5">${eventPost.eventDetails.location}</p>
+                        </div>
                     </div>
-                </div>
-                <div class="p-4 flex items-center justify-between gap-3">
-                    <div>
-                        <div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div>
-                        <div class="font-bold text-white text-sm">${eventPost.eventDetails.date}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
-                        <div class="font-black text-fuchsia-400">$${eventPost.eventDetails.price}</div>
+                    <div class="p-4 flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div>
+                            <div class="font-bold text-white text-sm">${eventPost.eventDetails.date}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
+                            <div class="font-black text-fuchsia-400">$${eventPost.eventDetails.price}</div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    `).join('');
+            <div class="hosted-event-menu mt-2 ${menuVisible ? '' : 'hidden'}">
+                <button type="button" onclick="event.stopPropagation(); deleteHostedEvent('${eventPost.id}')"
+                    class="w-full py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm font-semibold hover:bg-rose-500/20 transition-colors">
+                    Delete Event
+                </button>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 function switchMyEventsTab(tabId) {
@@ -1107,47 +1413,89 @@ function togglePostType(isEvent) {
 }
 
 function renderSelectedEventMedia() {
-    const hint = document.getElementById('event-media-hint');
-    const list = document.getElementById('event-media-list');
-    if (!hint || !list) return;
+    const stage = document.getElementById('event-media-stage');
+    const frame = document.getElementById('event-media-frame');
+    const counter = document.getElementById('event-media-counter');
+    const emptyState = document.getElementById('event-media-empty-state');
+    if (!stage || !frame || !counter || !emptyState) return;
+    state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    state.pendingEventMediaPreviewUrls = [];
     if (state.pendingEventMedia.length === 0) {
-        hint.textContent = 'No media selected.';
-        list.classList.add('hidden');
-        list.innerHTML = '';
+        stage.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        frame.innerHTML = '';
+        counter.textContent = '';
+        state.pendingMediaIndex = 0;
         return;
     }
-    hint.textContent = `${state.pendingEventMedia.length} file(s) selected.`;
-    list.classList.remove('hidden');
-    list.innerHTML = state.pendingEventMedia.map((file, idx) => {
-        const typeLabel = (file.type || '').startsWith('video/') ? 'Video' : 'Image';
-        const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-        return `<div class="px-3 py-2 flex items-center justify-between gap-3"><div class="text-sm text-white truncate">${idx + 1}. ${file.name}</div><div class="text-xs text-gray-400">${typeLabel} - ${sizeMb} MB</div></div>`;
-    }).join('');
+    emptyState.classList.add('hidden');
+    stage.classList.remove('hidden');
+    const slideCount = state.pendingEventMedia.length + 1;
+    if (state.pendingMediaIndex >= slideCount) {
+        state.pendingMediaIndex = 0;
+    }
+
+    if (state.pendingMediaIndex === state.pendingEventMedia.length) {
+        frame.innerHTML = `
+            <div class="w-full h-full grid place-items-center bg-gradient-to-br from-slate-900/90 via-slate-800/80 to-fuchsia-950/35 p-5 text-center"
+                onclick="event.preventDefault(); event.stopPropagation(); document.getElementById('event-media-input')?.click();">
+                <div class="space-y-3">
+                    <div class="mx-auto w-16 h-16 rounded-full bg-white/10 border border-white/20 grid place-items-center text-white text-3xl">+</div>
+                    <p class="text-white font-semibold">Add or Change Media</p>
+                    <p class="text-xs text-gray-300">Keep current media and add more (max 10 total).</p>
+                </div>
+            </div>
+        `;
+        counter.textContent = `${slideCount} / ${slideCount}`;
+        return;
+    }
+
+    const file = state.pendingEventMedia[state.pendingMediaIndex];
+    const previewUrl = URL.createObjectURL(file);
+    state.pendingEventMediaPreviewUrls.push(previewUrl);
+    const isVideo = (file.type || '').startsWith('video/');
+    frame.innerHTML = isVideo
+        ? `<video src="${previewUrl}" class="w-full h-full object-cover" controls playsinline preload="metadata" ontouchstart="startPendingMediaSwipe(event)" ontouchend="endPendingMediaSwipe(event)"></video>`
+        : `<img src="${previewUrl}" class="w-full h-full object-cover" ontouchstart="startPendingMediaSwipe(event)" ontouchend="endPendingMediaSwipe(event)">`;
+    counter.textContent = `${state.pendingMediaIndex + 1} / ${slideCount}`;
 }
 
-function handleEventMediaInputChange(event) {
+async function handleEventMediaInputChange(event) {
     const files = Array.from(event.target.files || []);
-    if (files.length > 10) {
-        alert('You can upload a maximum of 10 images/videos.');
-        event.target.value = '';
-        state.pendingEventMedia = [];
-        renderSelectedEventMedia();
-        return;
+    if (files.length === 0) return;
+
+    const { accepted, longVideoNames, invalidTypeNames } = await validateIncomingMedia(files);
+    const uniqueAccepted = accepted.filter((file) => !isDuplicatePendingMedia(file));
+    const slotsLeft = Math.max(0, 10 - state.pendingEventMedia.length);
+    const toAdd = uniqueAccepted.slice(0, slotsLeft);
+    const overflowCount = Math.max(0, uniqueAccepted.length - toAdd.length);
+
+    if (toAdd.length > 0) {
+        state.pendingEventMedia = [...state.pendingEventMedia, ...toAdd];
+        state.pendingMediaIndex = Math.max(0, state.pendingEventMedia.length - 1);
     }
-    const invalidFile = files.find((file) => !(file.type || '').startsWith('image/') && !(file.type || '').startsWith('video/'));
-    if (invalidFile) {
-        alert('Only image and video files are allowed.');
-        event.target.value = '';
-        state.pendingEventMedia = [];
-        renderSelectedEventMedia();
-        return;
+
+    const messages = [];
+    if (longVideoNames.length > 0) {
+        messages.push(`Skipped ${longVideoNames.length} video(s) longer than 90 seconds.`);
     }
-    state.pendingEventMedia = files;
+    if (invalidTypeNames.length > 0) {
+        messages.push(`Skipped ${invalidTypeNames.length} invalid file(s). Only image/video allowed.`);
+    }
+    if (overflowCount > 0) {
+        messages.push(`Only 10 media files are allowed. ${overflowCount} file(s) were not added.`);
+    }
+    if (messages.length > 0) {
+        alert(messages.join('\n'));
+    }
+
+    event.target.value = '';
     renderSelectedEventMedia();
 }
 
 async function handlePostSubmit(e) {
     e.preventDefault();
+    let activityId = null;
     const newPost = {
         id: Math.random().toString(36),
         username: state.currentUser.username,
@@ -1160,12 +1508,20 @@ async function handlePostSubmit(e) {
 
     if (state.isEventMode) {
         const useCurrentLocation = document.getElementById('event-use-current-location')?.checked;
-        if (!useCurrentLocation) {
-            setLocationStatus('Please keep "Use my current location" enabled for exact event pin.', true);
+        const eventLocationInputValue = document.getElementById('event-location')?.value?.trim() || '';
+        const fallbackPoint = state.eventLocationPoint || state.userLocation;
+        const finalPoint = useCurrentLocation ? state.userLocation : fallbackPoint;
+
+        if (!document.getElementById('event-title')?.value?.trim()) {
+            setLocationStatus('Please enter event title.', true);
             return;
         }
-        if (!state.userLocation) {
-            setLocationStatus('Please detect your location before creating an event.', true);
+        if (!eventLocationInputValue) {
+            setLocationStatus('Please select event location.', true);
+            return;
+        }
+        if (!finalPoint) {
+            setLocationStatus('Please detect location or pick location from map.', true);
             return;
         }
         const priceValue = Number(document.getElementById('event-price').value || 0);
@@ -1176,16 +1532,18 @@ async function handlePostSubmit(e) {
         const selectedDate = document.getElementById('event-date').value;
         const selectedTime = document.getElementById('event-time').value;
         const startLabel = [selectedDate, selectedTime].filter(Boolean).join(' ');
+        activityId = startUploadActivity('Uploading event...');
+        switchTab('home');
 
         try {
             const formData = new FormData();
             formData.append('title', document.getElementById('event-title').value.trim());
             formData.append('description', document.getElementById('post-caption').value.trim());
             formData.append('startLabel', startLabel);
-            formData.append('locationName', document.getElementById('event-location').value.trim());
+            formData.append('locationName', eventLocationInputValue);
             formData.append('price', String(priceValue));
-            formData.append('latitude', String(state.userLocation?.latitude || ''));
-            formData.append('longitude', String(state.userLocation?.longitude || ''));
+            formData.append('latitude', String(finalPoint?.latitude || ''));
+            formData.append('longitude', String(finalPoint?.longitude || ''));
             formData.append('eventCategory', document.getElementById('event-type').value || 'local event');
             formData.append('currency', 'INR');
             state.pendingEventMedia.forEach((file) => {
@@ -1197,24 +1555,32 @@ async function handlePostSubmit(e) {
                 renderFeed();
                 renderProfileGrid();
                 renderHostedEventList();
-                switchTab('home');
                 e.target.reset();
                 state.pendingEventMedia = [];
+                state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+                state.pendingEventMediaPreviewUrls = [];
+                state.pendingMediaIndex = 0;
                 renderSelectedEventMedia();
+                finishUploadActivity(activityId, true);
                 return;
             }
+            if (activityId) finishUploadActivity(activityId, false);
         } catch (error) {
+            if (activityId) finishUploadActivity(activityId, false);
             setLocationStatus(error.message || 'Failed to create event.', true);
             return;
         }
     }
 
+    activityId = startUploadActivity('Uploading post...');
+    switchTab('home');
+    await new Promise((resolve) => setTimeout(resolve, 900));
     state.posts.unshift(newPost);
     renderFeed();
     renderProfileGrid();
     renderHostedEventList();
-    switchTab('home');
     e.target.reset(); // clear form
+    if (activityId) finishUploadActivity(activityId, true);
 }
 
 let currentBookingEventId = null;
