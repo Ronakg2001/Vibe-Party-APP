@@ -281,3 +281,206 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
         filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
     }
 }
+
+/* VIBE party theme refresh */
+.party-theme {
+    --vibe-bg: #070b17;
+    --vibe-bg-soft: #0f1630;
+    --vibe-glass: rgba(14, 20, 44, 0.72);
+    --vibe-border: rgba(255, 255, 255, 0.14);
+    --vibe-text: #f8f9ff;
+    --vibe-muted: #9aa5c4;
+    --vibe-neon-pink: #ff4fd8;
+    --vibe-neon-blue: #47e8ff;
+    --vibe-neon-lime: #9dff5f;
+    --vibe-icon-accent: #47e8ff;
+    /* Standardized to match My Event Tickets colorful glow direction (pink -> purple -> cyan) */
+    --vibe-neon-shadow: 0 0 12px rgba(236, 72, 153, 0.34), 0 0 24px rgba(147, 51, 234, 0.30), 0 0 34px rgba(34, 211, 238, 0.30);
+    --vibe-neon-shadow-strong: 0 0 16px rgba(236, 72, 153, 0.42), 0 0 30px rgba(147, 51, 234, 0.38), 0 0 44px rgba(34, 211, 238, 0.36);
+    background:
+        radial-gradient(1200px circle at 10% -5%, rgba(255, 79, 216, 0.18), transparent 35%),
+        radial-gradient(980px circle at 92% 8%, rgba(71, 232, 255, 0.16), transparent 38%),
+        radial-gradient(700px circle at 50% 120%, rgba(157, 255, 95, 0.1), transparent 42%),
+        var(--vibe-bg);
+    color: var(--vibe-text);
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.party-theme h1,
+.party-theme h2,
+.party-theme h3,
+.party-theme .font-black {
+    font-family: "Syne", "Sora", sans-serif;
+    letter-spacing: 0.01em;
+}
+
+.party-theme #app-container {
+    background: linear-gradient(180deg, rgba(7, 11, 23, 0.96), rgba(7, 11, 23, 0.86));
+}
+
+.party-theme .glass {
+    background: linear-gradient(135deg, rgba(14, 20, 44, 0.88), rgba(13, 20, 41, 0.56));
+    border-color: var(--vibe-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 30px rgba(7, 11, 23, 0.45);
+}
+
+.party-theme .glass-panel {
+    background: linear-gradient(135deg, rgba(23, 32, 62, 0.8), rgba(18, 23, 49, 0.6));
+    border: 1px solid rgba(71, 232, 255, 0.2);
+    box-shadow: 0 0 0 1px rgba(255, 79, 216, 0.08), 0 12px 32px rgba(8, 12, 28, 0.45);
+}
+
+.party-theme .nav-btn {
+    border-radius: 999px;
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, color 220ms ease;
+}
+
+.party-theme .nav-btn:hover,
+.party-theme .nav-btn.active {
+    box-shadow: var(--vibe-neon-shadow-strong);
+}
+
+.party-theme button,
+.party-theme [role="button"] {
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+
+.party-theme button:hover,
+.party-theme [role="button"]:hover {
+    transform: translateY(-1px);
+}
+
+.party-theme button:active,
+.party-theme [role="button"]:active {
+    transform: translateY(0) scale(0.97);
+}
+
+.party-theme input,
+.party-theme textarea,
+.party-theme select {
+    border-radius: 1rem;
+    border-color: rgba(71, 232, 255, 0.2) !important;
+    background: linear-gradient(140deg, rgba(16, 24, 48, 0.84), rgba(12, 17, 37, 0.78)) !important;
+    color: var(--vibe-text) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.party-theme input:focus,
+.party-theme textarea:focus,
+.party-theme select:focus {
+    border-color: rgba(255, 79, 216, 0.58) !important;
+    box-shadow: 0 0 0 3px rgba(255, 79, 216, 0.2), 0 0 20px rgba(71, 232, 255, 0.16);
+}
+
+.party-theme #feed-container article,
+.party-theme #tickets-list > div > .relative,
+.party-theme #hosted-events-list > div > .relative,
+.party-theme #profile-grid > div,
+.party-theme #explore-grid > div {
+    border-radius: 1.25rem;
+}
+
+.party-theme #feed-container article {
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background:
+        linear-gradient(170deg, rgba(17, 23, 48, 0.7), rgba(10, 14, 29, 0.58)) !important;
+    box-shadow: 0 16px 34px rgba(4, 8, 20, 0.46), 0 0 0 1px rgba(71, 232, 255, 0.08);
+    overflow: hidden;
+}
+
+.party-theme #feed-container article:hover {
+    box-shadow: 0 18px 40px rgba(6, 10, 22, 0.6), var(--vibe-neon-shadow-strong);
+}
+
+.party-theme #booking-modal > div,
+.party-theme #location-modal-card {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    box-shadow: 0 20px 60px rgba(4, 8, 20, 0.7), 0 0 0 1px rgba(71, 232, 255, 0.12);
+}
+
+.party-theme #location-modal-card {
+    background:
+        radial-gradient(circle at 90% 0%, rgba(71, 232, 255, 0.12), transparent 40%),
+        radial-gradient(circle at 5% 5%, rgba(255, 79, 216, 0.13), transparent 32%),
+        linear-gradient(145deg, rgba(14, 20, 44, 0.94), rgba(11, 16, 35, 0.84)) !important;
+}
+
+.party-theme #modal-content button[class*="bg-gradient-to-r"],
+.party-theme #view-add form > button[type="submit"] {
+    border-radius: 999px !important;
+    box-shadow: var(--vibe-neon-shadow);
+}
+
+.party-theme #main-header,
+.party-theme #desktop-main-header,
+.party-theme .md\\:hidden.fixed.bottom-6 nav {
+    border-color: rgba(71, 232, 255, 0.18) !important;
+    box-shadow: 0 10px 32px rgba(6, 10, 22, 0.5), 0 0 0 1px rgba(255, 79, 216, 0.08), var(--vibe-neon-shadow);
+}
+
+/* Apply the same colorful neon shadow globally to all neon shadow utility usages */
+.party-theme [class*="shadow-fuchsia"],
+.party-theme [class*="shadow-pink"],
+.party-theme [class*="shadow-violet"],
+.party-theme [class*="shadow-purple"],
+.party-theme [class*="shadow-cyan"] {
+    box-shadow: var(--vibe-neon-shadow) !important;
+}
+
+/* Icon accent color refresh: replace pink icon accents with cyan-neon accent */
+.party-theme .location-fab:hover,
+.party-theme .location-fab.loc-on {
+    color: var(--vibe-icon-accent);
+}
+
+.party-theme .location-fab.loc-on .location-nav-icon .nav-icon-outline {
+    stroke: var(--vibe-icon-accent);
+}
+
+.party-theme i[class*="text-fuchsia-"],
+.party-theme svg[class*="text-fuchsia-"] {
+    color: var(--vibe-icon-accent) !important;
+}
+
+.party-theme i[class*="text-fuchsia-"] *,
+.party-theme svg[class*="text-fuchsia-"] * {
+    stroke: currentColor;
+}
+
+.party-theme #stories-container > div,
+.party-theme #view-home > div:first-child > div:first-child {
+    animation: popIn 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: translateY(9px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 768px) {
+    .party-theme .orb {
+        filter: blur(64px);
+        opacity: 0.36;
+    }
+
+    .party-theme #feed-container article {
+        border-radius: 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .party-theme *,
+    .party-theme *::before,
+    .party-theme *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+}

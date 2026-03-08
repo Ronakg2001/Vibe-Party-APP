@@ -16,13 +16,17 @@
     <!-- Custom Config for Party Theme -->
     <script src="{% static 'js/home_page_tailwind.js' %}"></script>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
 </head>
 
-<body class="bg-slate-900 font-['Outfit']">
+<body class="party-theme bg-slate-900 font-['Sora']">
     <div id="party-loader" class="party-loader-overlay" aria-hidden="true">
         <div class="party-loader-wrap">
             <div class="bass-speaker">
@@ -59,8 +63,8 @@
         <aside
             class="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-white/5 bg-slate-900/50 backdrop-blur-xl z-50 p-6">
             <h1 onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
-                class="text-3xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-1 mb-10 cursor-pointer">
-                VIBE<span class="text-fuchsia-500">.</span>
+                class="flex items-center gap-1 mb-10 cursor-pointer">
+                <img src="{% static 'img/vibe-logo.svg' %}" alt="VIBE" class="h-9 w-auto select-none">
             </h1>
 
             <nav class="flex flex-col gap-4 flex-1">
@@ -118,8 +122,8 @@
             <header id="main-header"
                 class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
                 <button onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
-                    class="text-xl font-black tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent flex items-center gap-0.5">
-                    VIBE<span class="text-fuchsia-500">.</span>
+                    class="flex items-center">
+                    <img src="{% static 'img/vibe-logo.svg' %}" alt="VIBE" class="h-8 w-auto select-none">
                 </button>
                 <div class="flex gap-4 items-center">
                     <button id="mobile-location-btn" type="button"

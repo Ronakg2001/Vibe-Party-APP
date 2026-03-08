@@ -168,7 +168,7 @@ function renderUploadActivity() {
                 <span class="text-[11px] ${item.status === 'error' ? 'text-rose-300' : item.status === 'done' ? 'text-emerald-300' : 'text-gray-300'}">${Math.round(item.progress)}%</span>
             </div>
             <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div class="h-full ${item.status === 'error' ? 'bg-rose-500' : 'bg-gradient-to-r from-cyan-400 to-fuchsia-500'} transition-all duration-300" style="width:${Math.max(2, Math.min(100, item.progress))}%"></div>
+                <div class="h-full ${item.status === 'error' ? 'bg-rose-500' : 'bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600'} transition-all duration-300" style="width:${Math.max(2, Math.min(100, item.progress))}%"></div>
             </div>
         </div>
     `).join('');
@@ -1128,7 +1128,7 @@ function renderFeed() {
                         </div>
                         <div class="flex items-center gap-2">
                             ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
-                            <button class="px-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
                         </div>
                     </div>` : ''}
                 </div>
@@ -1286,7 +1286,7 @@ function renderHostedEventList() {
                 onpointerup="cancelHostedEventPress()"
                 onpointerleave="cancelHostedEventPress()"
                 onpointercancel="cancelHostedEventPress()">
-                <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 via-violet-600 to-fuchsia-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
                 <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
                     <div class="h-28 w-full relative">
                         <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
@@ -1615,7 +1615,7 @@ function openBookingModal(postId) {
                 <span class="text-xl font-bold text-white">Total</span>
                 <span class="text-2xl font-black text-fuchsia-400">$${parseInt(event.eventDetails.price) + 4}.00</span>
             </div>
-            <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
+            <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
             <button onclick="closeBookingModal()" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
         </div>
     `;
