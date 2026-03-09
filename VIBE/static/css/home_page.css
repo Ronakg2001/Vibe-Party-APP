@@ -142,12 +142,6 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
 .bar-4 { height: 22px; animation-delay: 0.55s; }
 .bar-5 { height: 16px; animation-delay: 0.7s; }
 
-.party-loader-text {
-  margin: 0;
-  color: #cbd5e1;
-  font-size: 0.95rem;
-}
-
 @keyframes wave {
   0% {
     transform: scale(0.82);
@@ -192,7 +186,7 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     opacity: 1;
   }
 }
-/* Extracted from home_page.html inline style */
+/* Location toggle button and animated nav-icon behavior */
 .location-fab {
     position: relative;
     overflow: visible;
@@ -256,6 +250,19 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     opacity: 1;
     transform: scale(1);
 }
+
+.no-number-spinner::-webkit-outer-spin-button,
+.no-number-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.no-number-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* Airplane-style burst animation used when location toggle is tapped */
 @keyframes navIconFly {
     0% {
         transform: translate(0, 0) rotate(0deg) scale(1);
@@ -268,5 +275,605 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     100% {
         transform: translate(0, 0) rotate(0deg) scale(1);
         filter: drop-shadow(0 0 0 rgba(102, 232, 255, 0));
+    }
+}
+
+/* ==========================================================================
+   VIBE PARTY THEME LAYER
+   These rules style the full page when <body class="party-theme"> is used.
+   ========================================================================== */
+.party-theme {
+    /* Global design tokens */
+    --vibe-bg: #070b17;
+    --vibe-border: rgba(255, 255, 255, 0.14);
+    --vibe-text: #f8f9ff;
+    --vibe-icon-accent: #ffffffff;
+    /* Standardized to match My Event Tickets colorful glow direction (pink -> purple -> cyan) */
+    --vibe-neon-shadow: 0 0 12px rgba(236, 72, 153, 0.34), 0 0 24px rgba(147, 51, 234, 0.30), 0 0 34px rgba(34, 211, 238, 0.30);
+    --vibe-neon-shadow-strong: 0 0 16px rgba(236, 72, 153, 0.42), 0 0 30px rgba(147, 51, 234, 0.38), 0 0 44px rgba(34, 211, 238, 0.36);
+    background:
+        radial-gradient(1200px circle at 10% -5%, rgba(255, 79, 216, 0.18), transparent 35%),
+        radial-gradient(980px circle at 92% 8%, rgba(71, 232, 255, 0.16), transparent 38%),
+        radial-gradient(700px circle at 50% 120%, rgba(157, 255, 95, 0.1), transparent 42%),
+        var(--vibe-bg);
+    color: var(--vibe-text);
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.party-theme h1,
+.party-theme h2,
+.party-theme h3,
+.party-theme .font-black {
+    /* Heading/display typography */
+    font-family: "Syne", "Sora", sans-serif;
+    letter-spacing: 0.01em;
+}
+
+/* Main app background treatment */
+.party-theme #app-container {
+    background: linear-gradient(180deg, rgba(7, 11, 23, 0.96), rgba(7, 11, 23, 0.86));
+}
+
+/* Shared translucent surfaces used by headers/search bars/cards */
+.party-theme .glass {
+    background: linear-gradient(135deg, rgba(14, 20, 44, 0.88), rgba(13, 20, 41, 0.56));
+    border-color: var(--vibe-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 30px rgba(7, 11, 23, 0.45);
+}
+
+.party-theme .glass-panel {
+    background: linear-gradient(135deg, rgba(23, 32, 62, 0.8), rgba(18, 23, 49, 0.6));
+    border: 1px solid rgba(71, 232, 255, 0.2);
+    box-shadow: 0 0 0 1px rgba(255, 79, 216, 0.08), 0 12px 32px rgba(8, 12, 28, 0.45);
+}
+
+/* Navigation button shape + motion */
+.party-theme .nav-btn {
+    border-radius: 999px;
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, color 220ms ease;
+}
+
+.party-theme .nav-btn:hover,
+.party-theme .nav-btn.active {
+    /* Active/hover neon glow for desktop + mobile nav buttons */
+    box-shadow: var(--vibe-neon-shadow-strong);
+}
+
+/* Base interaction feel for all clickable controls */
+.party-theme button,
+.party-theme [role="button"] {
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+
+.party-theme button:hover,
+.party-theme [role="button"]:hover {
+    transform: translateY(-1px);
+}
+
+.party-theme button:active,
+.party-theme [role="button"]:active {
+    transform: translateY(0) scale(0.97);
+}
+
+/* Form controls in Create/Event/Location flows */
+.party-theme input,
+.party-theme textarea,
+.party-theme select {
+    border-radius: 1rem;
+    border-color: rgba(71, 232, 255, 0.2) !important;
+    background: linear-gradient(140deg, rgba(16, 24, 48, 0.84), rgba(12, 17, 37, 0.78)) !important;
+    color: var(--vibe-text) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.party-theme input:focus,
+.party-theme textarea:focus,
+.party-theme select:focus {
+    /* Focus ring to keep form interaction discoverable */
+    border-color: rgba(255, 79, 216, 0.58) !important;
+    box-shadow: 0 0 0 3px rgba(255, 79, 216, 0.2), 0 0 20px rgba(71, 232, 255, 0.16);
+}
+
+/* Shared rounding for dynamic grid and card components */
+.party-theme #feed-container article,
+.party-theme #tickets-list > div > .relative,
+.party-theme #hosted-events-list > div > .relative,
+.party-theme #profile-grid > div,
+.party-theme #explore-grid > div {
+    border-radius: 1.25rem;
+}
+
+/* Feed card surface and hover depth */
+.party-theme #feed-container article {
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background:
+        linear-gradient(170deg, rgba(17, 23, 48, 0.7), rgba(10, 14, 29, 0.58)) !important;
+    box-shadow: 0 16px 34px rgba(4, 8, 20, 0.46), 0 0 0 1px rgba(71, 232, 255, 0.08);
+    overflow: hidden;
+}
+
+.party-theme #feed-container article:hover {
+    box-shadow: 0 18px 40px rgba(6, 10, 22, 0.6), var(--vibe-neon-shadow-strong);
+}
+
+/* Popup shells: booking + location modal cards */
+.party-theme #booking-modal > div,
+.party-theme #location-modal-card {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    box-shadow: 0 20px 60px rgba(4, 8, 20, 0.7), 0 0 0 1px rgba(71, 232, 255, 0.12);
+}
+
+.party-theme #location-modal-card {
+    /* Dedicated radial highlights for location picker */
+    background:
+        radial-gradient(circle at 90% 0%, rgba(71, 232, 255, 0.12), transparent 40%),
+        radial-gradient(circle at 5% 5%, rgba(255, 79, 216, 0.13), transparent 32%),
+        linear-gradient(145deg, rgba(14, 20, 44, 0.94), rgba(11, 16, 35, 0.84)) !important;
+}
+
+/* CTA gradient buttons (Book/Submit) */
+.party-theme #modal-content button[class*="bg-gradient-to-r"],
+.party-theme #view-add form > button[type="submit"] {
+    border-radius: 999px !important;
+    box-shadow: var(--vibe-neon-shadow);
+}
+
+/* Top/bottom navigation shells */
+.party-theme #main-header,
+.party-theme #desktop-main-header,
+.party-theme .md\\:hidden.fixed.bottom-6 nav {
+    border-color: rgba(71, 232, 255, 0.18) !important;
+    box-shadow: 0 10px 32px rgba(6, 10, 22, 0.5), 0 0 0 1px rgba(255, 79, 216, 0.08), var(--vibe-neon-shadow);
+}
+
+/* Normalize all tailwind neon-shadow utility variants to one standard glow */
+.party-theme [class*="shadow-fuchsia"],
+.party-theme [class*="shadow-pink"],
+.party-theme [class*="shadow-violet"],
+.party-theme [class*="shadow-purple"],
+.party-theme [class*="shadow-cyan"] {
+    box-shadow: var(--vibe-neon-shadow) !important;
+}
+
+/* Icon accent system: force fuchsia icon utilities to the cyan accent token */
+.party-theme .location-fab:hover,
+.party-theme .location-fab.loc-on {
+    color: var(--vibe-icon-accent);
+}
+
+.party-theme .location-fab.loc-on .location-nav-icon .nav-icon-outline {
+    stroke: var(--vibe-icon-accent);
+}
+
+.party-theme i[class*="text-fuchsia-"],
+.party-theme svg[class*="text-fuchsia-"] {
+    color: var(--vibe-icon-accent) !important;
+}
+
+.party-theme i[class*="text-fuchsia-"] *,
+.party-theme svg[class*="text-fuchsia-"] * {
+    stroke: currentColor;
+}
+
+/* Story tiles entry animation */
+.party-theme #stories-container > div,
+.party-theme #view-home > div:first-child > div:first-child {
+    animation: popIn 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Analog clock picker visuals */
+.analog-clock-dial-wrap {
+    display: grid;
+    place-items: center;
+}
+
+.analog-clock-dial {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at center, rgba(71, 232, 255, 0.08), transparent 55%),
+        linear-gradient(145deg, rgba(12, 17, 36, 0.95), rgba(15, 22, 45, 0.85));
+    border: 1px solid rgba(71, 232, 255, 0.25);
+    box-shadow: 0 0 0 1px rgba(255, 79, 216, 0.1), 0 18px 36px rgba(4, 8, 20, 0.62), var(--vibe-neon-shadow);
+    touch-action: none;
+}
+
+.analog-clock-hand {
+    position: absolute;
+    left: 50%;
+    top: 21.5%;
+    width: 2px;
+    height: 88px;
+    transform-origin: 50% calc(100% - 14px);
+    background: linear-gradient(180deg, #47e8ff 0%, #db2777 100%);
+    box-shadow: 0 0 10px rgba(71, 232, 255, 0.6);
+    transition: transform 180ms ease;
+}
+
+.analog-clock-second-hand {
+    position: absolute;
+    left: 50%;
+    top: 25.5%;
+    width: 1px;
+    height: 76px;
+    transform-origin: 50% calc(100% - 12px);
+    background: linear-gradient(180deg, #f87171 0%, #fb7185 100%);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.6);
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+.analog-clock-second-hand.is-visible {
+    opacity: 1;
+}
+
+.analog-clock-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: #47e8ff;
+    box-shadow: 0 0 14px rgba(71, 232, 255, 0.8);
+}
+
+.analog-clock-marker {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(248, 249, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    transition: none;
+}
+
+.analog-clock-marker:hover {
+    transform: translate(-50%, -50%) !important;
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: none;
+}
+
+.analog-clock-marker.is-active {
+    background: linear-gradient(90deg, #db2777, #9333ea, #0891b2);
+    border-color: transparent;
+    box-shadow: var(--vibe-neon-shadow);
+}
+
+.analog-clock-marker.is-disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.analog-digital-clock {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.analog-digital-segment {
+    min-width: 2.3rem;
+    border-radius: 0.6rem;
+    border: 1px solid transparent;
+    padding: 0.35rem 0.5rem;
+    font-weight: 800;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: rgba(248, 249, 255, 0.94);
+}
+
+.analog-digital-separator {
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: rgba(248, 249, 255, 0.75);
+}
+
+.analog-digital-period {
+    margin-left: 0.25rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 0.35rem 0.6rem;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: rgba(248, 249, 255, 0.92);
+    transition: background 180ms ease, box-shadow 220ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.analog-digital-period.is-am {
+    background: linear-gradient(120deg, rgba(255, 214, 102, 0.9), rgba(255, 167, 38, 0.88));
+    border-color: rgba(255, 222, 144, 0.95);
+    color: #2e1b00;
+    box-shadow: 0 0 12px rgba(255, 183, 77, 0.45);
+}
+
+.analog-digital-period.is-pm {
+    background: linear-gradient(120deg, rgba(66, 91, 255, 0.82), rgba(132, 56, 255, 0.82));
+    border-color: rgba(124, 154, 255, 0.9);
+    color: #eef2ff;
+    box-shadow: 0 0 12px rgba(103, 116, 255, 0.45);
+}
+
+.analog-digital-period.is-active {
+    outline: 2px solid rgba(71, 232, 255, 0.7);
+    outline-offset: 1px;
+}
+
+.analog-digital-period.period-swap {
+    animation: periodSwapPulse 280ms ease;
+}
+
+.analog-digital-segment.is-active {
+    background: linear-gradient(90deg, rgba(219, 39, 119, 0.45), rgba(147, 51, 234, 0.45), rgba(8, 145, 178, 0.45));
+    border-color: rgba(71, 232, 255, 0.5) !important;
+    color: #ffffff !important;
+}
+
+.event-calendar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.event-calendar-month-label {
+    border: 0;
+    background: transparent;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #f8f9ff;
+    cursor: pointer;
+}
+
+.event-calendar-month-label:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.event-calendar-nav {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(248, 249, 255, 0.9);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.event-month-year-picker {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0.9rem;
+    padding: 0.65rem;
+    margin-bottom: 0.55rem;
+}
+
+.event-month-year-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.55rem;
+}
+
+.event-calendar-year-label {
+    color: #f8f9ff;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.event-month-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+
+.event-month-chip {
+    border-radius: 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(248, 249, 255, 0.9);
+    padding: 0.42rem 0.2rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.event-month-chip.is-active {
+    background: linear-gradient(90deg, rgba(219, 39, 119, 0.62), rgba(147, 51, 234, 0.62), rgba(8, 145, 178, 0.62));
+    border-color: rgba(71, 232, 255, 0.55);
+}
+
+.event-month-chip.is-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.event-calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+}
+
+.event-calendar-weekdays span {
+    text-align: center;
+    font-size: 0.7rem;
+    color: rgba(248, 249, 255, 0.52);
+}
+
+.event-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.35rem;
+}
+
+.event-calendar-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(248, 249, 255, 0.92);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.event-calendar-cell.is-empty {
+    border-color: transparent;
+    background: transparent;
+}
+
+.event-calendar-cell.is-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.event-calendar-cell.is-selected {
+    background: linear-gradient(90deg, rgba(219, 39, 119, 0.62), rgba(147, 51, 234, 0.62), rgba(8, 145, 178, 0.62));
+    border-color: rgba(71, 232, 255, 0.55);
+    box-shadow: var(--vibe-neon-shadow);
+}
+
+.event-type-picker {
+    position: relative;
+}
+
+.event-type-trigger {
+    position: relative;
+    background: linear-gradient(140deg, rgba(16, 24, 48, 0.84), rgba(12, 17, 37, 0.78)) !important;
+    border-color: rgba(71, 232, 255, 0.2) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.event-type-trigger #event-type-label:empty::before {
+    content: attr(data-placeholder);
+    color: rgba(148, 163, 184, 0.95);
+}
+
+.event-type-trigger:hover,
+.event-type-trigger.is-open {
+    border-color: rgba(71, 232, 255, 0.45) !important;
+    box-shadow: 0 0 0 3px rgba(71, 232, 255, 0.18), 0 0 20px rgba(255, 79, 216, 0.12);
+}
+
+.event-type-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    max-height: 230px;
+    overflow-y: auto;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(71, 232, 255, 0.25);
+    background: linear-gradient(145deg, rgba(14, 21, 44, 0.96), rgba(10, 16, 35, 0.94));
+    box-shadow: 0 18px 40px rgba(4, 8, 20, 0.7), var(--vibe-neon-shadow);
+    padding: 0.35rem;
+}
+
+.event-type-item {
+    width: 100%;
+    text-align: left;
+    font-size: 0.86rem;
+    color: #f8f9ff;
+    border-radius: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+.event-type-item:hover {
+    transform: none !important;
+    background: rgba(71, 232, 255, 0.14);
+    border-color: rgba(71, 232, 255, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 79, 216, 0.2);
+}
+
+#event-time-display:disabled,
+#event-end-time-display:disabled,
+#event-duration-display:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#event-duration-clear-btn {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    transition: none !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+#event-duration-clear-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+#event-duration-clear-btn:active {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+@keyframes periodSwapPulse {
+    0% {
+        transform: scale(0.95);
+        filter: saturate(85%);
+    }
+    100% {
+        transform: scale(1);
+        filter: saturate(100%);
+    }
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: translateY(9px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Mobile-tuned blur/radius values */
+@media (max-width: 768px) {
+    .party-theme .orb {
+        filter: blur(64px);
+        opacity: 0.36;
+    }
+
+    .party-theme #feed-container article {
+        border-radius: 1rem;
+    }
+}
+
+/* Accessibility: disable non-essential motion when user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .party-theme *,
+    .party-theme *::before,
+    .party-theme *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
     }
 }

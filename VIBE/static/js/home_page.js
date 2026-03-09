@@ -12,9 +12,22 @@ if (bootConfigEl) {
 const currentUsernameTemplate = bootConfig.currentUsername || 'party_alex';
 const csrfTokenTemplate = bootConfig.csrfToken || '';
 const currentAvatarTemplate = bootConfig.currentAvatarUrl || '';
+const manifestDataTemplate = bootConfig.manifestData || {};
 const state = {
     activeTab: 'home',
+    myEventsTab: 'tickets',
     isEventMode: false,
+    pendingEventMedia: [],
+    pendingEventMediaPreviewUrls: [],
+    pendingMediaIndex: 0,
+    pendingSwipeStartX: 0,
+    postMediaIndexes: {},
+    postSwipeStartX: {},
+    hostedMenuEventPostId: null,
+    hostedPressTimerId: null,
+    hostedSuppressClickPostId: null,
+    uploadActivityItems: [],
+    uploadActivitySeq: 0,
     currentUser: {
         username: currentUsernameTemplate,
         avatar: currentAvatarTemplate || defaultAvatar,
@@ -25,6 +38,7 @@ const state = {
     customLocationName: '',
     detectedLocationName: '',
     userLocation: null,
+    eventLocationPoint: null,
     nearbyRadiusKm: 30,
     nearbyEventPosts: [],
     posts: [
@@ -57,6 +71,26 @@ const state = {
     tickets: []
 };
 const loaderStartTs = Date.now();
+const analogClockState = {
+    mode: 'hour',
+    focus: 'hour',
+    period: 'PM',
+    hour: 10,
+    minute: 0,
+    second: 0,
+    liveMode: false,
+    targetInputId: 'event-time-display'
+};
+const analogHourDialOrder = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+let analogDialDragging = false;
+let analogLastRenderedPeriod = '';
+let analogLiveTickerId = null;
+const eventCalendarState = {
+    viewYear: new Date().getFullYear(),
+    viewMonth: new Date().getMonth(),
+    selectedDate: '',
+    targetInputId: 'event-date-display'
+};
 
 function getCsrfToken() {
     if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
@@ -108,6 +142,93 @@ function renderCurrentUserProfile() {
     if (bioEl) bioEl.textContent = state.currentUser.bio || 'No bio added yet.';
 }
 
+async function postFormData(url, formData) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        credentials: 'same-origin',
+        body: formData
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed.');
+    }
+    return data;
+}
+
+async function deleteJson(url) {
+    const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.message || 'Request failed.');
+    }
+    return data;
+}
+
+function renderUploadActivity() {
+    const container = document.getElementById('upload-activity');
+    if (!container) return;
+    if (state.uploadActivityItems.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    container.classList.remove('hidden');
+    container.innerHTML = state.uploadActivityItems.map((item) => `
+        <div class="mb-2 rounded-xl border border-white/10 bg-slate-800/70 p-3">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-white">${item.label}</span>
+                <span class="text-[11px] ${item.status === 'error' ? 'text-rose-300' : item.status === 'done' ? 'text-emerald-300' : 'text-gray-300'}">${Math.round(item.progress)}%</span>
+            </div>
+            <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full ${item.status === 'error' ? 'bg-rose-500' : 'bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600'} transition-all duration-300" style="width:${Math.max(2, Math.min(100, item.progress))}%"></div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function startUploadActivity(label) {
+    const id = `upload-${Date.now()}-${++state.uploadActivitySeq}`;
+    const item = { id, label, progress: 5, status: 'uploading', timerId: null };
+    item.timerId = setInterval(() => {
+        if (item.progress < 92) {
+            item.progress = Math.min(92, item.progress + (Math.random() * 9));
+            renderUploadActivity();
+        }
+    }, 260);
+    state.uploadActivityItems.unshift(item);
+    renderUploadActivity();
+    return id;
+}
+
+function finishUploadActivity(id, success = true) {
+    const item = state.uploadActivityItems.find((entry) => entry.id === id);
+    if (!item) return;
+    if (item.timerId) {
+        clearInterval(item.timerId);
+        item.timerId = null;
+    }
+    item.progress = success ? 100 : Math.min(item.progress, 100);
+    item.status = success ? 'done' : 'error';
+    renderUploadActivity();
+    setTimeout(() => {
+        state.uploadActivityItems = state.uploadActivityItems.filter((entry) => entry.id !== id);
+        renderUploadActivity();
+    }, success ? 1200 : 2200);
+}
+
+function getHostedEvents() {
+    return getAllPosts().filter((post) => post.isEvent && post.username === state.currentUser.username);
+}
+
 async function loadCurrentUserProfile() {
     try {
         const data = await getJson('/api/profile/me');
@@ -121,6 +242,7 @@ async function loadCurrentUserProfile() {
     }
     renderCurrentUserProfile();
     renderProfileGrid();
+    renderHostedEventList();
 }
 
 function getAllPosts() {
@@ -133,7 +255,12 @@ function getPostById(postId) {
 
 function setLocationStatus(message, isError = false) {
     const statusEl = document.getElementById('location-status');
-    if (!statusEl) return;
+    if (!statusEl) {
+        if (isError && message) {
+            alert(message);
+        }
+        return;
+    }
     if (!isError) {
         statusEl.textContent = '';
         statusEl.classList.add('hidden');
@@ -416,6 +543,12 @@ function saveLocationModal() {
         if (eventLocationInput) {
             eventLocationInput.value = value;
         }
+        if (locationModalSelectedCenter) {
+            state.eventLocationPoint = {
+                latitude: Number(locationModalSelectedCenter.lat),
+                longitude: Number(locationModalSelectedCenter.lng),
+            };
+        }
         closeLocationModal();
         return;
     }
@@ -442,6 +575,7 @@ function clearLocationModal() {
         if (eventLocationInput) {
             eventLocationInput.value = '';
         }
+        state.eventLocationPoint = null;
         const input = document.getElementById('location-modal-input');
         if (input) input.value = '';
         hideLocationModalSuggestions();
@@ -610,11 +744,19 @@ function bindLocationButtonGestures(buttonId) {
 }
 
 function serverEventToPost(eventData) {
+    const mediaUrls = eventData.mediaUrls || [];
+    const primaryUrl = mediaUrls[0] || eventData.imageUrl || '';
+    const mediaTypeForUrl = (url) => (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image');
+    const primaryIsVideo = mediaTypeForUrl(primaryUrl) === 'video';
     return {
         id: `event-${eventData.id}`,
         username: eventData.hostUsername || 'host',
         avatar: defaultAvatar,
-        image: eventData.imageUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+        image: eventData.imageUrl || primaryUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
+        mediaType: primaryIsVideo ? 'video' : 'image',
+        mediaUrl: primaryUrl || '',
+        mediaUrls: mediaUrls.length > 0 ? mediaUrls : (primaryUrl ? [primaryUrl] : []),
+        mediaTypes: mediaUrls.length > 0 ? mediaUrls.map(mediaTypeForUrl) : (primaryUrl ? [mediaTypeForUrl(primaryUrl)] : []),
         caption: eventData.description || 'Live event nearby.',
         likes: 0,
         isEvent: true,
@@ -624,7 +766,9 @@ function serverEventToPost(eventData) {
             location: eventData.locationName,
             price: eventData.price,
             mapUrl: eventData.mapUrl,
-            distanceKm: eventData.distanceKm
+            distanceKm: eventData.distanceKm,
+            eventType: eventData.eventCategory || 'local event',
+            mediaCount: mediaUrls.length
         }
     };
 }
@@ -727,6 +871,1083 @@ function hideLoaderWhenReady() {
     }, waitMs);
 }
 
+function setEventTypeValue(value) {
+    const eventTypeSelect = document.getElementById('event-type');
+    const eventTypeLabel = document.getElementById('event-type-label');
+    const otherWrap = document.getElementById('event-type-other-wrap');
+    const otherInput = document.getElementById('event-type-other');
+    if (!eventTypeSelect || !eventTypeLabel) return;
+    const safeValue = String(value || '').trim();
+    eventTypeSelect.value = safeValue;
+    eventTypeLabel.textContent = safeValue;
+    const showOther = safeValue === 'Other';
+    if (otherWrap) otherWrap.classList.toggle('hidden', !showOther);
+    if (!showOther && otherInput) otherInput.value = '';
+}
+
+function closeEventTypeMenu() {
+    const menuEl = document.getElementById('event-type-menu');
+    const triggerEl = document.getElementById('event-type-trigger');
+    if (!menuEl || !triggerEl) return;
+    menuEl.classList.add('hidden');
+    triggerEl.classList.remove('is-open');
+}
+
+function toggleEventTypeMenu() {
+    const menuEl = document.getElementById('event-type-menu');
+    const triggerEl = document.getElementById('event-type-trigger');
+    if (!menuEl || !triggerEl || triggerEl.disabled) return;
+    const willOpen = menuEl.classList.contains('hidden');
+    menuEl.classList.toggle('hidden', !willOpen);
+    triggerEl.classList.toggle('is-open', willOpen);
+}
+
+function renderEventCategoriesFromManifest() {
+    const eventTypeSelect = document.getElementById('event-type');
+    const eventTypeMenu = document.getElementById('event-type-menu');
+    if (!eventTypeSelect) return;
+    const categories = Array.isArray(manifestDataTemplate.event_category)
+        ? manifestDataTemplate.event_category
+            .map((item) => String(item || '').trim())
+            .filter((item) => item.length > 0)
+        : [];
+    const finalCategoriesBase = categories.length > 0 ? categories : ['Local event'];
+    const finalCategories = finalCategoriesBase.includes('Other')
+        ? finalCategoriesBase
+        : [...finalCategoriesBase, 'Other'];
+    const currentValue = (eventTypeSelect.value || '').trim();
+    eventTypeSelect.innerHTML = '';
+    const placeholderOption = document.createElement('option');
+    placeholderOption.value = '';
+    placeholderOption.textContent = 'Event type';
+    eventTypeSelect.appendChild(placeholderOption);
+    finalCategories.forEach((label) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = label;
+        optionEl.textContent = label;
+        eventTypeSelect.appendChild(optionEl);
+    });
+    const selectedValue = (currentValue && finalCategories.includes(currentValue))
+        ? currentValue
+        : '';
+    setEventTypeValue(selectedValue);
+
+    if (eventTypeMenu) {
+        eventTypeMenu.innerHTML = '';
+        finalCategories.forEach((label) => {
+            const itemBtn = document.createElement('button');
+            itemBtn.type = 'button';
+            itemBtn.className = 'event-type-item';
+            itemBtn.textContent = label;
+            itemBtn.addEventListener('click', () => {
+                setEventTypeValue(label);
+                closeEventTypeMenu();
+            });
+            eventTypeMenu.appendChild(itemBtn);
+        });
+    }
+}
+
+function formatInr(amount) {
+    const value = Number(amount);
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const hasFraction = Math.abs(safeValue % 1) > 0;
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: hasFraction ? 2 : 0
+    }).format(safeValue);
+}
+
+function formatTime12(hour12, minute, period) {
+    const hh = String(hour12).padStart(2, '0');
+    const mm = String(minute).padStart(2, '0');
+    return `${hh}:${mm} ${period}`;
+}
+
+function to24HourTime(hour12, minute, period) {
+    let hour24 = hour12 % 12;
+    if (period === 'PM') {
+        hour24 += 12;
+    }
+    return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function parse24HourTime(value) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(value || '').trim());
+    if (!match) return null;
+    const hour24 = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour24) || !Number.isInteger(minute) || hour24 < 0 || hour24 > 23 || minute < 0 || minute > 59) {
+        return null;
+    }
+    const period = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = (hour24 % 12) || 12;
+    return { hour12, minute, period };
+}
+
+function isFutureEventDateTime(dateValue, time24Value) {
+    if (!dateValue || !time24Value) return false;
+    const candidate = new Date(`${dateValue}T${time24Value}:00`);
+    if (Number.isNaN(candidate.getTime())) return false;
+    const now = new Date();
+    now.setSeconds(0, 0);
+    return candidate.getTime() >= now.getTime();
+}
+
+function stopAnalogLiveTicker() {
+    if (analogLiveTickerId) {
+        clearInterval(analogLiveTickerId);
+        analogLiveTickerId = null;
+    }
+}
+
+function startAnalogLiveTicker() {
+    stopAnalogLiveTicker();
+    analogLiveTickerId = setInterval(() => {
+        if (!analogClockState.liveMode || !isAnalogModalOpen()) return;
+        const now = new Date();
+        const hour24 = now.getHours();
+        analogClockState.period = hour24 >= 12 ? 'PM' : 'AM';
+        analogClockState.hour = (hour24 % 12) || 12;
+        analogClockState.minute = now.getMinutes();
+        analogClockState.second = now.getSeconds();
+        renderAnalogClockDial();
+    }, 1000);
+}
+
+function isTodayEventDateSelected() {
+    const selectedDate = document.getElementById('event-date')?.value || '';
+    return selectedDate && selectedDate === getTodayDateKey();
+}
+
+function isAnalogCandidateAllowed(hour12, minute, period) {
+    const candidateTime = to24HourTime(hour12, minute, period);
+    if (isTodayEventDateSelected() && !isFutureEventDateTime(getTodayDateKey(), candidateTime)) {
+        return false;
+    }
+    // If user is selecting end time, enforce duration window [30 min, 24 hr].
+    if (analogClockState.targetInputId === 'event-end-time-display') {
+        const startTime = document.getElementById('event-time')?.value || '';
+        if (startTime) {
+            const duration = calculateDurationMinutesFromTimes(startTime, candidateTime);
+            if (duration === null) return false;
+            if (duration < 30 || duration > 24 * 60) return false;
+        }
+    }
+    return true;
+}
+
+function markManualAnalogSelection() {
+    analogClockState.liveMode = false;
+    analogClockState.second = 0;
+    stopAnalogLiveTicker();
+}
+
+function getAnalogTargetHiddenInputId() {
+    return analogClockState.targetInputId === 'event-end-time-display' ? 'event-end-time' : 'event-time';
+}
+
+function syncEventTimeInputs() {
+    const hiddenTime = document.getElementById(getAnalogTargetHiddenInputId());
+    const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
+    if (!displayTime) return;
+    const time24 = to24HourTime(analogClockState.hour, analogClockState.minute, analogClockState.period);
+    if (hiddenTime) hiddenTime.value = time24;
+    displayTime.value = formatTime12(analogClockState.hour, analogClockState.minute, analogClockState.period);
+    recalculateEventDurationFromTimes();
+    syncEventTimeDependencyUi();
+}
+
+function time24ToMinutes(time24) {
+    const parsed = parse24HourTime(time24);
+    if (!parsed) return null;
+    let hour24 = parsed.hour12 % 12;
+    if (parsed.period === 'PM') hour24 += 12;
+    return (hour24 * 60) + parsed.minute;
+}
+
+function calculateDurationMinutesFromTimes(startTime24, endTime24) {
+    const startMin = time24ToMinutes(startTime24);
+    const endMin = time24ToMinutes(endTime24);
+    if (startMin === null || endMin === null) return null;
+    let delta = endMin - startMin;
+    if (delta <= 0) delta += 24 * 60;
+    return delta;
+}
+
+function formatDurationMinutes(minutes) {
+    const safe = Number(minutes);
+    if (!Number.isFinite(safe) || safe <= 0) return '';
+    const hours = Math.floor(safe / 60);
+    const mins = safe % 60;
+    if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${mins}m`;
+}
+
+function parseDurationDisplayToMinutes(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return 0;
+
+    if (/^\d+$/.test(raw)) {
+        const minutesOnly = Number(raw);
+        return Number.isFinite(minutesOnly) && minutesOnly > 0 ? minutesOnly : 0;
+    }
+
+    const compact = raw.replace(/\s+/g, '');
+    const bothMatch = /^(\d+)h(?:ours?)?(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    if (bothMatch) {
+        const h = Number(bothMatch[1]);
+        const m = Number(bothMatch[2]);
+        const total = (h * 60) + m;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    const hourMatch = /^(\d+)h(?:ours?)?$/.exec(compact);
+    if (hourMatch) {
+        const h = Number(hourMatch[1]);
+        const total = h * 60;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    const minMatch = /^(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    if (minMatch) {
+        const m = Number(minMatch[1]);
+        return Number.isFinite(m) && m > 0 ? m : 0;
+    }
+
+    const clockMatch = /^(\d{1,2}):(\d{1,2})$/.exec(raw);
+    if (clockMatch) {
+        const h = Number(clockMatch[1]);
+        const m = Number(clockMatch[2]);
+        const total = (h * 60) + m;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    return 0;
+}
+
+function syncDurationHiddenFromDisplay() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (!durationDisplay || !durationHidden) return;
+    updateDurationClearButtonVisibility();
+    if (durationDisplay.readOnly) return;
+    const minutes = parseDurationDisplayToMinutes(durationDisplay.value);
+    durationHidden.value = minutes > 0 ? String(minutes) : '';
+    syncEventTimeDependencyUi();
+}
+
+function updateDurationClearButtonVisibility() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const clearBtn = document.getElementById('event-duration-clear-btn');
+    if (!durationDisplay || !clearBtn) return;
+    const show = !durationDisplay.disabled && !durationDisplay.readOnly && !!durationDisplay.value.trim();
+    clearBtn.classList.toggle('hidden', !show);
+}
+
+function clearDurationSelection() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (durationDisplay) {
+        durationDisplay.value = '';
+        durationDisplay.readOnly = false;
+    }
+    if (durationHidden) durationHidden.value = '';
+    updateDurationClearButtonVisibility();
+    syncEventTimeDependencyUi();
+}
+
+function recalculateEventDurationFromTimes() {
+    const startTime = document.getElementById('event-time')?.value || '';
+    const endTime = document.getElementById('event-end-time')?.value || '';
+    const durationHidden = document.getElementById('event-duration-minutes');
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (!durationHidden || !durationDisplay) return;
+
+    if (!endTime || !startTime) {
+        durationDisplay.readOnly = false;
+        syncDurationHiddenFromDisplay();
+        return;
+    }
+
+    const delta = calculateDurationMinutesFromTimes(startTime, endTime);
+    if (delta === null) {
+        durationDisplay.readOnly = false;
+        syncDurationHiddenFromDisplay();
+        return;
+    }
+    durationHidden.value = String(delta);
+    durationDisplay.value = formatDurationMinutes(delta);
+    durationDisplay.readOnly = true;
+}
+
+function syncEventTimeDependencyUi() {
+    const dateHidden = document.getElementById('event-date');
+    const startDisplay = document.getElementById('event-time-display');
+    const startHidden = document.getElementById('event-time');
+    const advancedRow = document.getElementById('event-advanced-time-row');
+    const timeChoiceHint = document.getElementById('event-time-choice-hint');
+    const endDisplay = document.getElementById('event-end-time-display');
+    const endHidden = document.getElementById('event-end-time');
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (!dateHidden || !startDisplay || !startHidden || !advancedRow || !endDisplay || !endHidden || !durationDisplay || !durationHidden) return;
+
+    const hasDate = Boolean(dateHidden.value);
+    startDisplay.disabled = !hasDate;
+    if (!hasDate) {
+        startDisplay.value = '';
+        startHidden.value = '';
+        endDisplay.value = '';
+        endHidden.value = '';
+        durationDisplay.value = '';
+        durationHidden.value = '';
+        durationDisplay.readOnly = false;
+        advancedRow.classList.add('hidden');
+        if (timeChoiceHint) timeChoiceHint.classList.add('hidden');
+        return;
+    }
+
+    const hasStart = Boolean(startHidden.value);
+    advancedRow.classList.toggle('hidden', !hasStart);
+    if (timeChoiceHint) timeChoiceHint.classList.toggle('hidden', !hasStart);
+    if (!hasStart) {
+        endDisplay.value = '';
+        endHidden.value = '';
+        durationDisplay.value = '';
+        durationHidden.value = '';
+        durationDisplay.readOnly = false;
+        endDisplay.disabled = true;
+        durationDisplay.disabled = true;
+        return;
+    }
+
+    const hasEnd = Boolean(endHidden.value);
+    const manualDurationMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
+    const hasManualDuration = !hasEnd && manualDurationMinutes > 0;
+
+    if (hasEnd) {
+        endDisplay.disabled = false;
+        durationDisplay.disabled = true;
+        durationDisplay.readOnly = true;
+    } else if (hasManualDuration) {
+        endDisplay.disabled = true;
+        durationDisplay.disabled = false;
+        durationDisplay.readOnly = false;
+        endHidden.value = '';
+        endDisplay.value = '';
+    } else {
+        endDisplay.disabled = false;
+        durationDisplay.disabled = false;
+        durationDisplay.readOnly = false;
+    }
+    updateDurationClearButtonVisibility();
+}
+
+function setAnalogMode(mode) {
+    analogClockState.mode = mode === 'minute' ? 'minute' : 'hour';
+    analogClockState.focus = analogClockState.mode;
+    renderAnalogClockDial();
+}
+
+function setAnalogPeriod(period) {
+    if (!isAnalogCandidateAllowed(analogClockState.hour, analogClockState.minute, period === 'AM' ? 'AM' : 'PM')) {
+        return;
+    }
+    markManualAnalogSelection();
+    analogClockState.period = period === 'AM' ? 'AM' : 'PM';
+    analogClockState.focus = 'period';
+    renderAnalogClockDial();
+}
+
+function toggleAnalogPeriod() {
+    setAnalogPeriod(analogClockState.period === 'AM' ? 'PM' : 'AM');
+}
+
+function getAnalogDialIndexFromPoint(clientX, clientY) {
+    const dial = document.getElementById('analog-clock-dial');
+    if (!dial) return 0;
+    const rect = dial.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const angleDeg = (Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI + 90 + 360) % 360;
+    return Math.round(angleDeg / 30) % 12;
+}
+
+function setAnalogValueFromDialIndex(index) {
+    if (analogClockState.mode === 'hour') {
+        const nextHour = analogHourDialOrder[index];
+        if (!isAnalogCandidateAllowed(nextHour, analogClockState.minute, analogClockState.period)) return;
+        markManualAnalogSelection();
+        analogClockState.hour = nextHour;
+    } else {
+        const nextMinute = index * 5;
+        if (!isAnalogCandidateAllowed(analogClockState.hour, nextMinute, analogClockState.period)) return;
+        markManualAnalogSelection();
+        analogClockState.minute = nextMinute;
+    }
+}
+
+function adjustAnalogSelection(step) {
+    if (analogClockState.focus === 'period') {
+        const nextPeriod = analogClockState.period === 'AM' ? 'PM' : 'AM';
+        if (!isAnalogCandidateAllowed(analogClockState.hour, analogClockState.minute, nextPeriod)) return;
+        markManualAnalogSelection();
+        analogClockState.period = nextPeriod;
+        return;
+    }
+    if (analogClockState.focus === 'hour') {
+        const currentIndex = analogHourDialOrder.indexOf(analogClockState.hour);
+        for (let i = 1; i <= 12; i += 1) {
+            const nextIndex = (currentIndex + (step * i) + 12 * 10) % 12;
+            const nextHour = analogHourDialOrder[nextIndex];
+            if (isAnalogCandidateAllowed(nextHour, analogClockState.minute, analogClockState.period)) {
+                markManualAnalogSelection();
+                analogClockState.hour = nextHour;
+                break;
+            }
+        }
+    } else {
+        const currentIndex = Math.floor((analogClockState.minute % 60) / 5);
+        for (let i = 1; i <= 12; i += 1) {
+            const nextIndex = (currentIndex + (step * i) + 12 * 10) % 12;
+            const nextMinute = nextIndex * 5;
+            if (isAnalogCandidateAllowed(analogClockState.hour, nextMinute, analogClockState.period)) {
+                markManualAnalogSelection();
+                analogClockState.minute = nextMinute;
+                break;
+            }
+        }
+    }
+}
+
+function moveAnalogFocus(step) {
+    const order = ['hour', 'minute', 'period'];
+    const currentIndex = order.indexOf(analogClockState.focus);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (safeIndex + step + order.length) % order.length;
+    analogClockState.focus = order[nextIndex];
+    if (analogClockState.focus === 'hour' || analogClockState.focus === 'minute') {
+        analogClockState.mode = analogClockState.focus;
+    }
+}
+
+function isAnalogModalOpen() {
+    const modal = document.getElementById('analog-time-modal');
+    return !!modal && !modal.classList.contains('hidden');
+}
+
+function initAnalogClockInteractions() {
+    const dial = document.getElementById('analog-clock-dial');
+    if (!dial) return;
+
+    dial.addEventListener('pointerdown', (event) => {
+        analogDialDragging = true;
+        setAnalogValueFromDialIndex(getAnalogDialIndexFromPoint(event.clientX, event.clientY));
+        renderAnalogClockDial();
+        event.preventDefault();
+    });
+
+    window.addEventListener('pointermove', (event) => {
+        if (!analogDialDragging || !isAnalogModalOpen()) return;
+        setAnalogValueFromDialIndex(getAnalogDialIndexFromPoint(event.clientX, event.clientY));
+        renderAnalogClockDial();
+    });
+
+    window.addEventListener('pointerup', () => {
+        analogDialDragging = false;
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (!isAnalogModalOpen()) return;
+        const isDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!isDesktop) return;
+        if (event.key === 'ArrowRight') {
+            moveAnalogFocus(1);
+            renderAnalogClockDial();
+            event.preventDefault();
+        } else if (event.key === 'ArrowLeft') {
+            moveAnalogFocus(-1);
+            renderAnalogClockDial();
+            event.preventDefault();
+        } else if (event.key === 'ArrowUp') {
+            adjustAnalogSelection(1);
+            renderAnalogClockDial();
+            event.preventDefault();
+        } else if (event.key === 'ArrowDown') {
+            adjustAnalogSelection(-1);
+            renderAnalogClockDial();
+            event.preventDefault();
+        } else if (event.key === 'Enter') {
+            saveAnalogTimeSelection();
+            event.preventDefault();
+        } else if (event.key === 'Escape') {
+            closeAnalogTimeModal();
+            event.preventDefault();
+        }
+    });
+}
+
+function renderAnalogClockDial() {
+    const dial = document.getElementById('analog-clock-dial');
+    const hand = document.getElementById('analog-clock-hand');
+    const secondHand = document.getElementById('analog-clock-second-hand');
+    const digitalHour = document.getElementById('analog-digital-hour');
+    const digitalMinute = document.getElementById('analog-digital-minute');
+    const digitalPeriod = document.getElementById('analog-digital-period');
+    if (!dial || !hand || !digitalHour || !digitalMinute || !digitalPeriod) return;
+
+    dial.querySelectorAll('.analog-clock-marker').forEach((el) => el.remove());
+    const items = analogClockState.mode === 'hour'
+        ? analogHourDialOrder.map((value) => ({ value, label: String(value) }))
+        : Array.from({ length: 12 }, (_, i) => ({ value: i * 5, label: String(i * 5).padStart(2, '0') }));
+
+    items.forEach((item, index) => {
+        const angleDeg = (index * 30) - 90;
+        const marker = document.createElement('button');
+        marker.type = 'button';
+        marker.className = 'analog-clock-marker';
+        marker.style.left = `${50 + (Math.cos((angleDeg * Math.PI) / 180) * 38)}%`;
+        marker.style.top = `${50 + (Math.sin((angleDeg * Math.PI) / 180) * 38)}%`;
+        marker.textContent = item.label;
+        const isDisabled = analogClockState.mode === 'hour'
+            ? !isAnalogCandidateAllowed(item.value, analogClockState.minute, analogClockState.period)
+            : !isAnalogCandidateAllowed(analogClockState.hour, item.value, analogClockState.period);
+        if (isDisabled) marker.classList.add('is-disabled');
+        const isActive = analogClockState.mode === 'hour'
+            ? item.value === analogClockState.hour
+            : item.value === analogClockState.minute;
+        if (isActive) marker.classList.add('is-active');
+        marker.addEventListener('click', () => {
+            if (isDisabled) return;
+            if (analogClockState.mode === 'hour') {
+                analogClockState.hour = item.value;
+                analogClockState.mode = 'minute';
+                analogClockState.focus = 'minute';
+            } else {
+                analogClockState.minute = item.value;
+            }
+            markManualAnalogSelection();
+            renderAnalogClockDial();
+        });
+        dial.appendChild(marker);
+    });
+
+    const angle = analogClockState.liveMode
+        ? ((analogClockState.minute % 60) * 6) + (analogClockState.second * 0.1)
+        : (analogClockState.mode === 'hour'
+            ? ((analogClockState.hour % 12) * 30)
+            : ((analogClockState.minute / 5) * 30));
+    hand.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+    if (secondHand) {
+        secondHand.classList.toggle('is-visible', analogClockState.liveMode && isTodayEventDateSelected());
+        secondHand.style.transform = `translateX(-50%) rotate(${(analogClockState.second % 60) * 6}deg)`;
+    }
+    digitalHour.textContent = String(analogClockState.hour).padStart(2, '0');
+    digitalMinute.textContent = String(analogClockState.minute).padStart(2, '0');
+    digitalPeriod.textContent = analogClockState.period;
+    digitalPeriod.classList.toggle('is-am', analogClockState.period === 'AM');
+    digitalPeriod.classList.toggle('is-pm', analogClockState.period === 'PM');
+    if (analogLastRenderedPeriod && analogLastRenderedPeriod !== analogClockState.period) {
+        digitalPeriod.classList.remove('period-swap');
+        void digitalPeriod.offsetWidth;
+        digitalPeriod.classList.add('period-swap');
+    }
+    analogLastRenderedPeriod = analogClockState.period;
+
+    digitalHour.classList.toggle('is-active', analogClockState.focus === 'hour');
+    digitalMinute.classList.toggle('is-active', analogClockState.focus === 'minute');
+    digitalPeriod.classList.toggle('is-active', analogClockState.focus === 'period');
+}
+
+function openAnalogTimeModal(inputId) {
+    analogClockState.targetInputId = inputId || 'event-time-display';
+    const dateValue = document.getElementById('event-date')?.value || '';
+    const startTimeValue = document.getElementById('event-time')?.value || '';
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (analogClockState.targetInputId === 'event-time-display' && !dateValue) {
+        setLocationStatus('Please select event date first.', true);
+        return;
+    }
+    if (analogClockState.targetInputId === 'event-end-time-display') {
+        if (!startTimeValue) {
+            setLocationStatus('Please select start time first.', true);
+            return;
+        }
+        const hasManualDuration = parseDurationDisplayToMinutes(durationDisplay?.value || '') > 0 && !durationDisplay?.readOnly;
+        if (hasManualDuration) {
+            setLocationStatus('Choose either End Time or Duration.', true);
+            return;
+        }
+    }
+    const modal = document.getElementById('analog-time-modal');
+    const card = document.getElementById('analog-time-modal-card');
+    if (!modal || !card) return;
+
+    const hiddenTime = document.getElementById(getAnalogTargetHiddenInputId());
+    const parsed = parse24HourTime(hiddenTime?.value || '');
+    if (parsed) {
+        analogClockState.hour = parsed.hour12;
+        analogClockState.minute = parsed.minute;
+        analogClockState.period = parsed.period;
+        analogClockState.second = 0;
+        analogClockState.liveMode = false;
+        stopAnalogLiveTicker();
+    } else if (isTodayEventDateSelected()) {
+        const now = new Date();
+        const hour24 = now.getHours();
+        analogClockState.period = hour24 >= 12 ? 'PM' : 'AM';
+        analogClockState.hour = (hour24 % 12) || 12;
+        analogClockState.minute = now.getMinutes();
+        analogClockState.second = now.getSeconds();
+        analogClockState.liveMode = true;
+        startAnalogLiveTicker();
+    } else {
+        analogClockState.second = 0;
+        analogClockState.liveMode = false;
+        stopAnalogLiveTicker();
+    }
+    analogClockState.mode = 'hour';
+    analogClockState.focus = 'hour';
+    renderAnalogClockDial();
+
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+}
+
+function closeAnalogTimeModal() {
+    const modal = document.getElementById('analog-time-modal');
+    const card = document.getElementById('analog-time-modal-card');
+    if (!modal || !card) return;
+    stopAnalogLiveTicker();
+    analogClockState.liveMode = false;
+    analogClockState.second = 0;
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+function clearAnalogTimeSelection() {
+    const targetHiddenId = getAnalogTargetHiddenInputId();
+    const hiddenTime = document.getElementById(targetHiddenId);
+    const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
+    if (hiddenTime) hiddenTime.value = '';
+    if (displayTime) displayTime.value = '';
+    if (targetHiddenId === 'event-end-time') {
+        const durationDisplay = document.getElementById('event-duration-display');
+        const durationHidden = document.getElementById('event-duration-minutes');
+        if (durationDisplay) {
+            durationDisplay.value = '';
+            durationDisplay.readOnly = false;
+        }
+        if (durationHidden) durationHidden.value = '';
+    }
+    recalculateEventDurationFromTimes();
+    syncEventTimeDependencyUi();
+    closeAnalogTimeModal();
+}
+
+function parseDateParts(dateValue) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateValue || '').trim());
+    if (!match) return null;
+    return {
+        year: Number(match[1]),
+        month: Number(match[2]),
+        day: Number(match[3])
+    };
+}
+
+function formatDateDisplay(dateValue) {
+    const parts = parseDateParts(dateValue);
+    if (!parts) return '';
+    const localDate = new Date(parts.year, parts.month - 1, parts.day);
+    return localDate.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+}
+
+function toDateKey(year, month, day) {
+    return `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function getTodayDateKey() {
+    const now = new Date();
+    return toDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function dateKeyToLocalDate(dateKey) {
+    const parts = parseDateParts(dateKey);
+    if (!parts) return null;
+    return new Date(parts.year, parts.month - 1, parts.day);
+}
+
+function localDateToDateKey(localDate) {
+    if (!(localDate instanceof Date) || Number.isNaN(localDate.getTime())) return '';
+    return toDateKey(localDate.getFullYear(), localDate.getMonth(), localDate.getDate());
+}
+
+function getSafeSelectedOrTodayDateKey() {
+    const todayKey = getTodayDateKey();
+    if (!eventCalendarState.selectedDate) return todayKey;
+    return eventCalendarState.selectedDate < todayKey ? todayKey : eventCalendarState.selectedDate;
+}
+
+function isEventDateModalOpen() {
+    const modal = document.getElementById('event-date-modal');
+    return !!modal && !modal.classList.contains('hidden');
+}
+
+function isEventMonthYearPickerOpen() {
+    const picker = document.getElementById('event-month-year-picker');
+    return !!picker && !picker.classList.contains('hidden');
+}
+
+function clampEventCalendarToCurrentMonth() {
+    const today = new Date();
+    if (
+        eventCalendarState.viewYear < today.getFullYear() ||
+        (eventCalendarState.viewYear === today.getFullYear() && eventCalendarState.viewMonth < today.getMonth())
+    ) {
+        eventCalendarState.viewYear = today.getFullYear();
+        eventCalendarState.viewMonth = today.getMonth();
+    }
+}
+
+function renderEventMonthYearPicker() {
+    const yearLabel = document.getElementById('event-calendar-year-label');
+    const monthGrid = document.getElementById('event-month-grid');
+    if (!yearLabel || !monthGrid) return;
+    const today = new Date();
+    const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    yearLabel.textContent = String(eventCalendarState.viewYear);
+
+    monthGrid.innerHTML = monthShortNames.map((label, idx) => {
+        const disabled = eventCalendarState.viewYear === today.getFullYear() && idx < today.getMonth();
+        const active = idx === eventCalendarState.viewMonth;
+        return `<button type="button" data-month="${idx}" class="event-month-chip${active ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    }).join('');
+
+    monthGrid.querySelectorAll('button[data-month]').forEach((buttonEl) => {
+        buttonEl.addEventListener('click', () => {
+            const monthIdx = Number(buttonEl.getAttribute('data-month'));
+            if (!Number.isInteger(monthIdx) || monthIdx < 0 || monthIdx > 11) return;
+            eventCalendarState.viewMonth = monthIdx;
+            clampEventCalendarToCurrentMonth();
+            renderEventCalendar();
+        });
+    });
+}
+
+function toggleEventMonthYearPicker() {
+    const picker = document.getElementById('event-month-year-picker');
+    if (!picker) return;
+    picker.classList.toggle('hidden');
+    if (!picker.classList.contains('hidden')) {
+        renderEventMonthYearPicker();
+    }
+}
+
+function closeEventMonthYearPicker() {
+    const picker = document.getElementById('event-month-year-picker');
+    if (!picker) return;
+    picker.classList.add('hidden');
+}
+
+function changeEventCalendarYear(step) {
+    const today = new Date();
+    const nextYear = eventCalendarState.viewYear + step;
+    eventCalendarState.viewYear = Math.max(today.getFullYear(), nextYear);
+    clampEventCalendarToCurrentMonth();
+    renderEventCalendar();
+}
+
+function setCalendarViewToSelectedDate(dateKey) {
+    const parsed = parseDateParts(dateKey);
+    if (!parsed) return;
+    eventCalendarState.viewYear = parsed.year;
+    eventCalendarState.viewMonth = parsed.month - 1;
+}
+
+function moveEventDateSelectionByDays(daysDelta) {
+    const todayKey = getTodayDateKey();
+    const baseKey = getSafeSelectedOrTodayDateKey();
+    const baseDate = dateKeyToLocalDate(baseKey);
+    if (!baseDate) return;
+
+    const nextDate = new Date(baseDate);
+    nextDate.setDate(nextDate.getDate() + daysDelta);
+    let nextKey = localDateToDateKey(nextDate);
+    if (!nextKey) return;
+    if (nextKey < todayKey) nextKey = todayKey;
+
+    eventCalendarState.selectedDate = nextKey;
+    setCalendarViewToSelectedDate(nextKey);
+    renderEventCalendar();
+}
+
+function moveEventCalendarMonthByKeyboard(monthDelta) {
+    const nextMonth = eventCalendarState.viewMonth + monthDelta;
+    const yearDelta = Math.floor(nextMonth / 12);
+    eventCalendarState.viewYear += yearDelta;
+    eventCalendarState.viewMonth = ((nextMonth % 12) + 12) % 12;
+    clampEventCalendarToCurrentMonth();
+    renderEventCalendar();
+}
+
+function handleEventCalendarKeyboard(event) {
+    if (!isEventDateModalOpen()) return;
+
+    if (isEventMonthYearPickerOpen()) {
+        if (event.key === 'ArrowLeft') {
+            moveEventCalendarMonthByKeyboard(-1);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'ArrowRight') {
+            moveEventCalendarMonthByKeyboard(1);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            changeEventCalendarYear(1);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'ArrowDown') {
+            changeEventCalendarYear(-1);
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Escape') {
+            closeEventMonthYearPicker();
+            event.preventDefault();
+            return;
+        }
+        if (event.key === 'Enter') {
+            closeEventMonthYearPicker();
+            event.preventDefault();
+            return;
+        }
+    }
+
+    if (event.key === 'ArrowLeft') {
+        moveEventDateSelectionByDays(-1);
+        event.preventDefault();
+    } else if (event.key === 'ArrowRight') {
+        moveEventDateSelectionByDays(1);
+        event.preventDefault();
+    } else if (event.key === 'ArrowUp') {
+        moveEventDateSelectionByDays(-7);
+        event.preventDefault();
+    } else if (event.key === 'ArrowDown') {
+        moveEventDateSelectionByDays(7);
+        event.preventDefault();
+    } else if (event.key === 'Enter') {
+        saveEventDateSelection();
+        event.preventDefault();
+    } else if (event.key === 'Escape') {
+        closeEventDateModal();
+        event.preventDefault();
+    }
+}
+
+function renderEventCalendar() {
+    const monthLabel = document.getElementById('event-calendar-month-label');
+    const grid = document.getElementById('event-calendar-grid');
+    const preview = document.getElementById('event-date-preview');
+    if (!monthLabel || !grid || !preview) return;
+
+    const firstDay = new Date(eventCalendarState.viewYear, eventCalendarState.viewMonth, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(eventCalendarState.viewYear, eventCalendarState.viewMonth + 1, 0).getDate();
+    const todayKey = getTodayDateKey();
+
+    monthLabel.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    preview.textContent = eventCalendarState.selectedDate
+        ? formatDateDisplay(eventCalendarState.selectedDate)
+        : 'No date selected';
+
+    const cells = [];
+    for (let i = 0; i < startWeekday; i += 1) {
+        cells.push('<span class="event-calendar-cell is-empty"></span>');
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        const dateKey = toDateKey(eventCalendarState.viewYear, eventCalendarState.viewMonth, day);
+        const isPast = dateKey < todayKey;
+        const isSelected = dateKey === eventCalendarState.selectedDate;
+        cells.push(
+            `<button type="button" class="event-calendar-cell${isSelected ? ' is-selected' : ''}${isPast ? ' is-disabled' : ''}" ${isPast ? 'disabled' : ''} data-date="${dateKey}">${day}</button>`
+        );
+    }
+
+    grid.innerHTML = cells.join('');
+    grid.querySelectorAll('button[data-date]').forEach((buttonEl) => {
+        buttonEl.addEventListener('click', () => {
+            eventCalendarState.selectedDate = buttonEl.getAttribute('data-date') || '';
+            renderEventCalendar();
+        });
+    });
+    renderEventMonthYearPicker();
+}
+
+function openEventDateModal(inputId) {
+    eventCalendarState.targetInputId = inputId || 'event-date-display';
+    const modal = document.getElementById('event-date-modal');
+    const card = document.getElementById('event-date-modal-card');
+    if (!modal || !card) return;
+
+    const hiddenDate = document.getElementById('event-date');
+    const selectedDate = hiddenDate?.value || getTodayDateKey();
+    const parsed = parseDateParts(selectedDate);
+    if (parsed) {
+        eventCalendarState.selectedDate = selectedDate;
+        eventCalendarState.viewYear = parsed.year;
+        eventCalendarState.viewMonth = parsed.month - 1;
+    }
+    closeEventMonthYearPicker();
+    renderEventCalendar();
+
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+}
+
+function closeEventDateModal() {
+    const modal = document.getElementById('event-date-modal');
+    const card = document.getElementById('event-date-modal-card');
+    if (!modal || !card) return;
+    closeEventMonthYearPicker();
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+function changeEventCalendarMonth(step) {
+    const nextMonth = eventCalendarState.viewMonth + step;
+    const yearDelta = Math.floor(nextMonth / 12);
+    eventCalendarState.viewYear += yearDelta;
+    eventCalendarState.viewMonth = ((nextMonth % 12) + 12) % 12;
+
+    clampEventCalendarToCurrentMonth();
+    renderEventCalendar();
+}
+
+function saveEventDateSelection() {
+    const dateValue = eventCalendarState.selectedDate || '';
+    if (!dateValue) {
+        setLocationStatus('Please select a date.', true);
+        return;
+    }
+    if (dateValue < getTodayDateKey()) {
+        setLocationStatus('Past dates are not allowed.', true);
+        return;
+    }
+    const hiddenDate = document.getElementById('event-date');
+    const displayInput = document.getElementById(eventCalendarState.targetInputId || 'event-date-display');
+    if (hiddenDate) hiddenDate.value = dateValue;
+    if (displayInput) displayInput.value = formatDateDisplay(dateValue);
+
+    const hiddenTime = document.getElementById('event-time');
+    const displayTime = document.getElementById('event-time-display');
+    const hiddenEndTime = document.getElementById('event-end-time');
+    const displayEndTime = document.getElementById('event-end-time-display');
+    if (hiddenTime?.value && !isFutureEventDateTime(dateValue, hiddenTime.value)) {
+        hiddenTime.value = '';
+        if (displayTime) displayTime.value = '';
+        if (hiddenEndTime) hiddenEndTime.value = '';
+        if (displayEndTime) displayEndTime.value = '';
+        recalculateEventDurationFromTimes();
+        setLocationStatus('Selected date changed. Please re-select time.', true);
+    } else if (hiddenEndTime?.value && !isFutureEventDateTime(dateValue, hiddenEndTime.value)) {
+        hiddenEndTime.value = '';
+        if (displayEndTime) displayEndTime.value = '';
+        recalculateEventDurationFromTimes();
+        setLocationStatus('Selected date changed. End time was cleared.', true);
+    } else {
+        setLocationStatus('');
+    }
+    syncEventTimeDependencyUi();
+    closeEventDateModal();
+}
+
+function clearEventDateSelection() {
+    const hiddenDate = document.getElementById('event-date');
+    const displayInput = document.getElementById(eventCalendarState.targetInputId || 'event-date-display');
+    if (hiddenDate) hiddenDate.value = '';
+    if (displayInput) displayInput.value = '';
+    eventCalendarState.selectedDate = '';
+    const hiddenTime = document.getElementById('event-time');
+    const displayTime = document.getElementById('event-time-display');
+    const hiddenEndTime = document.getElementById('event-end-time');
+    const displayEndTime = document.getElementById('event-end-time-display');
+    const durationInput = document.getElementById('event-duration-minutes');
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (hiddenTime) hiddenTime.value = '';
+    if (displayTime) displayTime.value = '';
+    if (hiddenEndTime) hiddenEndTime.value = '';
+    if (displayEndTime) displayEndTime.value = '';
+    if (durationInput) {
+        durationInput.value = '';
+    }
+    if (durationDisplay) {
+        durationDisplay.value = '';
+        durationDisplay.readOnly = false;
+    }
+    syncEventTimeDependencyUi();
+    closeEventDateModal();
+}
+
+function saveAnalogTimeSelection() {
+    const dateInput = document.getElementById('event-date');
+    const dateValue = dateInput?.value || '';
+    const time24 = to24HourTime(analogClockState.hour, analogClockState.minute, analogClockState.period);
+    if (dateValue && !isFutureEventDateTime(dateValue, time24)) {
+        setLocationStatus('Please select a future time for the selected date.', true);
+        return;
+    }
+    syncEventTimeInputs();
+    setLocationStatus('');
+    syncEventTimeDependencyUi();
+    closeAnalogTimeModal();
+}
+
+function initEventDateTimePicker() {
+    const dateInput = document.getElementById('event-date');
+    const dateDisplayInput = document.getElementById('event-date-display');
+    if (!dateInput || !dateDisplayInput) return;
+
+    const selectedDate = dateInput.value || '';
+    if (selectedDate) {
+        dateDisplayInput.value = formatDateDisplay(selectedDate);
+        eventCalendarState.selectedDate = selectedDate;
+        const parsed = parseDateParts(selectedDate);
+        if (parsed) {
+            eventCalendarState.viewYear = parsed.year;
+            eventCalendarState.viewMonth = parsed.month - 1;
+        }
+    } else {
+        const today = new Date();
+        eventCalendarState.viewYear = today.getFullYear();
+        eventCalendarState.viewMonth = today.getMonth();
+    }
+    syncEventTimeDependencyUi();
+}
+
+function initEventCalendarKeyboardNavigation() {
+    document.addEventListener('keydown', handleEventCalendarKeyboard);
+}
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     state.customLocationName = localStorage.getItem('vibe_custom_location_name') || '';
@@ -766,15 +1987,97 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    const analogTimeModal = document.getElementById('analog-time-modal');
+    if (analogTimeModal) {
+        analogTimeModal.addEventListener('click', (event) => {
+            if (event.target === analogTimeModal) {
+                closeAnalogTimeModal();
+            }
+        });
+    }
+    const eventDateModal = document.getElementById('event-date-modal');
+    if (eventDateModal) {
+        eventDateModal.addEventListener('click', (event) => {
+            if (event.target === eventDateModal) {
+                closeEventDateModal();
+            }
+        });
+    }
+    document.addEventListener('click', (event) => {
+        const picker = document.getElementById('event-month-year-picker');
+        if (!picker || picker.classList.contains('hidden')) return;
+        const labelBtn = document.getElementById('event-calendar-month-label');
+        const target = event.target;
+        if (target instanceof Element && (target.closest('#event-month-year-picker') || target.closest('#event-calendar-month-label'))) {
+            return;
+        }
+        closeEventMonthYearPicker();
+    });
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('#event-type-picker')) {
+            return;
+        }
+        closeEventTypeMenu();
+    });
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.hosted-event-menu') && !event.target.closest('[onpointerdown*="startHostedEventPress"]')) {
+            if (state.hostedMenuEventPostId) {
+                state.hostedMenuEventPostId = null;
+                renderHostedEventList();
+            }
+        }
+    });
     bindLocationButtonGestures('mobile-location-btn');
     bindLocationButtonGestures('desktop-location-btn');
     renderTopLocationUi();
     renderFeed();
+    renderUploadActivity();
     renderStories();
     renderExplore();
     renderCurrentUserProfile();
     renderProfileGrid();
     renderTicketList();
+    renderHostedEventList();
+    switchMyEventsTab('tickets');
+    const eventMediaInput = document.getElementById('event-media-input');
+    if (eventMediaInput) {
+        eventMediaInput.addEventListener('change', handleEventMediaInputChange);
+    }
+    const createPostForm = document.getElementById('create-post-form');
+    if (createPostForm) {
+        createPostForm.addEventListener('submit', handlePostSubmit);
+    }
+    renderEventCategoriesFromManifest();
+    initEventDateTimePicker();
+    initAnalogClockInteractions();
+    initEventCalendarKeyboardNavigation();
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (durationDisplay) {
+        durationDisplay.addEventListener('input', syncDurationHiddenFromDisplay);
+        durationDisplay.addEventListener('blur', () => {
+            if (durationDisplay.readOnly) return;
+            const parsedMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
+            if (parsedMinutes > 0) {
+                if (parsedMinutes < 30) {
+                    const durationHidden = document.getElementById('event-duration-minutes');
+                    if (durationHidden) durationHidden.value = '';
+                    setLocationStatus('Duration must be at least 30 minutes.', true);
+                    return;
+                }
+                if (parsedMinutes > 24 * 60) {
+                    const durationHidden = document.getElementById('event-duration-minutes');
+                    if (durationHidden) durationHidden.value = '';
+                    setLocationStatus('Duration cannot be more than 24 hours.', true);
+                    return;
+                }
+                durationDisplay.value = formatDurationMinutes(parsedMinutes);
+                setLocationStatus('');
+            }
+            syncDurationHiddenFromDisplay();
+        });
+    }
+    renderSelectedEventMedia();
     loadCurrentUserProfile();
     switchTab(getInitialTabFromUrl());
     lucide.createIcons();
@@ -806,6 +2109,137 @@ function renderStories() {
     container.innerHTML = storiesHTML;
 }
 
+function getPostMediaItems(post) {
+    if (Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0) {
+        const types = Array.isArray(post.mediaTypes) ? post.mediaTypes : [];
+        return post.mediaUrls.map((url, idx) => ({
+            url,
+            type: types[idx] || (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image')
+        }));
+    }
+    if (post.mediaUrl) {
+        return [{ url: post.mediaUrl, type: post.mediaType || 'image' }];
+    }
+    if (post.image) {
+        return [{ url: post.image, type: post.mediaType || 'image' }];
+    }
+    return [];
+}
+
+function shiftPostMedia(postId, delta) {
+    const post = getPostById(postId);
+    if (!post) return;
+    const items = getPostMediaItems(post);
+    if (items.length <= 1) return;
+    const current = state.postMediaIndexes[postId] || 0;
+    const next = (current + delta + items.length) % items.length;
+    state.postMediaIndexes[postId] = next;
+    renderFeed();
+}
+
+function startPostSwipe(event, postId) {
+    state.postSwipeStartX[postId] = event.touches?.[0]?.clientX || 0;
+}
+
+function endPostSwipe(event, postId) {
+    const startX = state.postSwipeStartX[postId] || 0;
+    const endX = event.changedTouches?.[0]?.clientX || startX;
+    const diff = endX - startX;
+    if (Math.abs(diff) < 35) return;
+    shiftPostMedia(postId, diff < 0 ? 1 : -1);
+}
+
+function startPendingMediaSwipe(event) {
+    state.pendingSwipeStartX = event.touches?.[0]?.clientX || 0;
+}
+
+function endPendingMediaSwipe(event) {
+    const endX = event.changedTouches?.[0]?.clientX || state.pendingSwipeStartX;
+    const diff = endX - state.pendingSwipeStartX;
+    if (Math.abs(diff) < 35) return;
+    shiftPendingMedia(diff < 0 ? 1 : -1);
+}
+
+function shiftPendingMedia(delta) {
+    const slideCount = state.pendingEventMedia.length + 1; // extra end slide for add/change
+    if (slideCount <= 1) return;
+    const next = (state.pendingMediaIndex + delta + slideCount) % slideCount;
+    state.pendingMediaIndex = next;
+    renderSelectedEventMedia();
+}
+
+function renderPostMediaStage(post) {
+    const items = getPostMediaItems(post);
+    const safeCount = items.length || 1;
+    const idxRaw = state.postMediaIndexes[post.id] || 0;
+    const idx = Math.max(0, Math.min(idxRaw, safeCount - 1));
+    const current = items[idx] || { url: post.image, type: 'image' };
+    const mediaTag = current.type === 'video'
+        ? `<video src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105" controls playsinline preload="metadata"></video>`
+        : `<img src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">`;
+    const controls = safeCount > 1
+        ? `<button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', -1)" class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&lsaquo;</button>
+           <button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', 1)" class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&rsaquo;</button>
+           <div class="absolute top-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10 z-20">${idx + 1} / ${safeCount}</div>`
+        : '';
+    return `<div class="absolute inset-0" ontouchstart="startPostSwipe(event, '${post.id}')" ontouchend="endPostSwipe(event, '${post.id}')">${mediaTag}${controls}</div>`;
+}
+
+function isDuplicatePendingMedia(file) {
+    return state.pendingEventMedia.some((item) =>
+        item.name === file.name &&
+        item.size === file.size &&
+        item.lastModified === file.lastModified
+    );
+}
+
+function getVideoDurationSeconds(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+            const duration = Number(video.duration || 0);
+            URL.revokeObjectURL(url);
+            resolve(duration);
+        };
+        video.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Could not read video metadata.'));
+        };
+        video.src = url;
+    });
+}
+
+async function validateIncomingMedia(files) {
+    const accepted = [];
+    const longVideoNames = [];
+    const invalidTypeNames = [];
+
+    for (const file of files) {
+        const type = (file.type || '').toLowerCase();
+        if (type.startsWith('image/')) {
+            accepted.push(file);
+            continue;
+        }
+        if (!type.startsWith('video/')) {
+            invalidTypeNames.push(file.name || 'unknown');
+            continue;
+        }
+        try {
+            const seconds = await getVideoDurationSeconds(file);
+            if (seconds > 90) {
+                longVideoNames.push(file.name || 'video');
+                continue;
+            }
+            accepted.push(file);
+        } catch (_) {
+            invalidTypeNames.push(file.name || 'unknown');
+        }
+    }
+    return { accepted, longVideoNames, invalidTypeNames };
+}
+
 function renderFeed() {
     const container = document.getElementById('feed-container');
     container.innerHTML = getAllPosts().map(post => `
@@ -823,7 +2257,7 @@ function renderFeed() {
                 <button class="text-gray-400 hover:text-white"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
             </div>
             <div class="relative w-full aspect-[4/5] bg-gray-900 group overflow-hidden md:rounded-lg">
-                <img src="${post.image}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">
+                ${renderPostMediaStage(post)}
                 <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/90 pointer-events-none"></div>
                 
                 <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-10 pointer-events-auto">
@@ -854,7 +2288,7 @@ function renderFeed() {
                         </div>
                         <div class="flex items-center gap-2">
                             ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
-                            <button class="px-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book ${formatInr(post.eventDetails.price)}</button>
                         </div>
                     </div>` : ''}
                 </div>
@@ -939,6 +2373,131 @@ function renderTicketList() {
     lucide.createIcons();
 }
 
+function startHostedEventPress(event, postId) {
+    if (event?.target?.closest('.hosted-event-menu')) return;
+    clearTimeout(state.hostedPressTimerId);
+    state.hostedPressTimerId = setTimeout(() => {
+        state.hostedMenuEventPostId = postId;
+        state.hostedSuppressClickPostId = postId;
+        renderHostedEventList();
+    }, 550);
+}
+
+function cancelHostedEventPress() {
+    clearTimeout(state.hostedPressTimerId);
+}
+
+function handleHostedEventCardClick(postId) {
+    if (state.hostedSuppressClickPostId === postId) {
+        state.hostedSuppressClickPostId = null;
+        return;
+    }
+    if (state.hostedMenuEventPostId && state.hostedMenuEventPostId !== postId) {
+        state.hostedMenuEventPostId = null;
+        renderHostedEventList();
+    }
+    openBookingModal(postId);
+}
+
+async function deleteHostedEvent(postId) {
+    const eventId = Number(String(postId || '').replace('event-', ''));
+    if (!Number.isFinite(eventId) || eventId <= 0) {
+        setLocationStatus('Unable to delete this event.', true);
+        return;
+    }
+    if (!window.confirm('Delete this event? This action cannot be undone.')) {
+        return;
+    }
+    try {
+        await deleteJson(`/api/events/${eventId}`);
+        state.nearbyEventPosts = state.nearbyEventPosts.filter((item) => item.id !== postId);
+        state.posts = state.posts.filter((item) => item.id !== postId);
+        state.tickets = state.tickets.filter((ticket) => ticket?.event?.id !== postId);
+        state.hostedMenuEventPostId = null;
+        renderFeed();
+        renderHostedEventList();
+        renderTicketList();
+        renderProfileGrid();
+    } catch (error) {
+        setLocationStatus(error.message || 'Failed to delete event.', true);
+    }
+}
+
+function renderHostedEventList() {
+    const container = document.getElementById('hosted-events-list');
+    const emptyState = document.getElementById('empty-hosted-events');
+    if (!container || !emptyState) return;
+
+    const hostedEvents = getHostedEvents();
+    if (hostedEvents.length === 0) {
+        emptyState.classList.remove('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    emptyState.classList.add('hidden');
+    container.innerHTML = hostedEvents.map((eventPost) => {
+        const menuVisible = state.hostedMenuEventPostId === eventPost.id;
+        return `
+        <div class="relative">
+            <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+                onclick="handleHostedEventCardClick('${eventPost.id}')"
+                onpointerdown="startHostedEventPress(event, '${eventPost.id}')"
+                onpointerup="cancelHostedEventPress()"
+                onpointerleave="cancelHostedEventPress()"
+                onpointercancel="cancelHostedEventPress()">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
+                <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
+                    <div class="h-28 w-full relative">
+                        <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                        <div class="absolute bottom-3 left-4">
+                            <h3 class="font-black text-lg tracking-wide text-white">${eventPost.eventDetails.title}</h3>
+                            <p class="text-xs text-gray-300 mt-0.5">${eventPost.eventDetails.location}</p>
+                        </div>
+                    </div>
+                    <div class="p-4 flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div>
+                            <div class="font-bold text-white text-sm">${eventPost.eventDetails.date}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
+                            <div class="font-black text-fuchsia-400">${formatInr(eventPost.eventDetails.price)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="hosted-event-menu mt-2 ${menuVisible ? '' : 'hidden'}">
+                <button type="button" onclick="event.stopPropagation(); deleteHostedEvent('${eventPost.id}')"
+                    class="w-full py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm font-semibold hover:bg-rose-500/20 transition-colors">
+                    Delete Event
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function switchMyEventsTab(tabId) {
+    state.myEventsTab = tabId === 'event' ? 'event' : 'tickets';
+    const ticketsBtn = document.getElementById('btn-my-events-tickets');
+    const eventBtn = document.getElementById('btn-my-events-event');
+    const ticketsPanel = document.getElementById('tickets-panel');
+    const eventPanel = document.getElementById('event-panel');
+
+    if (state.myEventsTab === 'tickets') {
+        if (ticketsBtn) ticketsBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg';
+        if (eventBtn) eventBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white';
+        if (ticketsPanel) ticketsPanel.classList.remove('hidden');
+        if (eventPanel) eventPanel.classList.add('hidden');
+    } else {
+        if (eventBtn) eventBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/20';
+        if (ticketsBtn) ticketsBtn.className = 'flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white';
+        if (eventPanel) eventPanel.classList.remove('hidden');
+        if (ticketsPanel) ticketsPanel.classList.add('hidden');
+    }
+}
+
 // --- Interaction Logic ---
 
 function switchTab(tabId) {
@@ -987,6 +2546,11 @@ function switchTab(tabId) {
     if (tabId === 'profile') {
         loadCurrentUserProfile();
     }
+    if (tabId === 'tickets') {
+        renderTicketList();
+        renderHostedEventList();
+        switchMyEventsTab(state.myEventsTab);
+    }
 }
 
 function togglePostType(isEvent) {
@@ -1008,8 +2572,90 @@ function togglePostType(isEvent) {
     }
 }
 
+function renderSelectedEventMedia() {
+    const stage = document.getElementById('event-media-stage');
+    const frame = document.getElementById('event-media-frame');
+    const counter = document.getElementById('event-media-counter');
+    const emptyState = document.getElementById('event-media-empty-state');
+    if (!stage || !frame || !counter || !emptyState) return;
+    state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    state.pendingEventMediaPreviewUrls = [];
+    if (state.pendingEventMedia.length === 0) {
+        stage.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        frame.innerHTML = '';
+        counter.textContent = '';
+        state.pendingMediaIndex = 0;
+        return;
+    }
+    emptyState.classList.add('hidden');
+    stage.classList.remove('hidden');
+    const slideCount = state.pendingEventMedia.length + 1;
+    if (state.pendingMediaIndex >= slideCount) {
+        state.pendingMediaIndex = 0;
+    }
+
+    if (state.pendingMediaIndex === state.pendingEventMedia.length) {
+        frame.innerHTML = `
+            <div class="w-full h-full grid place-items-center bg-gradient-to-br from-slate-900/90 via-slate-800/80 to-fuchsia-950/35 p-5 text-center"
+                onclick="event.preventDefault(); event.stopPropagation(); document.getElementById('event-media-input')?.click();">
+                <div class="space-y-3">
+                    <div class="mx-auto w-16 h-16 rounded-full bg-white/10 border border-white/20 grid place-items-center text-white text-3xl">+</div>
+                    <p class="text-white font-semibold">Add or Change Media</p>
+                    <p class="text-xs text-gray-300">Keep current media and add more (max 10 total).</p>
+                </div>
+            </div>
+        `;
+        counter.textContent = `${slideCount} / ${slideCount}`;
+        return;
+    }
+
+    const file = state.pendingEventMedia[state.pendingMediaIndex];
+    const previewUrl = URL.createObjectURL(file);
+    state.pendingEventMediaPreviewUrls.push(previewUrl);
+    const isVideo = (file.type || '').startsWith('video/');
+    frame.innerHTML = isVideo
+        ? `<video src="${previewUrl}" class="w-full h-full object-cover" controls playsinline preload="metadata" ontouchstart="startPendingMediaSwipe(event)" ontouchend="endPendingMediaSwipe(event)"></video>`
+        : `<img src="${previewUrl}" class="w-full h-full object-cover" ontouchstart="startPendingMediaSwipe(event)" ontouchend="endPendingMediaSwipe(event)">`;
+    counter.textContent = `${state.pendingMediaIndex + 1} / ${slideCount}`;
+}
+
+async function handleEventMediaInputChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const { accepted, longVideoNames, invalidTypeNames } = await validateIncomingMedia(files);
+    const uniqueAccepted = accepted.filter((file) => !isDuplicatePendingMedia(file));
+    const slotsLeft = Math.max(0, 10 - state.pendingEventMedia.length);
+    const toAdd = uniqueAccepted.slice(0, slotsLeft);
+    const overflowCount = Math.max(0, uniqueAccepted.length - toAdd.length);
+
+    if (toAdd.length > 0) {
+        state.pendingEventMedia = [...state.pendingEventMedia, ...toAdd];
+        state.pendingMediaIndex = Math.max(0, state.pendingEventMedia.length - 1);
+    }
+
+    const messages = [];
+    if (longVideoNames.length > 0) {
+        messages.push(`Skipped ${longVideoNames.length} video(s) longer than 90 seconds.`);
+    }
+    if (invalidTypeNames.length > 0) {
+        messages.push(`Skipped ${invalidTypeNames.length} invalid file(s). Only image/video allowed.`);
+    }
+    if (overflowCount > 0) {
+        messages.push(`Only 10 media files are allowed. ${overflowCount} file(s) were not added.`);
+    }
+    if (messages.length > 0) {
+        alert(messages.join('\n'));
+    }
+
+    event.target.value = '';
+    renderSelectedEventMedia();
+}
+
 async function handlePostSubmit(e) {
     e.preventDefault();
+    let activityId = null;
     const newPost = {
         id: Math.random().toString(36),
         username: state.currentUser.username,
@@ -1022,44 +2668,173 @@ async function handlePostSubmit(e) {
 
     if (state.isEventMode) {
         const useCurrentLocation = document.getElementById('event-use-current-location')?.checked;
-        if (!useCurrentLocation) {
-            setLocationStatus('Please keep "Use my current location" enabled for exact event pin.', true);
+        const eventLocationInputValue = document.getElementById('event-location')?.value?.trim() || '';
+        const fallbackPoint = state.eventLocationPoint || state.userLocation;
+        const finalPoint = useCurrentLocation ? state.userLocation : fallbackPoint;
+
+        if (!document.getElementById('event-title')?.value?.trim()) {
+            setLocationStatus('Please enter event title.', true);
             return;
         }
-        if (!state.userLocation) {
-            setLocationStatus('Please detect your location before creating an event.', true);
+        if (!eventLocationInputValue) {
+            setLocationStatus('Please select event location.', true);
             return;
         }
+        if (!finalPoint) {
+            setLocationStatus('Please detect location or pick location from map.', true);
+            return;
+        }
+        const priceValue = Number(document.getElementById('event-price').value || 0);
+        if (!Number.isFinite(priceValue) || priceValue < 0) {
+            setLocationStatus('Price cannot be less than 0.', true);
+            return;
+        }
+        const selectedDate = document.getElementById('event-date').value;
+        const selectedTime = document.getElementById('event-time').value;
+        const selectedEventType = (document.getElementById('event-type')?.value || '').trim();
+        const customEventType = (document.getElementById('event-type-other')?.value || '').trim();
+        const selectedEndTime = document.getElementById('event-end-time')?.value || '';
+        const durationInputEl = document.getElementById('event-duration-minutes');
+        const durationDisplayEl = document.getElementById('event-duration-display');
+        syncDurationHiddenFromDisplay();
+        let durationMinutes = Number(durationInputEl?.value || 0);
+        if (!selectedDate || !selectedTime) {
+            setLocationStatus('Please select event date and time.', true);
+            return;
+        }
+        if (!isFutureEventDateTime(selectedDate, selectedTime)) {
+            setLocationStatus('Event date/time must be in the future.', true);
+            return;
+        }
+        if (!selectedEventType) {
+            setLocationStatus('Please select event type.', true);
+            return;
+        }
+        if (selectedEventType === 'Other' && !customEventType) {
+            setLocationStatus('Please enter custom event type.', true);
+            return;
+        }
+        if (selectedEndTime && durationDisplayEl?.value?.trim() && !durationDisplayEl.readOnly) {
+            setLocationStatus('Choose either End Time or Duration.', true);
+            return;
+        }
+        if (selectedEndTime) {
+            if (!isFutureEventDateTime(selectedDate, selectedEndTime)) {
+                setLocationStatus('End time must not be in the past.', true);
+                return;
+            }
+            const computedDuration = calculateDurationMinutesFromTimes(selectedTime, selectedEndTime);
+            if (computedDuration !== null) {
+                if (computedDuration < 30 || computedDuration > 24 * 60) {
+                    setLocationStatus('Event duration must be between 30 min and 24 hr.', true);
+                    return;
+                }
+                durationMinutes = computedDuration;
+                if (durationInputEl) {
+                    durationInputEl.value = String(computedDuration);
+                }
+                if (durationDisplayEl) {
+                    durationDisplayEl.value = formatDurationMinutes(computedDuration);
+                    durationDisplayEl.readOnly = true;
+                }
+            }
+        } else {
+            if (durationDisplayEl?.value?.trim()) {
+                const parsedManualDuration = parseDurationDisplayToMinutes(durationDisplayEl.value);
+                if (parsedManualDuration <= 0) {
+                    setLocationStatus('Invalid duration format. Use 90, 1h 30m, 2h, or 45m.', true);
+                    return;
+                }
+                if (parsedManualDuration < 30) {
+                    setLocationStatus('Duration must be at least 30 minutes.', true);
+                    return;
+                }
+                if (parsedManualDuration > 24 * 60) {
+                    setLocationStatus('Duration cannot be more than 24 hours.', true);
+                    return;
+                }
+                durationMinutes = parsedManualDuration;
+                if (durationInputEl) durationInputEl.value = String(parsedManualDuration);
+                durationDisplayEl.value = formatDurationMinutes(parsedManualDuration);
+            } else if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                durationMinutes = 0;
+            }
+        }
+        const startLabel = [selectedDate, selectedTime].filter(Boolean).join(' ');
+        activityId = startUploadActivity('Uploading event...');
+        switchTab('home');
 
         try {
-            const result = await postJson('/api/events/create', {
-                title: document.getElementById('event-title').value.trim(),
-                description: document.getElementById('post-caption').value.trim(),
-                startLabel: document.getElementById('event-date').value.trim(),
-                locationName: document.getElementById('event-location').value.trim(),
-                price: document.getElementById('event-price').value || 0,
-                latitude: state.userLocation?.latitude,
-                longitude: state.userLocation?.longitude
+            const formData = new FormData();
+            formData.append('title', document.getElementById('event-title').value.trim());
+            formData.append('description', document.getElementById('post-caption').value.trim());
+            formData.append('startLabel', startLabel);
+            if (selectedEndTime) {
+                formData.append('endTime', selectedEndTime);
+            }
+            if (durationMinutes > 0) {
+                formData.append('durationMinutes', String(durationMinutes));
+            }
+            formData.append('locationName', eventLocationInputValue);
+            formData.append('price', String(priceValue));
+            formData.append('latitude', String(finalPoint?.latitude || ''));
+            formData.append('longitude', String(finalPoint?.longitude || ''));
+            formData.append('eventCategory', selectedEventType === 'Other' ? customEventType : selectedEventType);
+            formData.append('currency', 'INR');
+            state.pendingEventMedia.forEach((file) => {
+                formData.append('eventMedia', file);
             });
+            const result = await postFormData('/api/events/create', formData);
             if (result?.event) {
                 state.nearbyEventPosts.unshift(serverEventToPost(result.event));
                 renderFeed();
                 renderProfileGrid();
-                switchTab('home');
+                renderHostedEventList();
                 e.target.reset();
+                const displayTime = document.getElementById('event-time-display');
+                if (displayTime) displayTime.value = '';
+                const hiddenTime = document.getElementById('event-time');
+                if (hiddenTime) hiddenTime.value = '';
+                const displayEndTime = document.getElementById('event-end-time-display');
+                const hiddenEndTime = document.getElementById('event-end-time');
+                const durationInput = document.getElementById('event-duration-minutes');
+                const durationDisplay = document.getElementById('event-duration-display');
+                if (displayEndTime) displayEndTime.value = '';
+                if (hiddenEndTime) hiddenEndTime.value = '';
+                if (durationInput) {
+                    durationInput.value = '';
+                }
+                if (durationDisplay) {
+                    durationDisplay.value = '';
+                    durationDisplay.readOnly = false;
+                }
+                setEventTypeValue('');
+                syncEventTimeDependencyUi();
+                state.pendingEventMedia = [];
+                state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+                state.pendingEventMediaPreviewUrls = [];
+                state.pendingMediaIndex = 0;
+                renderSelectedEventMedia();
+                finishUploadActivity(activityId, true);
                 return;
             }
+            if (activityId) finishUploadActivity(activityId, false);
         } catch (error) {
+            if (activityId) finishUploadActivity(activityId, false);
             setLocationStatus(error.message || 'Failed to create event.', true);
             return;
         }
     }
 
+    activityId = startUploadActivity('Uploading post...');
+    switchTab('home');
+    await new Promise((resolve) => setTimeout(resolve, 900));
     state.posts.unshift(newPost);
     renderFeed();
     renderProfileGrid();
-    switchTab('home');
+    renderHostedEventList();
     e.target.reset(); // clear form
+    if (activityId) finishUploadActivity(activityId, true);
 }
 
 let currentBookingEventId = null;
@@ -1092,9 +2867,9 @@ function openBookingModal(postId) {
             </div>
             <div class="border-t border-white/10 pt-4 flex justify-between items-center">
                 <span class="text-xl font-bold text-white">Total</span>
-                <span class="text-2xl font-black text-fuchsia-400">$${parseInt(event.eventDetails.price) + 4}.00</span>
+                <span class="text-2xl font-black text-fuchsia-400">${formatInr((Number(event.eventDetails.price) || 0) + 4)}</span>
             </div>
-            <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
+            <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
             <button onclick="closeBookingModal()" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
         </div>
     `;

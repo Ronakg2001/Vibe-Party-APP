@@ -1,5 +1,9 @@
 from decimal import Decimal, InvalidOperation
 from math import asin, cos, radians, sin, sqrt
+import json
+import os
+from pathlib import Path
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth import logout
@@ -8,10 +12,36 @@ from django.template import loader
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.core.files.storage import default_storage
+from django.utils.text import slugify
+from django.conf import settings
+from urllib.parse import urlparse
 
 from . import mongo_store
-from .models import Event
+from .models import Event, EventMedia
 from .utils import _error, _json_body
+
+
+def _load_manifest_data():
+    default_manifest = {
+        "event_category": ["Local event"],
+    }
+    manifest_path = Path(__file__).resolve().parent / "manifest.json"
+    try:
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        categories = payload.get("event_category")
+        if isinstance(categories, list):
+            clean_categories = [str(item).strip() for item in categories if str(item).strip()]
+            if clean_categories:
+                payload["event_category"] = clean_categories
+            else:
+                payload["event_category"] = default_manifest["event_category"]
+        else:
+            payload["event_category"] = default_manifest["event_category"]
+        return payload
+    except (OSError, ValueError, TypeError):
+        return default_manifest
 
 
 @never_cache
@@ -53,6 +83,7 @@ def Home_page(request):
     template = loader.get_template('home_page.html')
     profile = getattr(request.user, "profile", None)
     mongo_profile = mongo_store.profile_for_user(request.user.id)
+    manifest_data = _load_manifest_data()
     response = HttpResponse(
         template.render(
             {
@@ -61,6 +92,7 @@ def Home_page(request):
                     (mongo_profile or {}).get("profile_picture_url")
                     or (getattr(profile, "profile_picture_url", "") if profile else "")
                 ),
+                "manifest_data_json": json.dumps(manifest_data),
             },
             request,
         )
@@ -124,17 +156,33 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 def _serialize_event(event, distance_km=None):
     lat = float(event.latitude)
     lon = float(event.longitude)
+    media_items = list(event.media_items.all()) if hasattr(event, "media_items") else []
+    media_urls = [item.file_url for item in media_items]
+    image_media = [item.file_url for item in media_items if item.media_type == EventMedia.MediaType.IMAGE]
+    cover_url = image_media[0] if image_media else (media_urls[0] if media_urls else event.image_url)
     data = {
         "id": event.id,
+        "eventId": str(event.event_uid),
+        "userId": event.host_id,
         "hostUsername": event.host.username,
         "title": event.title,
         "description": event.description,
         "startLabel": event.start_label,
+        "endLabel": event.end_label,
+        "eventCategory": event.event_category,
         "locationName": event.location_name,
         "latitude": lat,
         "longitude": lon,
         "price": float(event.price),
-        "imageUrl": event.image_url,
+        "currency": event.currency,
+        "maxAttendees": event.max_attendees,
+        "ticketsSold": event.tickets_sold,
+        "status": event.status,
+        "imageUrl": cover_url,
+        "mediaUrls": media_urls,
+        "isActive": bool(event.is_active),
+        "createdAt": event.created_at.isoformat() if event.created_at else None,
+        "updatedAt": event.updated_at.isoformat() if event.updated_at else None,
         "mapUrl": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
     }
     if distance_km is not None:
@@ -147,12 +195,20 @@ def create_event_api(request):
     if not request.user.is_authenticated:
         return _error("Please sign in first.", status=401)
 
-    payload = _json_body(request)
+    is_multipart = (request.content_type or "").startswith("multipart/form-data")
+    if is_multipart:
+        payload = request.POST
+    else:
+        payload = _json_body(request)
+
     title = str(payload.get("title", "")).strip()
     description = str(payload.get("description", "")).strip()
     start_label = str(payload.get("startLabel", "")).strip()
+    end_label = str(payload.get("endLabel", "")).strip()
     location_name = str(payload.get("locationName", "")).strip()
     image_url = str(payload.get("imageUrl", "")).strip()
+    event_category = str(payload.get("eventCategory", "local event")).strip().lower() or "local event"
+    currency = str(payload.get("currency", "INR")).strip().upper() or "INR"
 
     if not title:
         return _error("Event title is required.")
@@ -176,25 +232,112 @@ def create_event_api(request):
     if price < 0:
         return _error("Price cannot be negative.")
 
+    try:
+        max_attendees = int(payload.get("maxAttendees", 0) or 0)
+    except (TypeError, ValueError):
+        return _error("maxAttendees must be a valid integer.")
+    if max_attendees < 0:
+        return _error("maxAttendees cannot be negative.")
+
+    if len(currency) != 3:
+        return _error("currency must be a 3-letter code.")
+
+    uploaded_media = request.FILES.getlist("eventMedia") if is_multipart else []
+    if len(uploaded_media) > 10:
+        return _error("Maximum 10 images/videos are allowed.")
+
+    allowed_prefixes = ("image/", "video/")
+    for media in uploaded_media:
+        content_type = (getattr(media, "content_type", "") or "").lower()
+        if not content_type.startswith(allowed_prefixes):
+            return _error("Only image and video files are allowed.")
+
     event = Event.objects.create(
         host=request.user,
         title=title,
         description=description,
         start_label=start_label,
+        end_label=end_label,
         location_name=location_name,
         latitude=latitude,
         longitude=longitude,
         price=price,
+        currency=currency,
+        event_category=event_category,
+        max_attendees=max_attendees,
+        tickets_sold=0,
+        status=Event.EventStatus.PUBLISHED,
         image_url=image_url,
     )
+
+    created_media = []
+    for index, media in enumerate(uploaded_media):
+        raw_name = os.path.basename(media.name or f"media-{index + 1}")
+        stem, ext = os.path.splitext(raw_name)
+        safe_stem = slugify(stem) or f"media-{index + 1}"
+        safe_ext = ext[:12] if ext else ""
+        filename = f"event_{event.id}_{uuid.uuid4().hex}_{safe_stem}{safe_ext}"
+        storage_path = f"events/{request.user.id}/{filename}"
+        saved_path = default_storage.save(storage_path, media)
+        file_url = default_storage.url(saved_path)
+        media_type = EventMedia.MediaType.IMAGE
+        if (media.content_type or "").lower().startswith("video/"):
+            media_type = EventMedia.MediaType.VIDEO
+        created_media.append(
+            EventMedia(
+                event=event,
+                media_type=media_type,
+                file_url=file_url,
+                sort_order=index,
+            )
+        )
+
+    if created_media:
+        EventMedia.objects.bulk_create(created_media)
+        first_image = next((item.file_url for item in created_media if item.media_type == EventMedia.MediaType.IMAGE), None)
+        event.image_url = first_image or created_media[0].file_url
+        event.save(update_fields=["image_url", "updated_at"])
+
     mongo_store.sync_event(event.id)
+    mongo_store.sync_user_profile(request.user.id)
 
     return JsonResponse(
         {
             "message": "Event created successfully.",
-            "event": _serialize_event(event),
+            "event": _serialize_event(Event.objects.select_related("host").prefetch_related("media_items").get(id=event.id)),
         }
     )
+
+
+@require_http_methods(["DELETE"])
+def delete_event_api(request, event_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    try:
+        event = Event.objects.select_related("host").prefetch_related("media_items").get(id=event_id)
+    except Event.DoesNotExist:
+        return _error("Event not found.", status=404)
+
+    if event.host_id != request.user.id:
+        return _error("You are not allowed to delete this event.", status=403)
+
+    media_urls = [item.file_url for item in event.media_items.all()]
+    for media_url in media_urls:
+        try:
+            parsed = urlparse(media_url)
+            media_path = parsed.path or ""
+            if media_path.startswith(settings.MEDIA_URL):
+                rel_path = media_path[len(settings.MEDIA_URL):].lstrip("/")
+                if rel_path:
+                    default_storage.delete(rel_path)
+        except Exception:
+            # Do not block deletion if storage cleanup fails.
+            pass
+
+    event.delete()
+    mongo_store.sync_user_profile(request.user.id)
+    return JsonResponse({"message": "Event deleted successfully.", "eventId": event_id})
 
 
 @require_GET
@@ -221,7 +364,7 @@ def nearby_events_api(request):
     west = request.GET.get("west")
     use_bbox = all(v is not None for v in [north, south, east, west])
 
-    queryset = Event.objects.filter(is_active=True).select_related("host")
+    queryset = Event.objects.filter(is_active=True).select_related("host").prefetch_related("media_items")
     if use_bbox:
         try:
             north_f = float(north)

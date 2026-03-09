@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/signup/details', signin_signup.register_user_details, name='register-user-details'),
     path('api/signup/profile', signin_signup.complete_profile_setup, name='complete-profile-setup'),
     path('api/events/create', views.create_event_api, name='create-event-api'),
+    path('api/events/<int:event_id>', views.delete_event_api, name='delete-event-api'),
     path('api/events/nearby', views.nearby_events_api, name='nearby-events-api'),
     path('api/users/search', views.search_users_api, name='search-users-api'),
     path('api/profile/me', views.current_profile_api, name='current-profile-api'),

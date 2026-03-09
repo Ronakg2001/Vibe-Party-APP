@@ -25,7 +25,7 @@ body {
   place-items: center;
   padding: 20px;
   color: var(--ink);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Outfit", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   background: var(--bg);
   position: relative;
   overflow-x: hidden;
@@ -77,6 +77,7 @@ body {
   top: -80px;
   left: -80px;
   background: #7c3aed;
+  animation: floatOrb 14s ease-in-out infinite alternate;
 }
 
 .orb-fuchsia {
@@ -85,12 +86,15 @@ body {
   right: -120px;
   bottom: -120px;
   background: #c026d3;
+  animation: floatOrb 18s ease-in-out infinite alternate-reverse;
 }
 
 .glass-card {
   background: var(--surface);
   border: 1px solid var(--line);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .auth-shell {
@@ -231,7 +235,7 @@ body {
   font-size: 0.96rem;
   font-weight: 700;
   letter-spacing: 0.01em;
-  transition: transform 0.18s ease, opacity 0.2s;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s;
 }
 
 .btn:active {
@@ -241,6 +245,11 @@ body {
 .btn-primary {
   background: linear-gradient(90deg, var(--primary-a), var(--primary-b));
   color: #fff;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(217, 70, 239, 0.4);
 }
 
 .btn-secondary {
@@ -340,5 +349,23 @@ body {
     top: 12px;
     left: 12px;
     padding: 8px 12px;
+  }
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+  }
+
+  33% {
+    transform: translateY(-30px) translateX(20px) scale(1.05);
+  }
+
+  66% {
+    transform: translateY(15px) translateX(-20px) scale(0.95);
+  }
+
+  100% {
+    transform: translateY(0) translateX(0) scale(1);
   }
 }
