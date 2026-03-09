@@ -248,16 +248,31 @@
                                 <div class="relative">
                                     <i data-lucide="layout-grid"
                                         class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                    <select id="event-type"
-                                        class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
-                                        <option value="local event">Local event</option>
+                                    <div id="event-type-picker" class="event-type-picker">
+                                        <button id="event-type-trigger" type="button" onclick="toggleEventTypeMenu()"
+                                            class="event-type-trigger w-full pl-10 pr-10 p-3 rounded-xl text-left text-sm text-white border border-transparent">
+                                            <span id="event-type-label" data-placeholder="Event type"></span>
+                                            <i data-lucide="chevron-down"
+                                                class="pointer-events-none absolute right-4 top-3.5 w-4 h-4 text-cyan-300/90"></i>
+                                        </button>
+                                        <div id="event-type-menu" class="event-type-menu hidden"></div>
+                                    </div>
+                                    <select id="event-type" class="hidden">
+                                        <option value="">Event type</option>
                                     </select>
+                                </div>
+                                <div id="event-type-other-wrap" class="hidden relative">
+                                    <i data-lucide="pen-line"
+                                        class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                    <input id="event-type-other" type="text" maxlength="60"
+                                        placeholder="Enter your event type"
+                                        class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
                                 </div>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div class="relative md:col-span-1">
                                         <i data-lucide="calendar-days"
                                             class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                        <input id="event-date-display" type="text" readonly placeholder="Select date"
+                                        <input id="event-date-display" type="text" readonly placeholder="Event date"
                                             onclick="openEventDateModal('event-date-display')"
                                             class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10 cursor-pointer">
                                         <input id="event-date" type="hidden">
@@ -265,7 +280,7 @@
                                     <div class="relative md:col-span-1">
                                         <i data-lucide="clock-3"
                                             class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                        <input id="event-time-display" type="text" readonly placeholder="Select time"
+                                        <input id="event-time-display" type="text" readonly disabled placeholder="Start time"
                                             onclick="openAnalogTimeModal('event-time-display')"
                                             class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10 cursor-pointer">
                                         <input id="event-time" type="hidden">
@@ -274,6 +289,32 @@
                                         placeholder="Price"
                                         class="no-number-spinner w-full p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
                                 </div>
+                                <div id="event-advanced-time-row" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div class="relative">
+                                        <i data-lucide="timer-reset"
+                                            class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                        <input id="event-end-time-display" type="text" readonly disabled
+                                            placeholder="End Time"
+                                            onclick="openAnalogTimeModal('event-end-time-display')"
+                                            class="w-full pl-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10 cursor-pointer">
+                                        <input id="event-end-time" type="hidden">
+                                    </div>
+                                    <div class="relative">
+                                        <i data-lucide="hourglass"
+                                            class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                        <input id="event-duration-display" type="text" inputmode="text" disabled
+                                            placeholder="Duration (e.g. 2h 30m)"
+                                            class="w-full pl-10 pr-10 p-3 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-transparent focus:border-white/10">
+                                        <button id="event-duration-clear-btn" type="button" onclick="clearDurationSelection()"
+                                            class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white/10 text-white/70 text-xs leading-none">
+                                            ×
+                                        </button>
+                                        <input id="event-duration-minutes" type="hidden">
+                                    </div>
+                                </div>
+                                <p id="event-time-choice-hint" class="hidden text-[11px] text-gray-400 -mt-1">
+                                    Pick End Time OR enter Duration.
+                                </p>
                                 <div class="relative">
                                     <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
                                     <input id="event-location" type="text" readonly onclick="openLocationModal('event')"
@@ -535,7 +576,7 @@
             <div id="analog-time-modal-card"
                 class="absolute left-1/2 top-1/2 w-[94%] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900/92 via-slate-900/85 to-violet-950/70 p-5 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-black text-white">Select Event Time</h3>
+                    <h3 class="text-lg font-black text-white">Select Time</h3>
                     <button type="button" onclick="closeAnalogTimeModal()" class="text-gray-400 hover:text-white">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
@@ -615,7 +656,7 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <!-- Application Logic -->
     <script id="home-page-boot-config"
-        type="application/json">{"csrfToken":"{{ csrf_token|escapejs }}","currentAvatarUrl":"{{ current_avatar_url|default:''|escapejs }}","currentUsername":"{{ current_username|default:'party_alex'|escapejs }}"}</script>
+        type="application/json">{"csrfToken":"{{ csrf_token|escapejs }}","currentAvatarUrl":"{{ current_avatar_url|default:''|escapejs }}","currentUsername":"{{ current_username|default:'party_alex'|escapejs }}","manifestData":{{ manifest_data_json|safe }}}</script>
     <script src="{% static 'js/home_page.js' %}"></script>
 </body>
 

@@ -1,6 +1,8 @@
 from decimal import Decimal, InvalidOperation
 from math import asin, cos, radians, sin, sqrt
+import json
 import os
+from pathlib import Path
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -18,6 +20,28 @@ from urllib.parse import urlparse
 from . import mongo_store
 from .models import Event, EventMedia
 from .utils import _error, _json_body
+
+
+def _load_manifest_data():
+    default_manifest = {
+        "event_category": ["Local event"],
+    }
+    manifest_path = Path(__file__).resolve().parent / "manifest.json"
+    try:
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        categories = payload.get("event_category")
+        if isinstance(categories, list):
+            clean_categories = [str(item).strip() for item in categories if str(item).strip()]
+            if clean_categories:
+                payload["event_category"] = clean_categories
+            else:
+                payload["event_category"] = default_manifest["event_category"]
+        else:
+            payload["event_category"] = default_manifest["event_category"]
+        return payload
+    except (OSError, ValueError, TypeError):
+        return default_manifest
 
 
 @never_cache
@@ -59,6 +83,7 @@ def Home_page(request):
     template = loader.get_template('home_page.html')
     profile = getattr(request.user, "profile", None)
     mongo_profile = mongo_store.profile_for_user(request.user.id)
+    manifest_data = _load_manifest_data()
     response = HttpResponse(
         template.render(
             {
@@ -67,6 +92,7 @@ def Home_page(request):
                     (mongo_profile or {}).get("profile_picture_url")
                     or (getattr(profile, "profile_picture_url", "") if profile else "")
                 ),
+                "manifest_data_json": json.dumps(manifest_data),
             },
             request,
         )

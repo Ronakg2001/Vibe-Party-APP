@@ -12,6 +12,7 @@ if (bootConfigEl) {
 const currentUsernameTemplate = bootConfig.currentUsername || 'party_alex';
 const csrfTokenTemplate = bootConfig.csrfToken || '';
 const currentAvatarTemplate = bootConfig.currentAvatarUrl || '';
+const manifestDataTemplate = bootConfig.manifestData || {};
 const state = {
     activeTab: 'home',
     myEventsTab: 'tickets',
@@ -870,6 +871,94 @@ function hideLoaderWhenReady() {
     }, waitMs);
 }
 
+function setEventTypeValue(value) {
+    const eventTypeSelect = document.getElementById('event-type');
+    const eventTypeLabel = document.getElementById('event-type-label');
+    const otherWrap = document.getElementById('event-type-other-wrap');
+    const otherInput = document.getElementById('event-type-other');
+    if (!eventTypeSelect || !eventTypeLabel) return;
+    const safeValue = String(value || '').trim();
+    eventTypeSelect.value = safeValue;
+    eventTypeLabel.textContent = safeValue;
+    const showOther = safeValue === 'Other';
+    if (otherWrap) otherWrap.classList.toggle('hidden', !showOther);
+    if (!showOther && otherInput) otherInput.value = '';
+}
+
+function closeEventTypeMenu() {
+    const menuEl = document.getElementById('event-type-menu');
+    const triggerEl = document.getElementById('event-type-trigger');
+    if (!menuEl || !triggerEl) return;
+    menuEl.classList.add('hidden');
+    triggerEl.classList.remove('is-open');
+}
+
+function toggleEventTypeMenu() {
+    const menuEl = document.getElementById('event-type-menu');
+    const triggerEl = document.getElementById('event-type-trigger');
+    if (!menuEl || !triggerEl || triggerEl.disabled) return;
+    const willOpen = menuEl.classList.contains('hidden');
+    menuEl.classList.toggle('hidden', !willOpen);
+    triggerEl.classList.toggle('is-open', willOpen);
+}
+
+function renderEventCategoriesFromManifest() {
+    const eventTypeSelect = document.getElementById('event-type');
+    const eventTypeMenu = document.getElementById('event-type-menu');
+    if (!eventTypeSelect) return;
+    const categories = Array.isArray(manifestDataTemplate.event_category)
+        ? manifestDataTemplate.event_category
+            .map((item) => String(item || '').trim())
+            .filter((item) => item.length > 0)
+        : [];
+    const finalCategoriesBase = categories.length > 0 ? categories : ['Local event'];
+    const finalCategories = finalCategoriesBase.includes('Other')
+        ? finalCategoriesBase
+        : [...finalCategoriesBase, 'Other'];
+    const currentValue = (eventTypeSelect.value || '').trim();
+    eventTypeSelect.innerHTML = '';
+    const placeholderOption = document.createElement('option');
+    placeholderOption.value = '';
+    placeholderOption.textContent = 'Event type';
+    eventTypeSelect.appendChild(placeholderOption);
+    finalCategories.forEach((label) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = label;
+        optionEl.textContent = label;
+        eventTypeSelect.appendChild(optionEl);
+    });
+    const selectedValue = (currentValue && finalCategories.includes(currentValue))
+        ? currentValue
+        : '';
+    setEventTypeValue(selectedValue);
+
+    if (eventTypeMenu) {
+        eventTypeMenu.innerHTML = '';
+        finalCategories.forEach((label) => {
+            const itemBtn = document.createElement('button');
+            itemBtn.type = 'button';
+            itemBtn.className = 'event-type-item';
+            itemBtn.textContent = label;
+            itemBtn.addEventListener('click', () => {
+                setEventTypeValue(label);
+                closeEventTypeMenu();
+            });
+            eventTypeMenu.appendChild(itemBtn);
+        });
+    }
+}
+
+function formatInr(amount) {
+    const value = Number(amount);
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const hasFraction = Math.abs(safeValue % 1) > 0;
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: hasFraction ? 2 : 0
+    }).format(safeValue);
+}
+
 function formatTime12(hour12, minute, period) {
     const hh = String(hour12).padStart(2, '0');
     const mm = String(minute).padStart(2, '0');
@@ -933,9 +1022,20 @@ function isTodayEventDateSelected() {
 }
 
 function isAnalogCandidateAllowed(hour12, minute, period) {
-    if (!isTodayEventDateSelected()) return true;
     const candidateTime = to24HourTime(hour12, minute, period);
-    return isFutureEventDateTime(getTodayDateKey(), candidateTime);
+    if (isTodayEventDateSelected() && !isFutureEventDateTime(getTodayDateKey(), candidateTime)) {
+        return false;
+    }
+    // If user is selecting end time, enforce duration window [30 min, 24 hr].
+    if (analogClockState.targetInputId === 'event-end-time-display') {
+        const startTime = document.getElementById('event-time')?.value || '';
+        if (startTime) {
+            const duration = calculateDurationMinutesFromTimes(startTime, candidateTime);
+            if (duration === null) return false;
+            if (duration < 30 || duration > 24 * 60) return false;
+        }
+    }
+    return true;
 }
 
 function markManualAnalogSelection() {
@@ -944,13 +1044,206 @@ function markManualAnalogSelection() {
     stopAnalogLiveTicker();
 }
 
+function getAnalogTargetHiddenInputId() {
+    return analogClockState.targetInputId === 'event-end-time-display' ? 'event-end-time' : 'event-time';
+}
+
 function syncEventTimeInputs() {
-    const hiddenTime = document.getElementById('event-time');
+    const hiddenTime = document.getElementById(getAnalogTargetHiddenInputId());
     const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
-    if (!hiddenTime || !displayTime) return;
+    if (!displayTime) return;
     const time24 = to24HourTime(analogClockState.hour, analogClockState.minute, analogClockState.period);
-    hiddenTime.value = time24;
+    if (hiddenTime) hiddenTime.value = time24;
     displayTime.value = formatTime12(analogClockState.hour, analogClockState.minute, analogClockState.period);
+    recalculateEventDurationFromTimes();
+    syncEventTimeDependencyUi();
+}
+
+function time24ToMinutes(time24) {
+    const parsed = parse24HourTime(time24);
+    if (!parsed) return null;
+    let hour24 = parsed.hour12 % 12;
+    if (parsed.period === 'PM') hour24 += 12;
+    return (hour24 * 60) + parsed.minute;
+}
+
+function calculateDurationMinutesFromTimes(startTime24, endTime24) {
+    const startMin = time24ToMinutes(startTime24);
+    const endMin = time24ToMinutes(endTime24);
+    if (startMin === null || endMin === null) return null;
+    let delta = endMin - startMin;
+    if (delta <= 0) delta += 24 * 60;
+    return delta;
+}
+
+function formatDurationMinutes(minutes) {
+    const safe = Number(minutes);
+    if (!Number.isFinite(safe) || safe <= 0) return '';
+    const hours = Math.floor(safe / 60);
+    const mins = safe % 60;
+    if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${mins}m`;
+}
+
+function parseDurationDisplayToMinutes(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return 0;
+
+    if (/^\d+$/.test(raw)) {
+        const minutesOnly = Number(raw);
+        return Number.isFinite(minutesOnly) && minutesOnly > 0 ? minutesOnly : 0;
+    }
+
+    const compact = raw.replace(/\s+/g, '');
+    const bothMatch = /^(\d+)h(?:ours?)?(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    if (bothMatch) {
+        const h = Number(bothMatch[1]);
+        const m = Number(bothMatch[2]);
+        const total = (h * 60) + m;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    const hourMatch = /^(\d+)h(?:ours?)?$/.exec(compact);
+    if (hourMatch) {
+        const h = Number(hourMatch[1]);
+        const total = h * 60;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    const minMatch = /^(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    if (minMatch) {
+        const m = Number(minMatch[1]);
+        return Number.isFinite(m) && m > 0 ? m : 0;
+    }
+
+    const clockMatch = /^(\d{1,2}):(\d{1,2})$/.exec(raw);
+    if (clockMatch) {
+        const h = Number(clockMatch[1]);
+        const m = Number(clockMatch[2]);
+        const total = (h * 60) + m;
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    }
+
+    return 0;
+}
+
+function syncDurationHiddenFromDisplay() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (!durationDisplay || !durationHidden) return;
+    updateDurationClearButtonVisibility();
+    if (durationDisplay.readOnly) return;
+    const minutes = parseDurationDisplayToMinutes(durationDisplay.value);
+    durationHidden.value = minutes > 0 ? String(minutes) : '';
+    syncEventTimeDependencyUi();
+}
+
+function updateDurationClearButtonVisibility() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const clearBtn = document.getElementById('event-duration-clear-btn');
+    if (!durationDisplay || !clearBtn) return;
+    const show = !durationDisplay.disabled && !durationDisplay.readOnly && !!durationDisplay.value.trim();
+    clearBtn.classList.toggle('hidden', !show);
+}
+
+function clearDurationSelection() {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (durationDisplay) {
+        durationDisplay.value = '';
+        durationDisplay.readOnly = false;
+    }
+    if (durationHidden) durationHidden.value = '';
+    updateDurationClearButtonVisibility();
+    syncEventTimeDependencyUi();
+}
+
+function recalculateEventDurationFromTimes() {
+    const startTime = document.getElementById('event-time')?.value || '';
+    const endTime = document.getElementById('event-end-time')?.value || '';
+    const durationHidden = document.getElementById('event-duration-minutes');
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (!durationHidden || !durationDisplay) return;
+
+    if (!endTime || !startTime) {
+        durationDisplay.readOnly = false;
+        syncDurationHiddenFromDisplay();
+        return;
+    }
+
+    const delta = calculateDurationMinutesFromTimes(startTime, endTime);
+    if (delta === null) {
+        durationDisplay.readOnly = false;
+        syncDurationHiddenFromDisplay();
+        return;
+    }
+    durationHidden.value = String(delta);
+    durationDisplay.value = formatDurationMinutes(delta);
+    durationDisplay.readOnly = true;
+}
+
+function syncEventTimeDependencyUi() {
+    const dateHidden = document.getElementById('event-date');
+    const startDisplay = document.getElementById('event-time-display');
+    const startHidden = document.getElementById('event-time');
+    const advancedRow = document.getElementById('event-advanced-time-row');
+    const timeChoiceHint = document.getElementById('event-time-choice-hint');
+    const endDisplay = document.getElementById('event-end-time-display');
+    const endHidden = document.getElementById('event-end-time');
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    if (!dateHidden || !startDisplay || !startHidden || !advancedRow || !endDisplay || !endHidden || !durationDisplay || !durationHidden) return;
+
+    const hasDate = Boolean(dateHidden.value);
+    startDisplay.disabled = !hasDate;
+    if (!hasDate) {
+        startDisplay.value = '';
+        startHidden.value = '';
+        endDisplay.value = '';
+        endHidden.value = '';
+        durationDisplay.value = '';
+        durationHidden.value = '';
+        durationDisplay.readOnly = false;
+        advancedRow.classList.add('hidden');
+        if (timeChoiceHint) timeChoiceHint.classList.add('hidden');
+        return;
+    }
+
+    const hasStart = Boolean(startHidden.value);
+    advancedRow.classList.toggle('hidden', !hasStart);
+    if (timeChoiceHint) timeChoiceHint.classList.toggle('hidden', !hasStart);
+    if (!hasStart) {
+        endDisplay.value = '';
+        endHidden.value = '';
+        durationDisplay.value = '';
+        durationHidden.value = '';
+        durationDisplay.readOnly = false;
+        endDisplay.disabled = true;
+        durationDisplay.disabled = true;
+        return;
+    }
+
+    const hasEnd = Boolean(endHidden.value);
+    const manualDurationMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
+    const hasManualDuration = !hasEnd && manualDurationMinutes > 0;
+
+    if (hasEnd) {
+        endDisplay.disabled = false;
+        durationDisplay.disabled = true;
+        durationDisplay.readOnly = true;
+    } else if (hasManualDuration) {
+        endDisplay.disabled = true;
+        durationDisplay.disabled = false;
+        durationDisplay.readOnly = false;
+        endHidden.value = '';
+        endDisplay.value = '';
+    } else {
+        endDisplay.disabled = false;
+        durationDisplay.disabled = false;
+        durationDisplay.readOnly = false;
+    }
+    updateDurationClearButtonVisibility();
 }
 
 function setAnalogMode(mode) {
@@ -1171,11 +1464,29 @@ function renderAnalogClockDial() {
 
 function openAnalogTimeModal(inputId) {
     analogClockState.targetInputId = inputId || 'event-time-display';
+    const dateValue = document.getElementById('event-date')?.value || '';
+    const startTimeValue = document.getElementById('event-time')?.value || '';
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (analogClockState.targetInputId === 'event-time-display' && !dateValue) {
+        setLocationStatus('Please select event date first.', true);
+        return;
+    }
+    if (analogClockState.targetInputId === 'event-end-time-display') {
+        if (!startTimeValue) {
+            setLocationStatus('Please select start time first.', true);
+            return;
+        }
+        const hasManualDuration = parseDurationDisplayToMinutes(durationDisplay?.value || '') > 0 && !durationDisplay?.readOnly;
+        if (hasManualDuration) {
+            setLocationStatus('Choose either End Time or Duration.', true);
+            return;
+        }
+    }
     const modal = document.getElementById('analog-time-modal');
     const card = document.getElementById('analog-time-modal-card');
     if (!modal || !card) return;
 
-    const hiddenTime = document.getElementById('event-time');
+    const hiddenTime = document.getElementById(getAnalogTargetHiddenInputId());
     const parsed = parse24HourTime(hiddenTime?.value || '');
     if (parsed) {
         analogClockState.hour = parsed.hour12;
@@ -1222,10 +1533,22 @@ function closeAnalogTimeModal() {
 }
 
 function clearAnalogTimeSelection() {
-    const hiddenTime = document.getElementById('event-time');
-    const displayTime = document.getElementById('event-time-display');
+    const targetHiddenId = getAnalogTargetHiddenInputId();
+    const hiddenTime = document.getElementById(targetHiddenId);
+    const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
     if (hiddenTime) hiddenTime.value = '';
     if (displayTime) displayTime.value = '';
+    if (targetHiddenId === 'event-end-time') {
+        const durationDisplay = document.getElementById('event-duration-display');
+        const durationHidden = document.getElementById('event-duration-minutes');
+        if (durationDisplay) {
+            durationDisplay.value = '';
+            durationDisplay.readOnly = false;
+        }
+        if (durationHidden) durationHidden.value = '';
+    }
+    recalculateEventDurationFromTimes();
+    syncEventTimeDependencyUi();
     closeAnalogTimeModal();
 }
 
@@ -1537,13 +1860,24 @@ function saveEventDateSelection() {
 
     const hiddenTime = document.getElementById('event-time');
     const displayTime = document.getElementById('event-time-display');
+    const hiddenEndTime = document.getElementById('event-end-time');
+    const displayEndTime = document.getElementById('event-end-time-display');
     if (hiddenTime?.value && !isFutureEventDateTime(dateValue, hiddenTime.value)) {
         hiddenTime.value = '';
         if (displayTime) displayTime.value = '';
+        if (hiddenEndTime) hiddenEndTime.value = '';
+        if (displayEndTime) displayEndTime.value = '';
+        recalculateEventDurationFromTimes();
         setLocationStatus('Selected date changed. Please re-select time.', true);
+    } else if (hiddenEndTime?.value && !isFutureEventDateTime(dateValue, hiddenEndTime.value)) {
+        hiddenEndTime.value = '';
+        if (displayEndTime) displayEndTime.value = '';
+        recalculateEventDurationFromTimes();
+        setLocationStatus('Selected date changed. End time was cleared.', true);
     } else {
         setLocationStatus('');
     }
+    syncEventTimeDependencyUi();
     closeEventDateModal();
 }
 
@@ -1555,8 +1889,22 @@ function clearEventDateSelection() {
     eventCalendarState.selectedDate = '';
     const hiddenTime = document.getElementById('event-time');
     const displayTime = document.getElementById('event-time-display');
+    const hiddenEndTime = document.getElementById('event-end-time');
+    const displayEndTime = document.getElementById('event-end-time-display');
+    const durationInput = document.getElementById('event-duration-minutes');
+    const durationDisplay = document.getElementById('event-duration-display');
     if (hiddenTime) hiddenTime.value = '';
     if (displayTime) displayTime.value = '';
+    if (hiddenEndTime) hiddenEndTime.value = '';
+    if (displayEndTime) displayEndTime.value = '';
+    if (durationInput) {
+        durationInput.value = '';
+    }
+    if (durationDisplay) {
+        durationDisplay.value = '';
+        durationDisplay.readOnly = false;
+    }
+    syncEventTimeDependencyUi();
     closeEventDateModal();
 }
 
@@ -1570,6 +1918,7 @@ function saveAnalogTimeSelection() {
     }
     syncEventTimeInputs();
     setLocationStatus('');
+    syncEventTimeDependencyUi();
     closeAnalogTimeModal();
 }
 
@@ -1592,6 +1941,7 @@ function initEventDateTimePicker() {
         eventCalendarState.viewYear = today.getFullYear();
         eventCalendarState.viewMonth = today.getMonth();
     }
+    syncEventTimeDependencyUi();
 }
 
 function initEventCalendarKeyboardNavigation() {
@@ -1664,6 +2014,13 @@ document.addEventListener('DOMContentLoaded', () => {
         closeEventMonthYearPicker();
     });
     document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('#event-type-picker')) {
+            return;
+        }
+        closeEventTypeMenu();
+    });
+    document.addEventListener('click', (event) => {
         if (!event.target.closest('.hosted-event-menu') && !event.target.closest('[onpointerdown*="startHostedEventPress"]')) {
             if (state.hostedMenuEventPostId) {
                 state.hostedMenuEventPostId = null;
@@ -1691,9 +2048,35 @@ document.addEventListener('DOMContentLoaded', () => {
     if (createPostForm) {
         createPostForm.addEventListener('submit', handlePostSubmit);
     }
+    renderEventCategoriesFromManifest();
     initEventDateTimePicker();
     initAnalogClockInteractions();
     initEventCalendarKeyboardNavigation();
+    const durationDisplay = document.getElementById('event-duration-display');
+    if (durationDisplay) {
+        durationDisplay.addEventListener('input', syncDurationHiddenFromDisplay);
+        durationDisplay.addEventListener('blur', () => {
+            if (durationDisplay.readOnly) return;
+            const parsedMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
+            if (parsedMinutes > 0) {
+                if (parsedMinutes < 30) {
+                    const durationHidden = document.getElementById('event-duration-minutes');
+                    if (durationHidden) durationHidden.value = '';
+                    setLocationStatus('Duration must be at least 30 minutes.', true);
+                    return;
+                }
+                if (parsedMinutes > 24 * 60) {
+                    const durationHidden = document.getElementById('event-duration-minutes');
+                    if (durationHidden) durationHidden.value = '';
+                    setLocationStatus('Duration cannot be more than 24 hours.', true);
+                    return;
+                }
+                durationDisplay.value = formatDurationMinutes(parsedMinutes);
+                setLocationStatus('');
+            }
+            syncDurationHiddenFromDisplay();
+        });
+    }
     renderSelectedEventMedia();
     loadCurrentUserProfile();
     switchTab(getInitialTabFromUrl());
@@ -1905,7 +2288,7 @@ function renderFeed() {
                         </div>
                         <div class="flex items-center gap-2">
                             ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
-                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book $${post.eventDetails.price}</button>
+                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book ${formatInr(post.eventDetails.price)}</button>
                         </div>
                     </div>` : ''}
                 </div>
@@ -2080,7 +2463,7 @@ function renderHostedEventList() {
                         </div>
                         <div class="text-right">
                             <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
-                            <div class="font-black text-fuchsia-400">$${eventPost.eventDetails.price}</div>
+                            <div class="font-black text-fuchsia-400">${formatInr(eventPost.eventDetails.price)}</div>
                         </div>
                     </div>
                 </div>
@@ -2308,6 +2691,13 @@ async function handlePostSubmit(e) {
         }
         const selectedDate = document.getElementById('event-date').value;
         const selectedTime = document.getElementById('event-time').value;
+        const selectedEventType = (document.getElementById('event-type')?.value || '').trim();
+        const customEventType = (document.getElementById('event-type-other')?.value || '').trim();
+        const selectedEndTime = document.getElementById('event-end-time')?.value || '';
+        const durationInputEl = document.getElementById('event-duration-minutes');
+        const durationDisplayEl = document.getElementById('event-duration-display');
+        syncDurationHiddenFromDisplay();
+        let durationMinutes = Number(durationInputEl?.value || 0);
         if (!selectedDate || !selectedTime) {
             setLocationStatus('Please select event date and time.', true);
             return;
@@ -2315,6 +2705,60 @@ async function handlePostSubmit(e) {
         if (!isFutureEventDateTime(selectedDate, selectedTime)) {
             setLocationStatus('Event date/time must be in the future.', true);
             return;
+        }
+        if (!selectedEventType) {
+            setLocationStatus('Please select event type.', true);
+            return;
+        }
+        if (selectedEventType === 'Other' && !customEventType) {
+            setLocationStatus('Please enter custom event type.', true);
+            return;
+        }
+        if (selectedEndTime && durationDisplayEl?.value?.trim() && !durationDisplayEl.readOnly) {
+            setLocationStatus('Choose either End Time or Duration.', true);
+            return;
+        }
+        if (selectedEndTime) {
+            if (!isFutureEventDateTime(selectedDate, selectedEndTime)) {
+                setLocationStatus('End time must not be in the past.', true);
+                return;
+            }
+            const computedDuration = calculateDurationMinutesFromTimes(selectedTime, selectedEndTime);
+            if (computedDuration !== null) {
+                if (computedDuration < 30 || computedDuration > 24 * 60) {
+                    setLocationStatus('Event duration must be between 30 min and 24 hr.', true);
+                    return;
+                }
+                durationMinutes = computedDuration;
+                if (durationInputEl) {
+                    durationInputEl.value = String(computedDuration);
+                }
+                if (durationDisplayEl) {
+                    durationDisplayEl.value = formatDurationMinutes(computedDuration);
+                    durationDisplayEl.readOnly = true;
+                }
+            }
+        } else {
+            if (durationDisplayEl?.value?.trim()) {
+                const parsedManualDuration = parseDurationDisplayToMinutes(durationDisplayEl.value);
+                if (parsedManualDuration <= 0) {
+                    setLocationStatus('Invalid duration format. Use 90, 1h 30m, 2h, or 45m.', true);
+                    return;
+                }
+                if (parsedManualDuration < 30) {
+                    setLocationStatus('Duration must be at least 30 minutes.', true);
+                    return;
+                }
+                if (parsedManualDuration > 24 * 60) {
+                    setLocationStatus('Duration cannot be more than 24 hours.', true);
+                    return;
+                }
+                durationMinutes = parsedManualDuration;
+                if (durationInputEl) durationInputEl.value = String(parsedManualDuration);
+                durationDisplayEl.value = formatDurationMinutes(parsedManualDuration);
+            } else if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                durationMinutes = 0;
+            }
         }
         const startLabel = [selectedDate, selectedTime].filter(Boolean).join(' ');
         activityId = startUploadActivity('Uploading event...');
@@ -2325,11 +2769,17 @@ async function handlePostSubmit(e) {
             formData.append('title', document.getElementById('event-title').value.trim());
             formData.append('description', document.getElementById('post-caption').value.trim());
             formData.append('startLabel', startLabel);
+            if (selectedEndTime) {
+                formData.append('endTime', selectedEndTime);
+            }
+            if (durationMinutes > 0) {
+                formData.append('durationMinutes', String(durationMinutes));
+            }
             formData.append('locationName', eventLocationInputValue);
             formData.append('price', String(priceValue));
             formData.append('latitude', String(finalPoint?.latitude || ''));
             formData.append('longitude', String(finalPoint?.longitude || ''));
-            formData.append('eventCategory', document.getElementById('event-type').value || 'local event');
+            formData.append('eventCategory', selectedEventType === 'Other' ? customEventType : selectedEventType);
             formData.append('currency', 'INR');
             state.pendingEventMedia.forEach((file) => {
                 formData.append('eventMedia', file);
@@ -2345,6 +2795,21 @@ async function handlePostSubmit(e) {
                 if (displayTime) displayTime.value = '';
                 const hiddenTime = document.getElementById('event-time');
                 if (hiddenTime) hiddenTime.value = '';
+                const displayEndTime = document.getElementById('event-end-time-display');
+                const hiddenEndTime = document.getElementById('event-end-time');
+                const durationInput = document.getElementById('event-duration-minutes');
+                const durationDisplay = document.getElementById('event-duration-display');
+                if (displayEndTime) displayEndTime.value = '';
+                if (hiddenEndTime) hiddenEndTime.value = '';
+                if (durationInput) {
+                    durationInput.value = '';
+                }
+                if (durationDisplay) {
+                    durationDisplay.value = '';
+                    durationDisplay.readOnly = false;
+                }
+                setEventTypeValue('');
+                syncEventTimeDependencyUi();
                 state.pendingEventMedia = [];
                 state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
                 state.pendingEventMediaPreviewUrls = [];
@@ -2402,7 +2867,7 @@ function openBookingModal(postId) {
             </div>
             <div class="border-t border-white/10 pt-4 flex justify-between items-center">
                 <span class="text-xl font-bold text-white">Total</span>
-                <span class="text-2xl font-black text-fuchsia-400">$${parseInt(event.eventDetails.price) + 4}.00</span>
+                <span class="text-2xl font-black text-fuchsia-400">${formatInr((Number(event.eventDetails.price) || 0) + 4)}</span>
             </div>
             <button onclick="confirmBooking()" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
             <button onclick="closeBookingModal()" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>

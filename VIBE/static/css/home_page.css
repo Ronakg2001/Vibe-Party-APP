@@ -747,6 +747,91 @@ body { background-color: black; color: white; -webkit-tap-highlight-color: trans
     box-shadow: var(--vibe-neon-shadow);
 }
 
+.event-type-picker {
+    position: relative;
+}
+
+.event-type-trigger {
+    position: relative;
+    background: linear-gradient(140deg, rgba(16, 24, 48, 0.84), rgba(12, 17, 37, 0.78)) !important;
+    border-color: rgba(71, 232, 255, 0.2) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.event-type-trigger #event-type-label:empty::before {
+    content: attr(data-placeholder);
+    color: rgba(148, 163, 184, 0.95);
+}
+
+.event-type-trigger:hover,
+.event-type-trigger.is-open {
+    border-color: rgba(71, 232, 255, 0.45) !important;
+    box-shadow: 0 0 0 3px rgba(71, 232, 255, 0.18), 0 0 20px rgba(255, 79, 216, 0.12);
+}
+
+.event-type-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    max-height: 230px;
+    overflow-y: auto;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(71, 232, 255, 0.25);
+    background: linear-gradient(145deg, rgba(14, 21, 44, 0.96), rgba(10, 16, 35, 0.94));
+    box-shadow: 0 18px 40px rgba(4, 8, 20, 0.7), var(--vibe-neon-shadow);
+    padding: 0.35rem;
+}
+
+.event-type-item {
+    width: 100%;
+    text-align: left;
+    font-size: 0.86rem;
+    color: #f8f9ff;
+    border-radius: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+.event-type-item:hover {
+    transform: none !important;
+    background: rgba(71, 232, 255, 0.14);
+    border-color: rgba(71, 232, 255, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 79, 216, 0.2);
+}
+
+#event-time-display:disabled,
+#event-end-time-display:disabled,
+#event-duration-display:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#event-duration-clear-btn {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    transition: none !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+#event-duration-clear-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
+#event-duration-clear-btn:active {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+}
+
 @keyframes periodSwapPulse {
     0% {
         transform: scale(0.95);
