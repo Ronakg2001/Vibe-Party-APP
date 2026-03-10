@@ -5,8 +5,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VIBE. | Social Event App</title>
-
+    <title>vibe. | Home</title>
+    <link rel="icon" href="{% static 'img/Logo_V_withoutdots.PNG' %}" type="image/png" class="h-auto w-auto">
+    <link rel="apple-touch-icon" href="{% static 'img/logo_poster.PNG' %}" class="h-auto w-auto">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -64,7 +65,7 @@
             class="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-white/5 bg-slate-900/50 backdrop-blur-xl z-50 p-6">
             <h1 onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
                 class="flex items-center gap-1 mb-10 cursor-pointer">
-                <img src="{% static 'img/vibe-logo.svg' %}" alt="VIBE" class="h-9 w-auto select-none">
+                <img src="{% static 'img/Vibe-logo.PNG' %}" alt="VIBE" class="h-50 w-auto select-none">
             </h1>
 
             <nav class="flex flex-col gap-4 flex-1">
@@ -83,7 +84,7 @@
                 <button onclick="switchTab('add')"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="add">
-                    <i data-lucide="rocket" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
+                    <img src="{% static 'img/Logo_V_withoutdots.PNG' %}" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400">
                     <span class="font-bold text-lg group-hover:text-white transition-colors">Create</span>
                 </button>
                 <button onclick="switchTab('tickets')"
@@ -123,7 +124,7 @@
                 class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
                 <button onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
                     class="flex items-center">
-                    <img src="{% static 'img/vibe-logo.svg' %}" alt="VIBE" class="h-8 w-auto select-none">
+                    <img src="{% static 'img/logo_vibe.PNG' %}" alt="VIBE" class="h-10 w-auto select-none">
                 </button>
                 <div class="flex gap-4 items-center">
                     <button id="mobile-location-btn" type="button"
@@ -468,35 +469,31 @@
             <nav
                 class="pointer-events-auto bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center w-full shadow-2xl shadow-black/50">
                 <button onclick="switchTab('home')"
-                    class="nav-btn active flex flex-col items-center justify-center w-10 text-gray-400 transition-all"
+                    class="nav-btn active flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
                     data-target="home">
-                    <i data-lucide="home" class="w-6 h-6"></i>
+                    <i data-lucide="home" class= "h-7 w-auto"></i>
                 </button>
                 <button onclick="switchTab('search')"
-                    class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all"
+                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
                     data-target="search">
-                    <i data-lucide="compass" class="w-6 h-6"></i>
+                    <i data-lucide="compass" class="h-7 w-auto"></i>
                 </button>
 
-                <div class="relative -top-8 group">
-                    <div
-                        class="absolute inset-0 bg-fuchsia-500 rounded-full blur-md opacity-40 group-hover:opacity-100 transition-opacity animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]">
-                    </div>
-                    <button onclick="switchTab('add')"
-                        class="relative z-10 w-14 h-14 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-fuchsia-500/40 border-4 border-slate-900 active:scale-90 transition-transform hover:scale-[1.05]">
-                        <i data-lucide="rocket" class="w-7 h-7 text-white stroke-[2px]"></i>
+                <div class="relative top-0 group">
+                    <button onclick="switchTab('add')">
+                        <img src="{% static 'img/Logo_V.PNG' %}" class="h-10 w-auto">
                     </button>
                 </div>
 
                 <button onclick="switchTab('tickets')"
-                    class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all"
+                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
                     data-target="tickets">
-                    <i data-lucide="ticket" class="w-6 h-6"></i>
+                    <i data-lucide="ticket" class="h-7 w-auto"></i>
                 </button>
                 <button onclick="switchTab('profile')"
-                    class="nav-btn flex flex-col items-center justify-center w-10 text-gray-400 transition-all"
+                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
                     data-target="profile">
-                    <i data-lucide="user" class="w-6 h-6"></i>
+                    <i data-lucide="user" class="h-7 w-auto"></i>
                 </button>
             </nav>
         </div>
@@ -570,85 +567,7 @@
             </div>
         </div>
         
-        <!-- Analog Time Picker Modal -->
-        <div id="analog-time-modal"
-            class="fixed inset-0 z-[75] hidden opacity-0 transition-opacity duration-300 bg-slate-950/70 backdrop-blur-xl">
-            <div id="analog-time-modal-card"
-                class="absolute left-1/2 top-1/2 w-[94%] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900/92 via-slate-900/85 to-violet-950/70 p-5 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-black text-white">Select Time</h3>
-                    <button type="button" onclick="closeAnalogTimeModal()" class="text-gray-400 hover:text-white">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                    </button>
-                </div>
-                <div class="mb-4 flex items-center justify-center">
-                    <div class="analog-digital-clock">
-                        <button id="analog-digital-hour" type="button" onclick="setAnalogMode('hour')"
-                            class="analog-digital-segment is-active">10</button>
-                        <span class="analog-digital-separator">:</span>
-                        <button id="analog-digital-minute" type="button" onclick="setAnalogMode('minute')"
-                            class="analog-digital-segment">00</button>
-                        <button id="analog-digital-period" type="button" onclick="toggleAnalogPeriod()"
-                            class="analog-digital-period">PM</button>
-                    </div>
-                </div>
-                <div class="analog-clock-dial-wrap">
-                    <div id="analog-clock-dial" class="analog-clock-dial">
-                        <div id="analog-clock-hand" class="analog-clock-hand"></div>
-                        <div id="analog-clock-second-hand" class="analog-clock-second-hand"></div>
-                        <div class="analog-clock-center"></div>
-                    </div>
-                </div>
-                <p class="text-[11px] text-gray-400 mt-3 text-center">Only future time is allowed for selected date.</p>
-                <div class="flex gap-3 pt-4">
-                    <button type="button" onclick="saveAnalogTimeSelection()"
-                        class="flex-1 px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save
-                        time</button>
-                    <button type="button" onclick="clearAnalogTimeSelection()"
-                        class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Event Date Picker Modal -->
-        <div id="event-date-modal"
-            class="fixed inset-0 z-[74] hidden opacity-0 transition-opacity duration-300 bg-slate-950/70 backdrop-blur-xl">
-            <div id="event-date-modal-card"
-                class="absolute left-1/2 top-1/2 w-[94%] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900/92 via-slate-900/85 to-violet-950/70 p-5 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-black text-white">Select Event Date</h3>
-                    <button type="button" onclick="closeEventDateModal()" class="text-gray-400 hover:text-white">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                    </button>
-                </div>
-                <div class="event-calendar-head">
-                    <button type="button" onclick="changeEventCalendarMonth(-1)" class="event-calendar-nav" aria-label="Previous month">&lsaquo;</button>
-                    <button id="event-calendar-month-label" type="button" onclick="toggleEventMonthYearPicker()"
-                        class="event-calendar-month-label" aria-label="Select month and year">--</button>
-                    <button type="button" onclick="changeEventCalendarMonth(1)" class="event-calendar-nav" aria-label="Next month">&rsaquo;</button>
-                </div>
-                <div id="event-month-year-picker" class="event-month-year-picker hidden">
-                    <div class="event-month-year-top">
-                        <button type="button" onclick="changeEventCalendarYear(-1)" class="event-calendar-nav" aria-label="Previous year">&lsaquo;</button>
-                        <p id="event-calendar-year-label" class="event-calendar-year-label">2026</p>
-                        <button type="button" onclick="changeEventCalendarYear(1)" class="event-calendar-nav" aria-label="Next year">&rsaquo;</button>
-                    </div>
-                    <div id="event-month-grid" class="event-month-grid"></div>
-                </div>
-                <div class="event-calendar-weekdays">
-                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
-                </div>
-                <div id="event-calendar-grid" class="event-calendar-grid"></div>
-                <p id="event-date-preview" class="text-center text-sm text-cyan-300 mt-3">No date selected</p>
-                <div class="flex gap-3 pt-4">
-                    <button type="button" onclick="saveEventDateSelection()"
-                        class="flex-1 px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save
-                        date</button>
-                    <button type="button" onclick="clearEventDateSelection()"
-                        class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
-                </div>
-            </div>
-        </div>
+        {% include 'data_and_time.html' %}
 
     </div>
 

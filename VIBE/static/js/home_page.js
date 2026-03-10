@@ -71,26 +71,6 @@ const state = {
     tickets: []
 };
 const loaderStartTs = Date.now();
-const analogClockState = {
-    mode: 'hour',
-    focus: 'hour',
-    period: 'PM',
-    hour: 10,
-    minute: 0,
-    second: 0,
-    liveMode: false,
-    targetInputId: 'event-time-display'
-};
-const analogHourDialOrder = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-let analogDialDragging = false;
-let analogLastRenderedPeriod = '';
-let analogLiveTickerId = null;
-const eventCalendarState = {
-    viewYear: new Date().getFullYear(),
-    viewMonth: new Date().getMonth(),
-    selectedDate: '',
-    targetInputId: 'event-date-display'
-};
 
 function getCsrfToken() {
     if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
@@ -1987,32 +1967,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    const analogTimeModal = document.getElementById('analog-time-modal');
-    if (analogTimeModal) {
-        analogTimeModal.addEventListener('click', (event) => {
-            if (event.target === analogTimeModal) {
-                closeAnalogTimeModal();
-            }
-        });
-    }
-    const eventDateModal = document.getElementById('event-date-modal');
-    if (eventDateModal) {
-        eventDateModal.addEventListener('click', (event) => {
-            if (event.target === eventDateModal) {
-                closeEventDateModal();
-            }
-        });
-    }
-    document.addEventListener('click', (event) => {
-        const picker = document.getElementById('event-month-year-picker');
-        if (!picker || picker.classList.contains('hidden')) return;
-        const labelBtn = document.getElementById('event-calendar-month-label');
-        const target = event.target;
-        if (target instanceof Element && (target.closest('#event-month-year-picker') || target.closest('#event-calendar-month-label'))) {
-            return;
-        }
-        closeEventMonthYearPicker();
-    });
     document.addEventListener('click', (event) => {
         const target = event.target;
         if (target instanceof Element && target.closest('#event-type-picker')) {
@@ -2049,34 +2003,6 @@ document.addEventListener('DOMContentLoaded', () => {
         createPostForm.addEventListener('submit', handlePostSubmit);
     }
     renderEventCategoriesFromManifest();
-    initEventDateTimePicker();
-    initAnalogClockInteractions();
-    initEventCalendarKeyboardNavigation();
-    const durationDisplay = document.getElementById('event-duration-display');
-    if (durationDisplay) {
-        durationDisplay.addEventListener('input', syncDurationHiddenFromDisplay);
-        durationDisplay.addEventListener('blur', () => {
-            if (durationDisplay.readOnly) return;
-            const parsedMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
-            if (parsedMinutes > 0) {
-                if (parsedMinutes < 30) {
-                    const durationHidden = document.getElementById('event-duration-minutes');
-                    if (durationHidden) durationHidden.value = '';
-                    setLocationStatus('Duration must be at least 30 minutes.', true);
-                    return;
-                }
-                if (parsedMinutes > 24 * 60) {
-                    const durationHidden = document.getElementById('event-duration-minutes');
-                    if (durationHidden) durationHidden.value = '';
-                    setLocationStatus('Duration cannot be more than 24 hours.', true);
-                    return;
-                }
-                durationDisplay.value = formatDurationMinutes(parsedMinutes);
-                setLocationStatus('');
-            }
-            syncDurationHiddenFromDisplay();
-        });
-    }
     renderSelectedEventMedia();
     loadCurrentUserProfile();
     switchTab(getInitialTabFromUrl());

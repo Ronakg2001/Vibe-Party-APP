@@ -4,7 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VIBE. | Welcome</title>
+    <title>vibe. | Social Event App</title>
+    <link rel="icon" href="{% static 'img/Logo_V_withoutdots.PNG' %}" type="image/png" class="h-auto w-auto">
+    <link rel="apple-touch-icon" href="{% static 'img/logo_poster.PNG' %}" class="h-auto w-auto">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -46,7 +49,8 @@
         tabindex="0"
         aria-label="Refresh current page"
       >
-        VIBE<span>.</span>
+        <img src="{% static 'img/Vibe-logo.PNG' %}" alt="vibe." class="logo-desktop select-none">
+        <img src="{% static 'img/logo_vibe.PNG' %}" alt="vibe." class="logo-mobile select-none">
       </div>
       <a class="cta-link" href="/signin">Sign In / Sign Up</a>
     </div>
