@@ -33,6 +33,7 @@
         <div class="vibe-brand" onclick="window.location.reload()" role="button" tabindex="0"
           aria-label="Refresh current page">
           <img src="{% static 'img/Vibe-logo.PNG' %}" alt="VIBE" class="logo-desktop select-none">
+          <img src="{% static 'img/Logo_V.PNG' %}" alt="VIBE" class="logo-mobile select-none">
           <img src="{% static 'img/logo_vibe.PNG' %}" alt="VIBE" class="logo-mobile select-none">
         </div>
         <h1>Feel You Vibe with VIBE</h1>
@@ -86,9 +87,23 @@
           <label for="username">Username or Email</label>
           <input id="username" type="text" placeholder="Enter username or email" required />
         </div>
-        <div class="field">
+        <div class="field is-password">
           <label for="password">Password</label>
-          <input id="password" type="password" placeholder="Enter password" required />
+          <div class="input-wrap">
+            <input id="password" type="password" placeholder="Enter password" required />
+            <button id="passwordToggle" class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">
+              <svg class="icon icon-eye" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+              </svg>
+              <svg class="icon icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c7 0 11 8 11 8a21 21 0 0 1-4.4 5.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M6.3 6.3A21 21 0 0 0 1 12s4 8 11 8a10.7 10.7 0 0 0 4.1-.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="inline-links">
           <a class="form-link" href="/signin/forgot_password">Forget Password</a>

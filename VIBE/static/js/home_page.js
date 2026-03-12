@@ -72,6 +72,58 @@ const state = {
 };
 const loaderStartTs = Date.now();
 
+const THEME_STORAGE_KEY = 'vibe-theme';
+
+function getStoredTheme() {
+    try {
+        return localStorage.getItem(THEME_STORAGE_KEY);
+    } catch (_error) {
+        return null;
+    }
+}
+
+function setStoredTheme(value) {
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, value);
+    } catch (_error) {
+        // Ignore storage errors.
+    }
+}
+
+function getPreferredTheme() {
+    const stored = getStoredTheme();
+    if (stored === 'light' || stored === 'dark') {
+        return stored;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        return 'light';
+    }
+    return 'dark';
+}
+
+function updateThemeToggleUi(isLight) {
+    const buttons = document.querySelectorAll('[data-theme-toggle]');
+    const nextLabel = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+    const icon = isLight ? 'moon' : 'sun';
+    buttons.forEach((button) => {
+        button.setAttribute('aria-label', nextLabel);
+        button.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i>`;
+    });
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+function applyTheme(theme, options = {}) {
+    const nextTheme = theme === 'light' ? 'light' : 'dark';
+    const isLight = nextTheme === 'light';
+    document.body.classList.toggle('theme-light', isLight);
+    updateThemeToggleUi(isLight);
+    if (options.persist) {
+        setStoredTheme(nextTheme);
+    }
+}
+
 function getCsrfToken() {
     if (csrfTokenTemplate && csrfTokenTemplate !== "NOTPROVIDED") {
         return csrfTokenTemplate;
@@ -1984,6 +2036,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     bindLocationButtonGestures('mobile-location-btn');
     bindLocationButtonGestures('desktop-location-btn');
+    applyTheme(getPreferredTheme());
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const isLight = document.body.classList.contains('theme-light');
+            applyTheme(isLight ? 'dark' : 'light', { persist: true });
+        });
+    });
     renderTopLocationUi();
     renderFeed();
     renderUploadActivity();

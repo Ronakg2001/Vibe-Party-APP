@@ -22,6 +22,7 @@ const views = {
 
     const username = document.getElementById("username");
     const password = document.getElementById("password");
+    const passwordToggle = document.getElementById("passwordToggle");
     const userPassLoginBtn = document.getElementById("userPassLoginBtn");
 
     const mobileError = document.getElementById("mobileError");
@@ -98,6 +99,14 @@ const views = {
       newUserPrompt.style.display = "none";
     }
 
+    function setPasswordVisibility(isVisible) {
+      if (!password || !passwordToggle) return;
+      password.type = isVisible ? "text" : "password";
+      passwordToggle.classList.toggle("is-visible", isVisible);
+      passwordToggle.setAttribute("aria-pressed", String(isVisible));
+      passwordToggle.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
+    }
+
     function setButtonLoading(button, loading, defaultLabel, loadingLabel) {
       button.disabled = loading;
       button.textContent = loading ? loadingLabel : defaultLabel;
@@ -138,6 +147,13 @@ const views = {
     document.getElementById("backToMobileFromPassBtn").addEventListener("click", () => showView("mobileForm"));
     document.getElementById("goNewUserBtn").addEventListener("click", () => showView("mobileForm"));
     document.getElementById("mobileBackBtn").addEventListener("click", () => showView("mobileForm"));
+    if (passwordToggle) {
+      setPasswordVisibility(false);
+      passwordToggle.addEventListener("click", () => {
+        const isVisible = password.type === "password";
+        setPasswordVisibility(isVisible);
+      });
+    }
 
     views.mobileForm.addEventListener("submit", async (event) => {
       event.preventDefault();

@@ -97,7 +97,7 @@
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="profile">
                     <i data-lucide="user" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
-                    <span class="font-bold text-lg group-hover:text-white transition-colors">Profile</span>
+                    <span class="font-bold text-lg group-hover:text-white transition-colors">{{ current_username|default:'Profile' }}</span>
                 </button>
             </nav>
 
@@ -124,6 +124,7 @@
                 class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
                 <button onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
                     class="flex items-center">
+                    <img src="{% static 'img/Logo_V.PNG' %}" alt="VIBE" class="h-10 w-auto select-none">
                     <img src="{% static 'img/logo_vibe.PNG' %}" alt="VIBE" class="h-10 w-auto select-none">
                 </button>
                 <div class="flex gap-4 items-center">
@@ -134,6 +135,11 @@
                             <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                             <path class="nav-icon-fill" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                         </svg>
+                    </button>
+                    <button id="mobile-theme-toggle" type="button"
+                        class="theme-toggle-btn location-fab w-6 h-6 grid place-items-center" aria-label="Switch to light mode"
+                        data-theme-toggle>
+                        <i data-lucide="sun" class="w-5 h-5"></i>
                     </button>
                     <div class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
@@ -157,6 +163,11 @@
                             <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                             <path class="nav-icon-fill" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
                         </svg>
+                    </button>
+                    <button id="desktop-theme-toggle" type="button"
+                        class="theme-toggle-btn location-fab w-6 h-6 grid place-items-center" aria-label="Switch to light mode"
+                        data-theme-toggle>
+                        <i data-lucide="sun" class="w-5 h-5"></i>
                     </button>
                     <div class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
@@ -465,38 +476,7 @@
         </aside>
 
         <!-- MOBILE NAVIGATION DOCK (Hidden on md+) -->
-        <div class="md:hidden fixed bottom-6 w-full px-6 z-50 pointer-events-none">
-            <nav
-                class="pointer-events-auto bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-4 flex justify-between items-center w-full shadow-2xl shadow-black/50">
-                <button onclick="switchTab('home')"
-                    class="nav-btn active flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
-                    data-target="home">
-                    <i data-lucide="home" class= "h-7 w-auto"></i>
-                </button>
-                <button onclick="switchTab('search')"
-                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
-                    data-target="search">
-                    <i data-lucide="compass" class="h-7 w-auto"></i>
-                </button>
-
-                <div class="relative top-0 group">
-                    <button onclick="switchTab('add')">
-                        <img src="{% static 'img/Logo_V.PNG' %}" class="h-10 w-auto">
-                    </button>
-                </div>
-
-                <button onclick="switchTab('tickets')"
-                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
-                    data-target="tickets">
-                    <i data-lucide="ticket" class="h-7 w-auto"></i>
-                </button>
-                <button onclick="switchTab('profile')"
-                    class="nav-btn flex flex-col items-center justify-center h-10 w-10 text-gray-400 transition-all"
-                    data-target="profile">
-                    <i data-lucide="user" class="h-7 w-auto"></i>
-                </button>
-            </nav>
-        </div>
+        {% include 'mobile_navigation.html' %}
 
         <!-- Booking Modal -->
         <div id="booking-modal"
@@ -566,7 +546,8 @@
                 </div>
             </div>
         </div>
-        
+
+       <!-- Date & time module. -->        
         {% include 'data_and_time.html' %}
 
     </div>

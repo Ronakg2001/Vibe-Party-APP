@@ -1,0 +1,285 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 850: '#151e2e', 900: '#0f172a' }
+                    }
+                }
+            }
+        };
+    </script>
+
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+<style>
+    #nav-container {
+        transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        width: 100%;
+        max-width: 400px;
+        margin: 0 auto;
+        position: relative;
+        box-shadow: 0 10px 32px rgba(6, 10, 22, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.1),
+            0 4px 12px rgba(236, 72, 153, 0.2);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        background-color: rgba(255, 255, 255, 0.03);
+        overflow: hidden;
+    }
+
+    #nav-container.shrunk {
+        max-width: 72px;
+        border-radius: 50px !important;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .icon-wrapper {
+        transition: all 0.4s ease;
+        width: 40px;
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .shrunk .icon-wrapper.side-icon {
+        width: 0;
+        opacity: 0;
+        margin: 0;
+        transform: scale(0);
+        pointer-events: none;
+    }
+
+    .nav-btn {
+        position: relative;
+        z-index: 10;
+        transition: all 0.3s ease;
+        color: rgba(255, 255, 255, 0.4);
+    }
+
+    .nav-btn.active {
+        transform: translateY(-4px) scale(1.15);
+    }
+
+    .center-logo-wrapper {
+        transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        z-index: 10;
+    }
+
+    .center-logo-wrapper.active {
+        transform: scale(1.1);
+        filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.8));
+    }
+
+    .shrunk .center-logo-wrapper {
+        transform: scale(1.1);
+        animation: pulse-glow 2s infinite alternate;
+    }
+
+    @keyframes pulse-glow {
+        0% { filter: drop-shadow(0 0 10px rgba(0, 210, 255, 0.5)); }
+        100% { filter: drop-shadow(0 0 25px rgba(255, 0, 255, 0.8)); }
+    }
+
+    @keyframes heartbeat-pop {
+        0% { transform: scale(1); }
+        20% { transform: scale(1.06); }
+        40% { transform: scale(1); }
+        60% { transform: scale(1.06); }
+        80% { transform: scale(1); }
+        100% { transform: scale(1); }
+    }
+
+    .heartbeat-active {
+        animation: heartbeat-pop 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+</style>
+
+<div class="md:hidden fixed bottom-6 w-full px-6 z-50 pointer-events-none flex justify-center">
+    <nav id="nav-container" class="bg-white/1 backdrop-blur-lg border-[2px] border-white/10 shadow-x10 rounded-[70px] rounded-t-[20px] p-3 flex justify-evenly items-center pointer-events-auto">
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button onclick="handleNavClick(event, 'home', 'rgba(71, 232, 255, 0.9)')"
+                class="nav-btn active flex flex-col items-center justify-center h-10 w-10"
+                data-target="home">
+                <i class="ph-fill ph-house text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button onclick="handleNavClick(event, 'search', 'rgba(157, 255, 95, 0.9)')"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="search">
+                <i class="ph-fill ph-compass text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper flex justify-center w-[60px] cursor-pointer">
+            <div id="center-logo" class="center-logo-wrapper relative top-0 group flex items-center justify-center"
+                 onclick="handleCenterClick(event)">
+                <img src="{% static 'img/Logo_V_withoutdots.PNG' %}"
+                     class="h-8 w-auto drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+                     alt="Vibe Create">
+            </div>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button onclick="handleNavClick(event, 'tickets', 'rgba(255, 79, 216, 0.9)')"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="tickets">
+                <i class="ph-fill ph-ticket text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button onclick="handleNavClick(event, 'profile', 'rgba(147, 51, 234, 0.9)')"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="profile">
+                <i class="ph-fill ph-user-circle text-[28px]"></i>
+            </button>
+        </div>
+    </nav>
+</div>
+
+<script>
+    const navContainer = document.getElementById('nav-container');
+    const centerLogo = document.getElementById('center-logo');
+    const allNavBtns = document.querySelectorAll('.nav-btn');
+
+    let isShrunk = false;
+    let idleTimer;
+    const IDLE_TIMEOUT_MS = 5000;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        startIdleTimer();
+        setTimeout(() => {
+            const homeBtn = document.querySelector('[data-target=\"home\"]');
+            if (homeBtn) triggerNeonBorder(homeBtn, 'rgba(71, 232, 255, 0.9)', false);
+        }, 500);
+    });
+
+    function triggerNeonBorder(buttonElement, color, isCenter = false) {
+        if (isCenter) {
+            navContainer.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+            navContainer.style.boxShadow = `
+                0 10px 32px rgba(6, 10, 22, 0.5),
+                0 0 20px rgba(0, 210, 255, 0.8),
+                -20px 0 40px rgba(138, 43, 226, 0.8),
+                20px 0 40px rgba(255, 0, 255, 0.8),
+                inset 0 0 15px rgba(255, 255, 255, 0.4)
+            `;
+        } else {
+            navContainer.style.borderColor = color;
+            navContainer.style.boxShadow = `
+                0 10px 32px rgba(6, 10, 22, 0.5),
+                0 0 20px ${color},
+                0 0 40px ${color},
+                inset 0 0 12px ${color}
+            `;
+        }
+
+        allNavBtns.forEach((btn) => {
+            btn.classList.remove('active');
+            btn.style.color = '';
+            btn.style.filter = '';
+        });
+
+        if (buttonElement && buttonElement.classList.contains('nav-btn')) {
+            buttonElement.classList.add('active');
+            buttonElement.style.color = color;
+            buttonElement.style.filter = `drop-shadow(0 4px 6px rgba(0,0,0,0.4)) drop-shadow(0 0 12px ${color})`;
+        }
+
+        if (isCenter) {
+            centerLogo.classList.add('active');
+            setTimeout(() => centerLogo.classList.remove('active'), 600);
+        }
+    }
+
+    function handleNavClick(event, tabId, color) {
+        if (isShrunk) {
+            expandNav();
+            return;
+        }
+
+        resetIdleTimer();
+        triggerNeonBorder(event.currentTarget, color);
+        if (typeof switchTab === 'function') {
+            switchTab(tabId);
+        }
+    }
+
+    function handleCenterClick(event) {
+        if (isShrunk) {
+            expandNav();
+            return;
+        }
+
+        resetIdleTimer();
+        triggerNeonBorder(event.currentTarget, null, true);
+        allNavBtns.forEach(btn => btn.classList.remove('active'));
+        if (typeof switchTab === 'function') {
+            switchTab('add');
+        }
+    }
+
+    function startIdleTimer() {
+        idleTimer = setTimeout(() => {
+            shrinkNav();
+        }, IDLE_TIMEOUT_MS);
+    }
+
+    function resetIdleTimer() {
+        clearTimeout(idleTimer);
+        if (!isShrunk) {
+            startIdleTimer();
+        }
+    }
+
+    function shrinkNav() {
+        if (isShrunk) return;
+        isShrunk = true;
+        navContainer.classList.add('shrunk');
+    }
+
+    function expandNav() {
+        if (!isShrunk) return;
+        isShrunk = false;
+        navContainer.classList.remove('shrunk');
+        resetIdleTimer();
+    }
+
+    ['touchstart', 'click', 'mousemove', 'scroll'].forEach((eventName) => {
+        document.addEventListener(eventName, resetIdleTimer, { passive: true });
+    });
+
+    function triggerNotificationPop() {
+        const oldBoxShadow = navContainer.style.boxShadow;
+        const oldBorderColor = navContainer.style.borderColor;
+
+        navContainer.classList.remove('heartbeat-active');
+        void navContainer.offsetWidth;
+        navContainer.classList.add('heartbeat-active');
+
+        navContainer.style.borderColor = 'rgba(255, 255, 255, 1)';
+        navContainer.style.boxShadow = `
+            0 10px 32px rgba(6, 10, 22, 0.5),
+            0 0 25px rgba(255, 255, 255, 0.9),
+            0 0 45px rgba(255, 79, 216, 0.8),
+            inset 0 0 15px rgba(255, 255, 255, 0.7)
+        `;
+
+        setTimeout(() => {
+            navContainer.classList.remove('heartbeat-active');
+            navContainer.style.boxShadow = oldBoxShadow;
+            navContainer.style.borderColor = oldBorderColor;
+        }, 1000);
+    }
+</script>
