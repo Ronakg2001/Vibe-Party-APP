@@ -106,7 +106,7 @@
 <div class="md:hidden fixed bottom-6 w-full px-6 z-50 pointer-events-none flex justify-center">
     <nav id="nav-container" class="bg-white/1 backdrop-blur-lg border-[2px] border-white/10 shadow-x10 rounded-[70px] rounded-t-[20px] p-3 flex justify-evenly items-center pointer-events-auto">
         <div class="icon-wrapper side-icon flex justify-center">
-            <button onclick="handleNavClick(event, 'home', 'rgba(71, 232, 255, 0.9)')"
+            <button onclick="handleNavClick(event, 'home', 'rgba(219, 48, 130, 0.7)')"
                 class="nav-btn active flex flex-col items-center justify-center h-10 w-10"
                 data-target="home">
                 <i class="ph-fill ph-house text-[28px]"></i>
@@ -114,7 +114,7 @@
         </div>
 
         <div class="icon-wrapper side-icon flex justify-center">
-            <button onclick="handleNavClick(event, 'search', 'rgba(157, 255, 95, 0.9)')"
+            <button onclick="handleNavClick(event, 'search', 'rgba(155, 60, 212, 0.7)')"
                 class="nav-btn flex flex-col items-center justify-center h-10 w-10"
                 data-target="search">
                 <i class="ph-fill ph-compass text-[28px]"></i>
@@ -125,13 +125,13 @@
             <div id="center-logo" class="center-logo-wrapper relative top-0 group flex items-center justify-center"
                  onclick="handleCenterClick(event)">
                 <img src="{% static 'img/Logo_V_withoutdots.PNG' %}"
-                     class="h-8 w-auto drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+                     class="h-8 w-auto drop-shadow-[0_0_10px_rgba(98, 91, 214,0.3)]"
                      alt="Vibe Create">
             </div>
         </div>
 
         <div class="icon-wrapper side-icon flex justify-center">
-            <button onclick="handleNavClick(event, 'tickets', 'rgba(255, 79, 216, 0.9)')"
+            <button onclick="handleNavClick(event, 'tickets', 'rgba(54, 118, 198, 0.7)')"
                 class="nav-btn flex flex-col items-center justify-center h-10 w-10"
                 data-target="tickets">
                 <i class="ph-fill ph-ticket text-[28px]"></i>
@@ -139,7 +139,7 @@
         </div>
 
         <div class="icon-wrapper side-icon flex justify-center">
-            <button onclick="handleNavClick(event, 'profile', 'rgba(147, 51, 234, 0.9)')"
+            <button onclick="handleNavClick(event, 'profile', 'rgba(20, 146, 175, 0.7)')"
                 class="nav-btn flex flex-col items-center justify-center h-10 w-10"
                 data-target="profile">
                 <i class="ph-fill ph-user-circle text-[28px]"></i>
@@ -167,13 +167,12 @@
 
     function triggerNeonBorder(buttonElement, color, isCenter = false) {
         if (isCenter) {
-            navContainer.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+            navContainer.style.borderColor = 'rgba(98, 91, 214, 0.7)';
             navContainer.style.boxShadow = `
-                0 10px 32px rgba(6, 10, 22, 0.5),
-                0 0 20px rgba(0, 210, 255, 0.8),
-                -20px 0 40px rgba(138, 43, 226, 0.8),
-                20px 0 40px rgba(255, 0, 255, 0.8),
-                inset 0 0 15px rgba(255, 255, 255, 0.4)
+                0 10px 32px rgba(6, 10, 22, 0.7),
+                0 0 20px rgba(98, 91, 214, 0.7),
+                0 0 40px rgba(98, 91, 214, 0.7),
+                inset 0 0 12px rgba(98, 91, 214, 0.7)
             `;
         } else {
             navContainer.style.borderColor = color;
