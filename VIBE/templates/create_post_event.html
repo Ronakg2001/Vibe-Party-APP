@@ -642,11 +642,7 @@
     async function handlePostSubmit(e) {
         // Stop the form from refreshing the page!
         e.preventDefault();
-        // Disable submit buttons to prevent double-clicking
-        const eventBtn = document.getElementById('event-submit-btn');
-        const postBtn = document.getElementById('post-submit-btn');
-        if (eventBtn) eventBtn.disabled = true;
-        if (postBtn) postBtn.disabled = true;
+
         let activityId = null;
         const eventBioValue = document.getElementById('event-bio')?.value;
         const captionValue = state.isEventMode ? (eventBioValue ?? '') : document.getElementById('post-caption').value;
@@ -890,6 +886,100 @@
         if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, true);
     }
 
+    document.addEventListener('DOMContentLoaded', () => {
+    const createPostForm = document.getElementById('create-post-form');
+    
+    if (createPostForm) {
+        createPostForm.addEventListener('submit', async function(e) {
+            e.preventDefault(); // Prevent default page reload
+            
+            // Grab the submit button to disable it during upload (prevents double-taps)
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+            lucide.createIcons();
+
+            try {
+                // 1. Initialize FormData
+                const formData = new FormData();
+
+                // 2. Append Core Text Fields (Matching your views.py payload keys exactly)
+                formData.append('title', document.getElementById('event-title').value);
+                formData.append('description', document.getElementById('post-caption').value);
+                
+                // For category, check if they selected 'other' or a dropdown preset
+                const eventCategory = document.getElementById('event-type-other').value || document.getElementById('event-type').value;
+                formData.append('eventCategory', eventCategory);
+
+                // Logistics & Time
+                const dateVal = document.getElementById('event-date').value;
+                const timeVal = document.getElementById('event-time').value;
+                formData.append('startLabel', `${dateVal} ${timeVal}`.trim());
+                
+                const endTimeVal = document.getElementById('event-end-time').value;
+                if (endTimeVal) {
+                    formData.append('endLabel', `${dateVal} ${endTimeVal}`.trim());
+                }
+
+                // Location - Assuming your location modal saves lat/lng to hidden inputs or a global variable
+                formData.append('locationName', document.getElementById('event-location').value);
+                // Replace these with however you are storing the selected coordinates from Leaflet
+                formData.append('latitude', window.selectedLat || 0.0); 
+                formData.append('longitude', window.selectedLng || 0.0);
+
+                // Ticketing
+                formData.append('price', document.getElementById('event-price').value || 0);
+                formData.append('currency', 'INR'); // Defaulted in your view, but good to pass
+                // If you add a capacity input later, grab it here:
+                // formData.append('maxAttendees', document.getElementById('event-capacity').value || 0);
+
+                // 3. Append Media Files (Handling the FileList array)
+                const mediaInput = document.getElementById('event-media-input');
+                if (mediaInput.files.length > 0) {
+                    // Your views.py looks for "eventMedia"
+                    Array.from(mediaInput.files).forEach(file => {
+                        formData.append('eventMedia', file); 
+                    });
+                }
+
+                // 4. Send the Request to your Django API
+                // Make sure to include the CSRF token from your boot config!
+                const csrfToken = window.bootConfig ? window.bootConfig.csrfToken : '';
+
+                const response = await fetch('/api/events/create/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken // Required by Django for POST requests
+                    },
+                    body: formData // DO NOT set Content-Type header manually when sending FormData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create event');
+                }
+
+                // Success! Reset form and show a success state
+                this.reset();
+                alert('Vibe dropped successfully! ⚡️');
+                
+                // Optional: Automatically switch back to the 'Home' tab to see the new event
+                if(typeof switchTab === 'function') switchTab('home');
+
+            } catch (error) {
+                console.error('Submission Error:', error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                // Restore button state
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            }
+        });
+        }
+    });
+    
     let currentBookingEventId = null;
     function openBookingModal(postId) {
         const event = getPostById(postId);

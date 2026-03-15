@@ -138,7 +138,7 @@ def custom_location_page(request):
 @require_http_methods(["GET", "POST"])
 def logout_view(request):
     logout(request)
-    response = redirect("/signin/")
+    response = redirect("/")
     response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
