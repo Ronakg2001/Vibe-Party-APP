@@ -1,0 +1,30 @@
+.event-type-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    max-height: 230px;
+    overflow-y: auto;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(71, 232, 255, 0.2);
+    background: #0f172a;
+    padding: 0.35rem;
+}
+.event-type-item {
+    width: 100%;
+    text-align: left;
+    font-size: 0.86rem;
+    color: #f8f9ff;
+    border-radius: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    cursor: pointer;
+}
+.event-type-item:hover { background: rgba(71, 232, 255, 0.1); }
+.step-container { display: none; animation: fadeIn 0.3s ease; }
+.step-container.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.service-checkbox:checked + div { background: #d946ef; color: white; border-color: #d946ef; }
+.ticket-radio:checked + div { border-color: #22d3ee; background: rgba(34, 211, 238, 0.1); }

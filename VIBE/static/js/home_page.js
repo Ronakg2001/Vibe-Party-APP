@@ -1986,6 +1986,7 @@ function initEventCalendarKeyboardNavigation() {
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
+    bindHomePageActions();
     state.customLocationName = localStorage.getItem('vibe_custom_location_name') || '';
     state.detectedLocationName = localStorage.getItem('vibe_detected_location_name') || '';
     const locationInput = document.getElementById('location-modal-input');
@@ -2031,7 +2032,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeEventTypeMenu();
     });
     document.addEventListener('click', (event) => {
-        if (!event.target.closest('.hosted-event-menu') && !event.target.closest('[onpointerdown*="startHostedEventPress"]')) {
+        if (!event.target.closest('.hosted-event-menu') && !event.target.closest('[data-action="hosted-event-card"]')) {
             if (state.hostedMenuEventPostId) {
                 state.hostedMenuEventPostId = null;
                 renderHostedEventList();
@@ -2170,11 +2171,11 @@ function renderPostMediaStage(post) {
         ? `<video src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105" controls playsinline preload="metadata"></video>`
         : `<img src="${current.url}" class="w-full h-full object-cover opacity-90 transition-transform duration-700 group-hover:scale-105">`;
     const controls = safeCount > 1
-        ? `<button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', -1)" class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&lsaquo;</button>
-           <button type="button" onclick="event.stopPropagation(); shiftPostMedia('${post.id}', 1)" class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&rsaquo;</button>
+        ? `<button type="button" data-action="shift-post-media" data-post-id="${post.id}" data-direction="-1" class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&lsaquo;</button>
+           <button type="button" data-action="shift-post-media" data-post-id="${post.id}" data-direction="1" class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center z-20">&rsaquo;</button>
            <div class="absolute top-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10 z-20">${idx + 1} / ${safeCount}</div>`
         : '';
-    return `<div class="absolute inset-0" ontouchstart="startPostSwipe(event, '${post.id}')" ontouchend="endPostSwipe(event, '${post.id}')">${mediaTag}${controls}</div>`;
+    return `<div class="absolute inset-0" data-action="post-swipe" data-post-id="${post.id}">${mediaTag}${controls}</div>`;
 }
 
 function isDuplicatePendingMedia(file) {
@@ -2253,7 +2254,7 @@ function renderFeed() {
                 <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/90 pointer-events-none"></div>
                 
                 <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-10 pointer-events-auto">
-                    <button onclick="toggleLike(this)" class="flex flex-col items-center gap-1 group">
+                    <button type="button" data-action="toggle-like" class="flex flex-col items-center gap-1 group">
                         <div class="p-3 rounded-full bg-black/20 backdrop-blur-md text-white transition-colors group-active:text-rose-500 hover:bg-black/40"><i data-lucide="heart" class="w-7 h-7"></i></div>
                         <span class="text-xs font-bold drop-shadow-md">${post.likes}</span>
                     </button>
@@ -2268,7 +2269,7 @@ function renderFeed() {
                 <div class="absolute bottom-0 left-0 right-0 p-5 pr-20 pointer-events-auto">
                     <p class="text-sm text-gray-200 mb-3 line-clamp-2"><span class="font-bold text-white mr-2">${post.username}</span>${post.caption}</p>
                     ${post.isEvent ? `
-                    <div class="mt-3 bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-3 flex items-center justify-between group/event hover:bg-white/15 transition-colors cursor-pointer" onclick="openBookingModal('${post.id}')">
+                    <div class="mt-3 bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-3 flex items-center justify-between group/event hover:bg-white/15 transition-colors cursor-pointer" data-action="open-booking-modal" data-post-id="${post.id}">
                         <div class="flex gap-3 items-center">
                             <div class="bg-fuchsia-600/20 w-10 h-10 rounded-lg flex flex-col items-center justify-center text-fuchsia-400 border border-fuchsia-500/30">
                                 <span class="text-[10px] font-bold uppercase leading-none">Oct</span><span class="text-lg font-bold leading-none">24</span>
@@ -2279,7 +2280,7 @@ function renderFeed() {
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
+                            ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" data-action="stop-prop" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
                             <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book ${formatInr(post.eventDetails.price)}</button>
                         </div>
                     </div>` : ''}
@@ -2433,11 +2434,7 @@ function renderHostedEventList() {
         return `
         <div class="relative">
             <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
-                onclick="handleHostedEventCardClick('${eventPost.id}')"
-                onpointerdown="startHostedEventPress(event, '${eventPost.id}')"
-                onpointerup="cancelHostedEventPress()"
-                onpointerleave="cancelHostedEventPress()"
-                onpointercancel="cancelHostedEventPress()">
+                data-action="hosted-event-card" data-post-id="${eventPost.id}">
                 <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
                 <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
                     <div class="h-28 w-full relative">
@@ -2461,7 +2458,7 @@ function renderHostedEventList() {
                 </div>
             </div>
             <div class="hosted-event-menu mt-2 ${menuVisible ? '' : 'hidden'}">
-                <button type="button" onclick="event.stopPropagation(); deleteHostedEvent('${eventPost.id}')"
+                <button type="button" data-action="delete-hosted-event" data-post-id="${eventPost.id}"
                     class="w-full py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm font-semibold hover:bg-rose-500/20 transition-colors">
                     Delete Event
                 </button>
@@ -2491,6 +2488,131 @@ function switchMyEventsTab(tabId) {
 }
 
 // --- Interaction Logic ---
+
+function bindHomePageActions() {
+    document.addEventListener('click', (event) => {
+        const actionEl = event.target.closest('[data-action]');
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+
+        switch (action) {
+            case 'go-home':
+                if (typeof goToHomeTabAndRefresh === 'function') {
+                    goToHomeTabAndRefresh();
+                }
+                break;
+            case 'switch-tab':
+                if (actionEl.dataset.tab) {
+                    switchTab(actionEl.dataset.tab);
+                }
+                break;
+            case 'logout':
+                if (typeof handleLogout === 'function') {
+                    handleLogout();
+                }
+                break;
+            case 'location-toggle':
+                if (actionEl.dataset.buttonId) {
+                    handleLocationToggleTap(event, actionEl.dataset.buttonId);
+                }
+                break;
+            case 'switch-my-events':
+                if (actionEl.dataset.tab) {
+                    switchMyEventsTab(actionEl.dataset.tab);
+                }
+                break;
+            case 'close-booking-modal':
+                closeBookingModal();
+                break;
+            case 'close-location-modal':
+                closeLocationModal();
+                break;
+            case 'toggle-location-enabled':
+                toggleLocationModalEnabled();
+                break;
+            case 'use-detected-location':
+                useDetectedLocationInModal();
+                break;
+            case 'save-location-modal':
+                saveLocationModal();
+                break;
+            case 'clear-location-modal':
+                clearLocationModal();
+                break;
+            case 'toggle-like':
+                toggleLike(actionEl);
+                break;
+            case 'open-booking-modal':
+                if (actionEl.dataset.postId) {
+                    openBookingModal(actionEl.dataset.postId);
+                }
+                break;
+            case 'stop-prop':
+                event.stopPropagation();
+                break;
+            case 'shift-post-media':
+                event.stopPropagation();
+                shiftPostMedia(actionEl.dataset.postId, Number(actionEl.dataset.direction || 0));
+                break;
+            case 'delete-hosted-event':
+                event.stopPropagation();
+                if (actionEl.dataset.postId) {
+                    deleteHostedEvent(actionEl.dataset.postId);
+                }
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('touchstart', (event) => {
+        const swipeEl = event.target.closest('[data-action="post-swipe"]');
+        if (!swipeEl) return;
+        const postId = swipeEl.dataset.postId;
+        if (postId) {
+            startPostSwipe(event, postId);
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchend', (event) => {
+        const swipeEl = event.target.closest('[data-action="post-swipe"]');
+        if (!swipeEl) return;
+        const postId = swipeEl.dataset.postId;
+        if (postId) {
+            endPostSwipe(event, postId);
+        }
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+        const card = event.target.closest('[data-action="hosted-event-card"]');
+        if (!card) return;
+        startHostedEventPress(event, card.dataset.postId);
+    });
+
+    document.addEventListener('pointerup', (event) => {
+        const card = event.target.closest('[data-action="hosted-event-card"]');
+        if (!card) return;
+        cancelHostedEventPress();
+    });
+
+    document.addEventListener('pointerout', (event) => {
+        const card = event.target.closest('[data-action="hosted-event-card"]');
+        if (!card) return;
+        cancelHostedEventPress();
+    });
+
+    document.addEventListener('pointercancel', (event) => {
+        const card = event.target.closest('[data-action="hosted-event-card"]');
+        if (!card) return;
+        cancelHostedEventPress();
+    });
+
+    document.addEventListener('click', (event) => {
+        const card = event.target.closest('[data-action="hosted-event-card"]');
+        if (!card) return;
+        handleHostedEventCardClick(card.dataset.postId);
+    });
+}
 
 function switchTab(tabId) {
     state.activeTab = tabId;

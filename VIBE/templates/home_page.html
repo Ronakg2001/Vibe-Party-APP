@@ -16,12 +16,15 @@
 
     <!-- Custom Config for Party Theme -->
     <script src="{% static 'js/home_page_tailwind.js' %}"></script>
+    <script src="{% static 'js/mobile_navigation_tailwind.js' %}"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
+    <link rel="stylesheet" href="{% static 'css/mobile_navigation.css' %}">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
@@ -63,37 +66,37 @@
         <!-- DESKTOP SIDEBAR (Visible on md+) -->
         <aside
             class="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-white/5 bg-slate-900/50 backdrop-blur-xl z-50 p-6">
-            <h1 onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
+            <h1 data-action="go-home" role="button" tabindex="0"
                 class="flex items-center gap-1 mb-10 cursor-pointer">
                 <img src="{% static 'img/Vibe-logo.PNG' %}" alt="VIBE" class="h-50 w-auto select-none">
             </h1>
 
             <nav class="flex flex-col gap-4 flex-1">
-                <button onclick="switchTab('home')"
+                <button type="button" data-action="switch-tab" data-tab="home"
                     class="nav-btn active group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="home">
                     <i data-lucide="home" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
                     <span class="font-bold text-lg group-hover:text-white transition-colors">For You</span>
                 </button>
-                <button onclick="switchTab('search')"
+                <button type="button" data-action="switch-tab" data-tab="search"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="search">
                     <i data-lucide="compass" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
                     <span class="font-bold text-lg group-hover:text-white transition-colors">Discover</span>
                 </button>
-                <button onclick="switchTab('add')"
+                <button type="button" data-action="switch-tab" data-tab="add"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="add">
                     <img src="{% static 'img/Logo_V_withoutdots.PNG' %}" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400">
                     <span class="font-bold text-lg group-hover:text-white transition-colors">Create</span>
                 </button>
-                <button onclick="switchTab('tickets')"
+                <button type="button" data-action="switch-tab" data-tab="tickets"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="tickets">
                     <i data-lucide="ticket" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
                     <span class="font-bold text-lg group-hover:text-white transition-colors">My Events</span>
                 </button>
-                <button onclick="switchTab('profile')"
+                <button type="button" data-action="switch-tab" data-tab="profile"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="profile">
                     <i data-lucide="user" class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"></i>
@@ -107,7 +110,7 @@
                     <i data-lucide="settings" class="w-5 h-5"></i>
                     Settings
                 </button>
-                <button type="button" onclick="handleLogout()"
+                <button type="button" data-action="logout"
                     class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 w-full text-left text-red-300 text-sm">
                     <i data-lucide="log-out" class="w-5 h-5"></i>
                     Logout
@@ -122,14 +125,13 @@
             <!-- MOBILE HEADER (Hidden on md+) -->
             <header id="main-header"
                 class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
-                <button onclick="goToHomeTabAndRefresh()" role="button" tabindex="0"
+                <button type="button" data-action="go-home" role="button" tabindex="0"
                     class="flex items-center">
                     <img src="{% static 'img/Logo_V.PNG' %}" alt="VIBE" class="h-10 w-auto select-none">
                     <img src="{% static 'img/logo_vibe.PNG' %}" alt="VIBE" class="h-10 w-auto select-none">
                 </button>
                 <div class="flex gap-4 items-center">
-                    <button id="mobile-location-btn" type="button"
-                        onclick="handleLocationToggleTap(event, 'mobile-location-btn')"
+                    <button id="mobile-location-btn" type="button" data-action="location-toggle" data-button-id="mobile-location-btn"
                         class="location-fab w-6 h-6 grid place-items-center" aria-label="Location">
                         <svg class="location-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
@@ -156,8 +158,7 @@
                     class="px-3 py-1.5 max-w-[55%] truncate text-xs bg-white/10 border border-white/20 rounded-full text-white/90">
                     --</p>
                 <div class="flex items-center gap-4">
-                    <button id="desktop-location-btn" type="button"
-                        onclick="handleLocationToggleTap(event, 'desktop-location-btn')"
+                    <button id="desktop-location-btn" type="button" data-action="location-toggle" data-button-id="desktop-location-btn"
                         class="location-fab w-6 h-6 grid place-items-center" aria-label="Location">
                         <svg class="location-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path class="nav-icon-outline" d="M3 11.7L21 3L13.1 21L10.7 13L3 11.7Z"></path>
@@ -224,9 +225,9 @@
                             class="text-3xl font-black mb-6 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
                             My Events</h2>
                         <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-6 max-w-xs">
-                            <button type="button" onclick="switchMyEventsTab('tickets')" id="btn-my-events-tickets"
+                            <button type="button" data-action="switch-my-events" data-tab="tickets" id="btn-my-events-tickets"
                                 class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Tickets</button>
-                            <button type="button" onclick="switchMyEventsTab('event')" id="btn-my-events-event"
+                            <button type="button" data-action="switch-my-events" data-tab="event" id="btn-my-events-event"
                                 class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
                         </div>
                     </div>
@@ -294,7 +295,7 @@
                                     <div class="text-xs text-gray-500 uppercase">Following</div>
                                 </div>
                             </div>
-                            <button type="button" onclick="handleLogout()"
+                            <button type="button" data-action="logout"
                                 class="md:hidden mb-6 w-full py-3 rounded-xl font-semibold text-red-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                                 Logout
                             </button>
@@ -354,7 +355,7 @@
                 id="modal-content">
                 <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-8 md:hidden"></div>
                 <!-- Close button for desktop -->
-                <button onclick="closeBookingModal()"
+                <button type="button" data-action="close-booking-modal"
                     class="hidden md:block absolute top-6 right-6 text-gray-500 hover:text-white"><i data-lucide="x"
                         class="w-6 h-6"></i></button>
 
@@ -369,7 +370,7 @@
                 class="absolute left-1/2 top-1/2 w-[94%] max-w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/15 bg-gradient-to-br from-slate-900/88 via-slate-900/80 to-violet-950/65 backdrop-blur-2xl p-4 md:p-6 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-black text-white">Set Location</h3>
-                    <button type="button" onclick="closeLocationModal()" class="text-gray-400 hover:text-white">
+                    <button type="button" data-action="close-location-modal" class="text-gray-400 hover:text-white">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
                 </div>
@@ -379,7 +380,7 @@
                         <div>
                             <p class="text-sm font-semibold text-white">Location</p>
                         </div>
-                        <button id="location-modal-enabled-toggle" type="button" onclick="toggleLocationModalEnabled()"
+                        <button id="location-modal-enabled-toggle" type="button" data-action="toggle-location-enabled"
                             class="inline-flex items-center gap-2">
                             <span id="location-modal-enabled-track"
                                 class="relative h-7 w-12 rounded-full bg-[#34a853] transition-colors duration-300">
@@ -396,7 +397,7 @@
                     <div class="rounded-xl border border-white/10 bg-slate-900/60 p-2.5">
                         <input id="location-modal-input" type="text" maxlength="80" placeholder="Search location"
                             class="w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-white/10 outline-none focus:border-cyan-400 text-sm text-white">
-                        <button id="location-modal-detected-inline" type="button" onclick="useDetectedLocationInModal()"
+                        <button id="location-modal-detected-inline" type="button" data-action="use-detected-location"
                             class="mt-2 block text-left text-xs text-cyan-300 hover:text-cyan-200 transition-colors">Location:
                             Off </button>
                     </div>
@@ -406,10 +407,10 @@
                     <p class="text-[11px] text-gray-400">Click or drag marker on map to choose exact location.</p>
                     <p id="location-modal-error" class="hidden text-xs text-rose-300"></p>
                     <div class="flex gap-3 pt-1">
-                        <button type="button" onclick="saveLocationModal()"
+                        <button type="button" data-action="save-location-modal"
                             class="px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save
                             location</button>
-                        <button type="button" onclick="clearLocationModal()"
+                        <button type="button" data-action="clear-location-modal"
                             class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
                     </div>
                 </div>
@@ -426,6 +427,7 @@
     <!-- Application Logic -->
     <script id="home-page-boot-config"
         type="application/json">{"csrfToken":"{{ csrf_token|escapejs }}","currentAvatarUrl":"{{ current_avatar_url|default:''|escapejs }}","currentUsername":"{{ current_username|default:'party_alex'|escapejs }}","manifestData":{{ manifest_data_json|safe }}}</script>
+    <script src="{% static 'js/mobile_navigation.js' %}"></script>
     <script src="{% static 'js/home_page.js' %}"></script>
 </body>
 

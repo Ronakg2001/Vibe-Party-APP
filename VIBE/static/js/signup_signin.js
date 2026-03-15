@@ -34,6 +34,14 @@ const views = {
     const newUserPrompt = document.getElementById("newUserPrompt");
     const csrfTokenTemplate = bootConfig.csrfToken || "";
 
+    document.addEventListener('click', (event) => {
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) return;
+      if (actionEl.dataset.action === 'reload-page') {
+        window.location.reload();
+      }
+    });
+
     let mobileContext = { mobile: "" };
 
     const API_ENDPOINTS = {

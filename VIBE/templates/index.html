@@ -9,74 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-<style>
-      /* Splash Screen Specific Styles */
-    body {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        overflow: hidden;
-        /* Updated to match the dark edges of your Vibe logo */
-        background-color: #0b0816; 
-    }
-.vibe-splash-brand {
-        z-index: 1;
-        opacity: 0;
-        transform: translateY(20px);
-        animation: fadeUp 1s ease forwards 0.5s;
-        
-        /* --- NEW FLEXBOX RULES --- */
-        display: flex;
-        flex-direction: column; /* Stacks the images vertically */
-        align-items: center;    /* Centers them horizontally */
-        gap: 15px;              /* Adds a little breathing room between the V and the text */
-    }
-
-    /* Base styles for both images to keep the mix-blend-mode trick */
-    .vibe-splash-brand img {
-        max-width: 100%;
-        height: auto;
-        mix-blend-mode: screen; 
-    }
-
-    /* Optional: Control their specific sizes */
-    .logo-icon {
-        width: 150px; /* Adjust the size of just the 'V' */
-    }
-    
-    .logo-text {
-        width: 200px; /* Adjust the size of just the 'vibe' text */
-    }
-
-    /* Modify your existing loader to be permanently centered for the splash */
-    .party-loader-overlay {
-        position: relative; /* Change from fixed */
-        background: transparent;
-        opacity: 1 !important; /* Keep it visible until we redirect */
-        visibility: visible !important;
-    }
-
-    @keyframes fadeUp {
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    /* The flash animation before redirect */
-    .hyper-drive {
-        position: fixed;
-        inset: 0;
-        background: white;
-        z-index: 99999;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.3s ease;
-    }
-    .hyper-drive.active {
-        opacity: 1;
-    }
-
-</style>
+  <link rel="stylesheet" href="{% static 'css/index.css' %}">
 </head>
 <body>
   <div class="orb orb-violet"></div>
@@ -107,37 +40,12 @@
         <div class="eq-bar bar-4"></div>
         <div class="eq-bar bar-5"></div>
       </div>
-      <p id="splash-status-text" class="party-loader-text" style="font-weight: 600; letter-spacing: 1px;">Tuning the party vibe...</p>
+      <p id="splash-status-text" class="party-loader-text">Tuning the party vibe...</p>
     </div>
   </div>
 
   <div id="hyper-drive" class="hyper-drive"></div>
   
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-    const statusText = document.getElementById("splash-status-text");
-    const hyperDrive = document.getElementById("hyper-drive");
-
-    // Phase 1: Initial load. The speaker is pumping, text says "Tuning the party vibe..."
-    
-    // Phase 2: Change text after 1.5 seconds to build anticipation
-    setTimeout(() => {
-        statusText.style.color = "#34d399"; // Change text to a neon green
-        statusText.innerHTML = "Vibe Check Passed. ⚡️";
-    }, 1500);
-
-    // Phase 3: The "Drop". Flash the screen white and redirect
-    setTimeout(() => {
-        // Trigger the white flash
-        hyperDrive.classList.add("active");
-        
-        // Wait just a split second for the flash to cover the screen, then redirect
-        setTimeout(() => {
-            window.location.href = "/signin/";
-        }, 200);
-
-    }, 2800); // Total time spent on splash screen (2.8 seconds)
-});
-  </script>
+  <script src="{% static 'js/index.js' %}"></script>
 </body>
 </html>

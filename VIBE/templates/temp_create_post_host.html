@@ -5,13 +5,13 @@
             Create Vibe</h2>
 
         <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-8 border border-white/5">
-            <button onclick="togglePostType(false)" id="btn-type-post"
+            <button data-action="toggle-post-type" data-event-mode="false" id="btn-type-post"
                 class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Post</button>
-            <button onclick="togglePostType(true)" id="btn-type-event"
+            <button data-action="toggle-post-type" data-event-mode="true" id="btn-type-event"
                 class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
         </div>
 
-        <form id="create-post-form" onsubmit="handlePostSubmit(event)" class="flex flex-col gap-5">
+        <form id="create-post-form" class="flex flex-col gap-5">
             <!-- Standard Post UI -->
             <div id="post-ui-wrap" class="flex flex-col gap-5">
                 <div id="post-media-wrap" class="flex flex-col gap-4">
@@ -23,15 +23,15 @@
                         </div>
                         <div id="event-media-stage" class="hidden absolute inset-0">
                             <div id="event-media-frame" class="w-full h-full"></div>
-                            <button type="button" onclick="event.preventDefault(); event.stopPropagation(); shiftPendingMedia(-1)"
+                            <button type="button" data-action="shift-pending-media" data-direction="-1"
                                 class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&lsaquo;</button>
-                            <button type="button" onclick="event.preventDefault(); event.stopPropagation(); shiftPendingMedia(1)"
+                            <button type="button" data-action="shift-pending-media" data-direction="1"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&rsaquo;</button>
                             <div id="event-media-counter"
                                 class="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10"></div>
                         </div>
                     </label>
-                    <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*" onchange="handleEventMediaInputChange(event)">
+                    <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*">
                 </div>
                 <div id="post-caption-wrap">
                     <textarea id="post-caption" placeholder="What's the vibe?"
@@ -50,10 +50,10 @@
                         </div>        
                         
                         <div class="relative w-full h-56 md:h-72 bg-slate-800/50 rounded-2xl border-2 border-white/10 overflow-hidden group focus:outline-none focus:border-fuchsia-500/50 transition-colors" tabindex="0" id="carousel-wrapper">
-                            <button type="button" onclick="scrollCarousel(-1)" class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-prev">
+                            <button type="button" data-action="scroll-carousel" data-direction="-1" class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-prev">
                                 <i data-lucide="chevron-left" class="w-5 h-5"></i>
                             </button>
-                            <button type="button" onclick="scrollCarousel(1)" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-next">
+                            <button type="button" data-action="scroll-carousel" data-direction="1" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-next">
                                 <i data-lucide="chevron-right" class="w-5 h-5"></i>
                             </button>
 
@@ -63,9 +63,9 @@
                                 <span id="media-counter">1 / 1</span>
                             </div>
 
-                            <input type="file" id="cover-upload" accept="image/*" class="hidden" onchange="handleCoverUpload(event)">
-                            <input type="file" id="highlight-upload" accept="image/*,video/*" class="hidden" multiple onchange="handleHighlightUpload(event)">
-                            <input type="file" id="highlight-change" accept="image/*,video/*" class="hidden" onchange="handleHighlightChangeUpload(event)">
+                            <input type="file" id="cover-upload" accept="image/*" class="hidden">
+                            <input type="file" id="highlight-upload" accept="image/*,video/*" class="hidden" multiple>
+                            <input type="file" id="highlight-change" accept="image/*,video/*" class="hidden">
                         </div>
 
                         <div class="relative neon-border rounded-xl transition-all">
@@ -83,7 +83,7 @@
                             <div class="relative col-span-2">
                                 <i data-lucide="layout-grid" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400 z-10"></i>
                                 <div id="event-type-picker" class="event-type-picker relative">
-                                    <button id="event-type-trigger" type="button" onclick="toggleEventTypeMenu()"
+                                    <button id="event-type-trigger" type="button" data-action="toggle-event-type-menu"
                                         class="event-type-trigger w-full pl-10 pr-10 p-3.5 rounded-xl text-left text-sm text-white border border-white/5 bg-slate-800/50">
                                         <span id="event-type-label" data-placeholder="Select Category"></span>
                                         <i data-lucide="chevron-down" class="absolute right-4 top-3.5 w-4 h-4 text-gray-400"></i>
@@ -170,14 +170,14 @@
                         <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="ticket" class="text-fuchsia-500 w-5 h-5"></i> Ticketing</h2>
                         <div class="grid grid-cols-2 gap-4">
                             <label class="cursor-pointer relative">
-                                <input type="radio" name="ticket_type" value="Free" class="sr-only ticket-radio" checked onchange="toggleTicketTypes()">
+                                <input type="radio" name="ticket_type" value="Free" class="sr-only ticket-radio" checked data-action="ticket-type">
                                 <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
                                     <i data-lucide="smile" class="w-8 h-8 mx-auto mb-2 text-green-400"></i>
                                     <h3 class="font-bold text-white mb-1">Free</h3>
                                 </div>
                             </label>
                             <label class="cursor-pointer relative">
-                                <input type="radio" name="ticket_type" value="Paid" class="sr-only ticket-radio" onchange="toggleTicketTypes()">
+                                <input type="radio" name="ticket_type" value="Paid" class="sr-only ticket-radio" data-action="ticket-type">
                                 <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
                                     <i data-lucide="banknote" class="w-8 h-8 mx-auto mb-2 text-cyan-400"></i>
                                     <h3 class="font-bold text-white mb-1">Paid</h3>
@@ -187,7 +187,7 @@
 
                         <div id="paid-tiers-section" class="hidden space-y-4 pt-4 border-t border-white/10">
                             <div id="paid-tiers-container" class="space-y-4"></div>
-                            <button type="button" id="btn-add-tier" onclick="addTier()" class="text-sm text-fuchsia-400 font-medium flex items-center gap-1">
+                            <button type="button" id="btn-add-tier" data-action="add-tier" class="text-sm text-fuchsia-400 font-medium flex items-center gap-1">
                                 <i data-lucide="plus-circle" class="w-4 h-4"></i> Add Ticket Tier
                             </button>
                         </div>
@@ -218,8 +218,8 @@
 
                     <!-- Navigation -->
                     <div class="flex gap-3 pt-6 border-t border-white/10">
-                        <button type="button" id="btn-prev" onclick="changeStep(-1)" class="hidden flex-1 py-3.5 rounded-xl font-bold text-white bg-slate-800 border border-white/10">Back</button>
-                        <button type="button" id="btn-next" onclick="changeStep(1)" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-600 to-cyan-600 neon-button">Next Step</button>
+                        <button type="button" id="btn-prev" data-action="change-step" data-step="-1" class="hidden flex-1 py-3.5 rounded-xl font-bold text-white bg-slate-800 border border-white/10">Back</button>
+                        <button type="button" id="btn-next" data-action="change-step" data-step="1" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-600 to-cyan-600 neon-button">Next Step</button>
                         <button type="submit" id="event-submit-btn" class="hidden flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-fuchsia-700 neon-button">Publish Vibe</button>
                     </div>
                 </div>
@@ -234,283 +234,9 @@
     </div>
 </div>
 
-<style>
-.event-type-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    right: 0;
-    z-index: 60;
-    max-height: 230px;
-    overflow-y: auto;
-    border-radius: 0.9rem;
-    border: 1px solid rgba(71, 232, 255, 0.2);
-    background: #0f172a;
-    padding: 0.35rem;
-}
-.event-type-item {
-    width: 100%;
-    text-align: left;
-    font-size: 0.86rem;
-    color: #f8f9ff;
-    border-radius: 0.65rem;
-    padding: 0.55rem 0.65rem;
-    cursor: pointer;
-}
-.event-type-item:hover { background: rgba(71, 232, 255, 0.1); }
-.step-container { display: none; animation: fadeIn 0.3s ease; }
-.step-container.active { display: block; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.service-checkbox:checked + div { background: #d946ef; color: white; border-color: #d946ef; }
-.ticket-radio:checked + div { border-color: #22d3ee; background: rgba(34, 211, 238, 0.1); }
-</style>
 
-<script>
-// Mock State for Preview
-const state = {
-    isEventMode: false,
-    pendingEventMedia: [],
-    pendingMediaIndex: 0,
-    currentUser: { username: "vibe_user", avatar: "https://i.pravatar.cc/150" },
-    categories: ["Music", "Party", "Workshop", "Networking", "Tech", "Wellness", "Art", "Food", "Other"]
-};
+<link rel="stylesheet" href="{% static 'css/temp_create_post_host.css' %}">
 
-let vibeCover = null;
-let vibeHighlights = [];
-let eventTags = [];
-let ticketTiers = [];
-let currentStep = 1;
 
-window.onload = () => {
-    initEventBuilder();
-};
 
-function initEventBuilder() {
-    renderCategoryMenu();
-    renderCarousel();
-    if (window.lucide) lucide.createIcons();
-
-    // Tag Input Handler
-    const tagInput = document.getElementById('inp-tag-entry');
-    if (tagInput) {
-        tagInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                const val = tagInput.value.trim().replace(/^#/, '').replace(/,/g, '');
-                if (val && !eventTags.includes(val) && eventTags.length < 10) {
-                    eventTags.push(val);
-                    tagInput.value = '';
-                    renderTags();
-                }
-            }
-        });
-    }
-
-    // Promo Toggle
-    document.getElementById('promo-toggle')?.addEventListener('change', (e) => {
-        document.getElementById('promo-input-wrap').classList.toggle('hidden', !e.target.checked);
-    });
-}
-
-function togglePostType(isEvent) {
-    state.isEventMode = isEvent;
-    const btnPost = document.getElementById('btn-type-post');
-    const btnEvent = document.getElementById('btn-type-event');
-    const eventFields = document.getElementById('event-fields');
-    const postUiWrap = document.getElementById('post-ui-wrap');
-    const postSubmitWrap = document.getElementById('post-submit-wrap');
-
-    if (isEvent) {
-        btnEvent.className = "flex-1 py-2.5 rounded-lg text-sm font-bold bg-fuchsia-600 text-white shadow-lg";
-        btnPost.className = "flex-1 py-2.5 rounded-lg text-sm font-bold text-gray-400 hover:text-white";
-        eventFields.classList.remove('hidden');
-        postUiWrap.classList.add('hidden');
-        postSubmitWrap.classList.add('hidden');
-        setStep(1);
-    } else {
-        btnPost.className = "flex-1 py-2.5 rounded-lg text-sm font-bold bg-slate-700 text-white shadow-lg";
-        btnEvent.className = "flex-1 py-2.5 rounded-lg text-sm font-bold text-gray-400 hover:text-white";
-        eventFields.classList.add('hidden');
-        postUiWrap.classList.remove('hidden');
-        postSubmitWrap.classList.remove('hidden');
-    }
-}
-
-function setStep(step) {
-    currentStep = step;
-    document.querySelectorAll('.step-container').forEach((el, idx) => {
-        el.classList.toggle('active', idx + 1 === step);
-    });
-
-    document.getElementById('btn-prev').classList.toggle('hidden', step === 1);
-    document.getElementById('btn-next').classList.toggle('hidden', step === 4);
-    document.getElementById('event-submit-btn').classList.toggle('hidden', step !== 4);
-
-    if (step === 4) generatePreview();
-    if (window.lucide) lucide.createIcons();
-}
-
-function changeStep(delta) {
-    const next = currentStep + delta;
-    if (next >= 1 && next <= 4) {
-        if (delta === 0 && !validateStep(currentStep)) return;
-        setStep(next);
-    }
-}
-
-function validateStep(step) {
-    if (step === 1) {
-        if (!vibeCover) { alert("Please upload a cover image."); return false; }
-        if (!document.getElementById('event-title').value) return false;
-        if (!document.getElementById('event-type').value) { alert("Please select a category."); return false; }
-    }
-    if (step === 2 && eventTags.length < 2) { alert("Add at least 2 tags."); return false; }
-    return true;
-}
-
-function renderCategoryMenu() {
-    const menu = document.getElementById('event-type-menu');
-    menu.innerHTML = state.categories.map(cat => `
-        <div class="event-type-item" onclick="selectCategory('${cat}')">${cat}</div>
-    `).join('');
-}
-
-function toggleEventTypeMenu() {
-    document.getElementById('event-type-menu').classList.toggle('hidden');
-}
-
-function selectCategory(cat) {
-    document.getElementById('event-type').value = cat;
-    document.getElementById('event-type-label').textContent = cat;
-    toggleEventTypeMenu();
-}
-
-function handleCoverUpload(e) {
-    if (e.target.files[0]) {
-        vibeCover = e.target.files[0];
-        renderCarousel();
-    }
-}
-
-function triggerCoverUpload() { document.getElementById('cover-upload').click(); }
-function triggerHighlightUpload() { document.getElementById('highlight-upload').click(); }
-
-function handleHighlightUpload(e) {
-    const files = Array.from(e.target.files);
-    vibeHighlights = [...vibeHighlights, ...files].slice(0, 9);
-    renderCarousel();
-}
-
-function renderCarousel() {
-    const track = document.getElementById('media-track');
-    let html = `<div class="min-w-full h-full snap-center flex-shrink-0 relative bg-slate-800 flex items-center justify-center">`;
-    
-    if (vibeCover) {
-        html += `<img src="${URL.createObjectURL(vibeCover)}" class="absolute inset-0 w-full h-full object-cover">
-                 <button type="button" onclick="triggerCoverUpload()" class="z-10 bg-black/50 p-2 rounded-full text-xs text-white">Change Cover</button>`;
-    } else {
-        html += `<div onclick="triggerCoverUpload()" class="text-center cursor-pointer"><i data-lucide="image-plus" class="w-8 h-8 mx-auto text-fuchsia-400"></i><p class="text-xs mt-2">Add Cover</p></div>`;
-    }
-    html += `</div>`;
-
-    vibeHighlights.forEach((file, i) => {
-        html += `<div class="min-w-full h-full snap-center flex-shrink-0 relative bg-slate-800 flex items-center justify-center">
-                    <img src="${URL.createObjectURL(file)}" class="absolute inset-0 w-full h-full object-cover">
-                    <button type="button" onclick="vibeHighlights.splice(${i},1);renderCarousel()" class="absolute top-2 right-2 bg-red-500 rounded-full p-1"><i data-lucide="x" class="w-3 h-3"></i></button>
-                 </div>`;
-    });
-
-    if (vibeHighlights.length < 9) {
-        html += `<div onclick="triggerHighlightUpload()" class="min-w-full h-full snap-center flex-shrink-0 bg-slate-900/50 flex items-center justify-center cursor-pointer border-l border-white/5">
-                    <i data-lucide="plus" class="w-6 h-6 text-cyan-400"></i>
-                 </div>`;
-    }
-
-    track.innerHTML = html;
-    updateCounter();
-    if (window.lucide) lucide.createIcons();
-}
-
-function scrollCarousel(dir) {
-    const track = document.getElementById('media-track');
-    track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' });
-    setTimeout(updateCounter, 300);
-}
-
-function updateCounter() {
-    const track = document.getElementById('media-track');
-    const idx = Math.round(track.scrollLeft / track.clientWidth);
-    document.getElementById('media-counter').textContent = `${idx + 1} / ${track.children.length}`;
-}
-
-function renderTags() {
-    document.getElementById('tags-container').innerHTML = eventTags.map((t, i) => `
-        <span class="bg-fuchsia-500/20 text-fuchsia-400 px-3 py-1 rounded-full text-xs flex items-center gap-1">
-            #${t} <i data-lucide="x" class="w-3 h-3 cursor-pointer" onclick="eventTags.splice(${i},1);renderTags()"></i>
-        </span>
-    `).join('');
-    if (window.lucide) lucide.createIcons();
-}
-
-function toggleTicketTypes() {
-    const isPaid = document.querySelector('input[name="ticket_type"]:checked').value === 'Paid';
-    document.getElementById('paid-tiers-section').classList.toggle('hidden', !isPaid);
-    if (isPaid && ticketTiers.length === 0) addTier();
-}
-
-function addTier() {
-    ticketTiers.push({ name: '', price: '' });
-    renderTiers();
-}
-
-function renderTiers() {
-    const container = document.getElementById('paid-tiers-container');
-    container.innerHTML = ticketTiers.map((t, i) => `
-        <div class="flex gap-2 bg-slate-900 p-3 rounded-xl border border-white/5">
-            <input type="text" placeholder="Tier Name" value="${t.name}" oninput="ticketTiers[${i}].name=this.value" class="flex-1 bg-transparent outline-none text-sm">
-            <input type="number" placeholder="Price" value="${t.price}" oninput="ticketTiers[${i}].price=this.value" class="w-20 bg-transparent outline-none text-sm text-cyan-400 font-bold">
-            <button type="button" onclick="ticketTiers.splice(${i},1);renderTiers()"><i data-lucide="trash" class="w-4 h-4 text-red-400"></i></button>
-        </div>
-    `).join('');
-    if (window.lucide) lucide.createIcons();
-}
-
-function generatePreview() {
-    document.getElementById('prev-title').textContent = document.getElementById('event-title').value || "Untitled Event";
-    document.getElementById('prev-category').textContent = document.getElementById('event-type').value || "General";
-    document.getElementById('prev-venue').textContent = document.getElementById('event-location').value || "Venue TBD";
-    document.getElementById('prev-date').textContent = document.getElementById('event-date').value || "Date";
-    document.getElementById('prev-time').textContent = document.getElementById('event-time').value || "Time";
-    document.getElementById('prev-bio').textContent = document.getElementById('event-bio').value || "No bio...";
-    
-    if (vibeCover) {
-        document.getElementById('prev-img-area').style.background = `url(${URL.createObjectURL(vibeCover)}) center/cover`;
-        document.getElementById('prev-img-area').innerHTML = `<span class="absolute top-3 right-3 bg-black/60 px-3 py-1 rounded-full text-xs text-cyan-300">${document.getElementById('event-type').value}</span>`;
-    }
-
-    const services = Array.from(document.querySelectorAll('.service-checkbox:checked')).map(el => el.value);
-    document.getElementById('prev-tags-services').innerHTML = [
-        ...eventTags.map(t => `<span class="text-fuchsia-400 text-xs">#${t}</span>`),
-        ...services.map(s => `<span class="bg-white/5 px-2 py-0.5 rounded text-[10px]">${s}</span>`)
-    ].join(' ');
-}
-
-async function handlePostSubmit(e) {
-    e.preventDefault();
-    const btn = state.isEventMode ? document.getElementById('event-submit-btn') : document.getElementById('post-submit-btn');
-    const originalText = btn.textContent;
-    
-    btn.disabled = true;
-    btn.textContent = "Publishing...";
-
-    // Mock API call
-    setTimeout(() => {
-        alert(state.isEventMode ? "Vibe Event Published!" : "Post Dropped!");
-        btn.disabled = false;
-        btn.textContent = originalText;
-        location.reload(); // Reset for demo
-    }, 1500);
-}
-</script>
+<script src="{% static 'js/temp_create_post_host.js' %}"></script>
