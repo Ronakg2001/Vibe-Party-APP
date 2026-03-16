@@ -242,13 +242,27 @@ def create_event_api(request):
     if len(currency) != 3:
         return _error("currency must be a 3-letter code.")
 
-    uploaded_media = request.FILES.getlist("eventMedia") if is_multipart else []
+    cover_file = None
+    uploaded_media = []
+    if is_multipart:
+        cover_file = request.FILES.get("vibeCover")
+        highlight_files = request.FILES.getlist("vibeHighlights")
+        event_media = request.FILES.getlist("eventMedia")
+        if cover_file:
+            uploaded_media.append(cover_file)
+        uploaded_media.extend(event_media)
+        uploaded_media.extend(highlight_files)
+
     if len(uploaded_media) > 10:
         return _error("Maximum 10 images/videos are allowed.")
 
     allowed_prefixes = ("image/", "video/")
     for media in uploaded_media:
         content_type = (getattr(media, "content_type", "") or "").lower()
+        if media is not None and media is cover_file:
+            if not content_type.startswith("image/"):
+                return _error("Cover image must be an image file.")
+            continue
         if not content_type.startswith(allowed_prefixes):
             return _error("Only image and video files are allowed.")
 

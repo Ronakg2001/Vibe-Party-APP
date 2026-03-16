@@ -297,34 +297,7 @@ function togglePostType(isEvent) {
                         if (typeof renderProfileGrid === 'function') renderProfileGrid();
                         if (typeof renderHostedEventList === 'function') renderHostedEventList();
                         
-                        e.target.reset();
-                        
-                        // Reset forms and UI
-                        ['event-time-display', 'event-time', 'event-end-time-display', 'event-end-time', 'event-duration-minutes'].forEach(id => {
-                            const el = document.getElementById(id);
-                            if (el) el.value = '';
-                        });
-                        const durationDisplay = document.getElementById('event-duration-display');
-                        if (durationDisplay) {
-                            durationDisplay.value = '';
-                            durationDisplay.readOnly = false;
-                        }
-                        
-                        if (typeof setEventTypeValue === 'function') setEventTypeValue('');
-                        if (typeof syncEventTimeDependencyUi === 'function') syncEventTimeDependencyUi();
-                        
-                        // Reset Stepper specific UI
-                        vibeCover = null;
-                        vibeHighlights = [];
-                        if (typeof renderCarousel === 'function') renderCarousel();
-                        
-                        state.pendingEventMedia = [];
-                        if (state.pendingEventMediaPreviewUrls) {
-                            state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
-                            state.pendingEventMediaPreviewUrls = [];
-                        }
-                        state.pendingMediaIndex = 0;
-                        if (typeof renderSelectedEventMedia === 'function') renderSelectedEventMedia();
+                        resetEventCreation();
                         
                         if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, true);
                         return;
@@ -425,6 +398,9 @@ function togglePostType(isEvent) {
                     break;
                 case 'change-step':
                     changeStep(Number(actionEl.dataset.step || 0));
+                    break;
+                case 'cancel-event-create':
+                    resetEventCreation();
                     break;
                 case 'confirm-booking':
                     confirmBooking();
@@ -688,6 +664,68 @@ function togglePostType(isEvent) {
     let ticketTiers = [
         { name: 'Regular Entry', price: '', qty: '', flex: false, services: '' }
     ];
+
+    function resetEventCreation() {
+        const form = document.getElementById('create-post-form');
+        if (form) {
+            form.reset();
+        }
+
+        vibeCover = null;
+        vibeHighlights = [];
+        editingHighlightIndex = -1;
+        eventTags = [];
+        ticketTiers = [{ name: 'Regular Entry', price: '', qty: '', flex: false, services: '' }];
+
+        state.pendingEventMedia = [];
+        if (state.pendingEventMediaPreviewUrls) {
+            state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+            state.pendingEventMediaPreviewUrls = [];
+        }
+        state.pendingMediaIndex = 0;
+
+        const eventTypeLabel = document.getElementById('event-type-label');
+        if (eventTypeLabel) eventTypeLabel.textContent = '';
+        const eventTypeSelect = document.getElementById('event-type');
+        if (eventTypeSelect) eventTypeSelect.value = '';
+        const eventTypeOther = document.getElementById('event-type-other');
+        if (eventTypeOther) eventTypeOther.value = '';
+        document.getElementById('event-type-other-wrap')?.classList.add('hidden');
+
+        const locationInput = document.getElementById('event-location');
+        if (locationInput) locationInput.value = '';
+
+        ['event-date-display', 'event-date', 'event-time-display', 'event-time', 'event-end-time-display', 'event-end-time', 'event-duration-minutes'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const durationDisplay = document.getElementById('event-duration-display');
+        if (durationDisplay) {
+            durationDisplay.value = '';
+            durationDisplay.readOnly = false;
+        }
+
+        document.querySelectorAll('#services-container .service-checkbox').forEach((input) => {
+            input.checked = false;
+        });
+        document.querySelectorAll('#services-container [data-custom-service="true"]').forEach((node) => node.remove());
+        document.getElementById('custom-service-wrap')?.classList.add('hidden');
+        const customServiceInput = document.getElementById('inp-custom-service');
+        if (customServiceInput) customServiceInput.value = '';
+
+        const freeTicket = document.querySelector('input[name="ticket_type"][value="Free"]');
+        if (freeTicket) freeTicket.checked = true;
+
+        setStep(1);
+        renderCarousel();
+        renderSelectedEventMedia();
+        renderTags();
+        renderTiers();
+        toggleTicketTypes();
+        updateRemainingSeatsUI();
+        if (typeof syncEventTimeDependencyUi === 'function') syncEventTimeDependencyUi();
+        if (typeof setLocationStatus === 'function') setLocationStatus('', false);
+    }
 
     function initEventBuilder() {
         const eventFields = document.getElementById('event-fields');
@@ -1036,6 +1074,7 @@ function togglePostType(isEvent) {
 
         const newLabel = document.createElement('label');
         newLabel.className = 'cursor-pointer relative service-item group';
+        newLabel.dataset.customService = 'true';
         newLabel.innerHTML = `
             <input type="checkbox" class="sr-only service-checkbox" value="${value}" checked>
             <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
