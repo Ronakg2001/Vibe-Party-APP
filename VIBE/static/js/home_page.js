@@ -780,6 +780,15 @@ function serverEventToPost(eventData) {
     const primaryUrl = mediaUrls[0] || eventData.imageUrl || '';
     const mediaTypeForUrl = (url) => (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image');
     const primaryIsVideo = mediaTypeForUrl(primaryUrl) === 'video';
+    const fallbackPrice = Number(eventData.price) || 0;
+    const ticketType = eventData.ticketType || (fallbackPrice > 0 ? 'Paid' : 'Free');
+    let ticketTiers = Array.isArray(eventData.ticketTiers) ? eventData.ticketTiers : [];
+    if (ticketType === 'Paid' && ticketTiers.length === 0) {
+        ticketTiers = [{ name: 'General', price: fallbackPrice }];
+    }
+    const minTicketPrice = ticketType === 'Paid'
+        ? Math.min(...ticketTiers.map((tier) => Number(tier.price) || 0))
+        : 0;
     return {
         id: `event-${eventData.id}`,
         username: eventData.hostUsername || 'host',
@@ -796,11 +805,13 @@ function serverEventToPost(eventData) {
             title: eventData.title,
             date: eventData.startLabel || 'Date TBD',
             location: eventData.locationName,
-            price: eventData.price,
+            price: minTicketPrice,
             mapUrl: eventData.mapUrl,
             distanceKm: eventData.distanceKm,
             eventType: eventData.eventCategory || 'local event',
-            mediaCount: mediaUrls.length
+            mediaCount: mediaUrls.length,
+            ticketType,
+            ticketTiers
         }
     };
 }
@@ -1184,6 +1195,10 @@ function updateDurationClearButtonVisibility() {
 }
 
 function clearDurationSelection() {
+    const isConfirmed = window.confirm("Are you sure you want to remove the duration?");
+    if (!isConfirmed) {
+        return; 
+    }
     const durationDisplay = document.getElementById('event-duration-display');
     const durationHidden = document.getElementById('event-duration-minutes');
     if (durationDisplay) {
@@ -2281,7 +2296,7 @@ function renderFeed() {
                         </div>
                         <div class="flex items-center gap-2">
                             ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" data-action="stop-prop" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
-                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">Book ${formatInr(post.eventDetails.price)}</button>
+                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">${Number(post.eventDetails.price) > 0 ? `Book ${formatInr(post.eventDetails.price)}` : 'Join Free'}</button>
                         </div>
                     </div>` : ''}
                 </div>

@@ -290,6 +290,8 @@ function togglePostType(isEvent) {
                 if (typeof postFormData === 'function') {
                     const result = await postFormData('/api/events/create', formData);
                     if (result?.event) {
+                        result.event.ticketType = ticketType;
+                        result.event.ticketTiers = ticketType === 'Paid' ? ticketTiers : [];
                         if (typeof serverEventToPost === 'function' && state.nearbyEventPosts) {
                             state.nearbyEventPosts.unshift(serverEventToPost(result.event));
                         }
@@ -564,6 +566,14 @@ function togglePostType(isEvent) {
         const modal = document.getElementById('booking-modal');
         const content = document.getElementById('modal-content');
         const details = document.getElementById('modal-event-details');
+        const fallbackPrice = Number(event.eventDetails.price) || 0;
+        const rawTicketType = event.eventDetails.ticketType || '';
+        const ticketType = rawTicketType || (fallbackPrice > 0 ? 'Paid' : 'Free');
+        let ticketTiers = Array.isArray(event.eventDetails.ticketTiers) ? event.eventDetails.ticketTiers : [];
+        if (ticketType === 'Paid' && ticketTiers.length === 0) {
+            ticketTiers = [{ name: 'General', price: fallbackPrice }];
+        }
+        const baseFee = ticketType === 'Paid' ? 4 : 0;
         
         details.innerHTML = `
             <div class="flex gap-5 mb-8">
@@ -576,20 +586,49 @@ function togglePostType(isEvent) {
                 </div>
             </div>
             <div class="space-y-6">
+                ${ticketType === 'Free' ? `
                 <div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <span class="font-bold text-gray-300">Tickets</span>
-                    <div class="flex items-center gap-5">
-                        <span class="w-6 text-center font-bold text-xl text-white">1</span>
+                    <span class="font-bold text-gray-300">Free Entry</span>
+                    <span class="text-sm font-semibold text-emerald-300">No charge</span>
+                </div>
+                ` : `
+                <div class="space-y-3">
+                    <div class="text-sm font-semibold text-gray-300">Choose Ticket</div>
+                    <div class="space-y-2">
+                        ${ticketTiers.map((tier, index) => `
+                        <label class="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 cursor-pointer hover:border-fuchsia-500/40 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <input type="radio" name="booking-tier" value="${index}" ${index === 0 ? 'checked' : ''} class="accent-fuchsia-500">
+                                <div>
+                                    <div class="font-semibold text-white">${tier.name || 'General'}</div>
+                                    ${tier.services ? `<div class="text-xs text-gray-400">${tier.services}</div>` : ''}
+                                </div>
+                            </div>
+                            <div class="text-fuchsia-400 font-bold">${formatInr(Number(tier.price) || 0)}</div>
+                        </label>
+                        `).join('')}
                     </div>
                 </div>
+                `}
                 <div class="border-t border-white/10 pt-4 flex justify-between items-center">
                     <span class="text-xl font-bold text-white">Total</span>
-                    <span class="text-2xl font-black text-fuchsia-400">${formatInr((Number(event.eventDetails.price) || 0) + 4)}</span>
+                    <span id="booking-total-amount" class="text-2xl font-black text-fuchsia-400">${ticketType === 'Free' ? 'Free' : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)}</span>
                 </div>
-                <button data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">Pay & Join</button>
+                <button id="booking-action-btn" data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">${ticketType === 'Free' ? 'Join Event' : 'Pay & Join'}</button>
                 <button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
             </div>
         `;
+
+        if (ticketType === 'Paid') {
+            const totalEl = document.getElementById('booking-total-amount');
+            details.querySelectorAll('input[name="booking-tier"]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    const idx = Number(input.value);
+                    const nextPrice = Number(ticketTiers[idx]?.price) || 0;
+                    if (totalEl) totalEl.textContent = formatInr(nextPrice + baseFee);
+                });
+            });
+        }
 
         modal.classList.remove('hidden');
         // Small timeout to allow display:block to apply before opacity transition
