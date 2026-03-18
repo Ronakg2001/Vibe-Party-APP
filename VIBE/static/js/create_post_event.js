@@ -540,7 +540,7 @@ function togglePostType(isEvent) {
 
                 // Success! Reset form and show a success state
                 this.reset();
-                alert('Vibe dropped successfully! ⚡️');
+                alert('Vibe dropped successfully! ??');
                 
                 // Optional: Automatically switch back to the 'Home' tab to see the new event
                 if(typeof switchTab === 'function') switchTab('home');

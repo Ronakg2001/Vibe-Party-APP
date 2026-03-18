@@ -6,16 +6,18 @@ let isShrunk = false;
 let idleTimer;
 const IDLE_TIMEOUT_MS = 5000;
 
-document.addEventListener('click', (event) => {
-    const actionEl = event.target.closest('[data-action]');
-    if (!actionEl) return;
-    const action = actionEl.dataset.action;
-    if (action === 'nav-click') {
-        handleNavClick(event, actionEl.dataset.tab, actionEl.dataset.color);
-    } else if (action === 'nav-center') {
-        handleCenterClick(event);
-    }
-});
+if (navContainer) {
+    document.addEventListener('click', (event) => {
+        const actionEl = event.target.closest('[data-action]');
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+        if (action === 'nav-click') {
+            handleNavClick(actionEl, actionEl.dataset.tab, actionEl.dataset.color);
+        } else if (action === 'nav-center') {
+            handleCenterClick(actionEl);
+        }
+    });
+}
 
     document.addEventListener('DOMContentLoaded', () => {
         startIdleTimer();
@@ -26,6 +28,7 @@ document.addEventListener('click', (event) => {
     });
 
     function triggerNeonBorder(buttonElement, color, isCenter = false) {
+        if (!navContainer) return;
         if (isCenter) {
             navContainer.style.borderColor = 'rgba(98, 91, 214, 0.7)';
             navContainer.style.boxShadow = `
@@ -56,33 +59,33 @@ document.addEventListener('click', (event) => {
             buttonElement.style.filter = `drop-shadow(0 4px 6px rgba(0,0,0,0.4)) drop-shadow(0 0 12px ${color})`;
         }
 
-        if (isCenter) {
+        if (isCenter && centerLogo) {
             centerLogo.classList.add('active');
             setTimeout(() => centerLogo.classList.remove('active'), 600);
         }
     }
 
-    function handleNavClick(event, tabId, color) {
+    function handleNavClick(buttonElement, tabId, color) {
         if (isShrunk) {
             expandNav();
             return;
         }
 
         resetIdleTimer();
-        triggerNeonBorder(event.currentTarget, color);
+        triggerNeonBorder(buttonElement, color);
         if (typeof switchTab === 'function') {
             switchTab(tabId);
         }
     }
 
-    function handleCenterClick(event) {
+    function handleCenterClick(buttonElement) {
         if (isShrunk) {
             expandNav();
             return;
         }
 
         resetIdleTimer();
-        triggerNeonBorder(event.currentTarget, null, true);
+        triggerNeonBorder(buttonElement, null, true);
         allNavBtns.forEach(btn => btn.classList.remove('active'));
         if (typeof switchTab === 'function') {
             switchTab('add');
@@ -103,12 +106,14 @@ document.addEventListener('click', (event) => {
     }
 
     function shrinkNav() {
+        if (!navContainer) return;
         if (isShrunk) return;
         isShrunk = true;
         navContainer.classList.add('shrunk');
     }
 
     function expandNav() {
+        if (!navContainer) return;
         if (!isShrunk) return;
         isShrunk = false;
         navContainer.classList.remove('shrunk');
@@ -120,6 +125,7 @@ document.addEventListener('click', (event) => {
     });
 
     function triggerNotificationPop() {
+        if (!navContainer) return;
         const oldBoxShadow = navContainer.style.boxShadow;
         const oldBorderColor = navContainer.style.borderColor;
 

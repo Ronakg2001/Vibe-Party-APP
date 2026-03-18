@@ -2521,6 +2521,14 @@ function bindHomePageActions() {
                     switchTab(actionEl.dataset.tab);
                 }
                 break;
+            case 'nav-click':
+                if (actionEl.dataset.tab) {
+                    switchTab(actionEl.dataset.tab);
+                }
+                break;
+            case 'nav-center':
+                switchTab('add');
+                break;
             case 'logout':
                 if (typeof handleLogout === 'function') {
                     handleLogout();

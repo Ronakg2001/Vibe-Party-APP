@@ -1,422 +1,422 @@
-{% load static %}
-<!-- ADD VIEW (Create) -->
-<div id="view-add" class="view-section">
-    <div class="p-5 pt-4 md:max-w-lg md:mx-auto">
-        <h2 class="text-3xl font-black mb-8 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
-            Vibe</h2>
-
-        <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-8">
-            <button type="button" data-action="toggle-post-type" data-event-mode="false" id="btn-type-post"
-                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Post</button>
-            <button type="button" data-action="toggle-post-type" data-event-mode="true" id="btn-type-event"
-                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
-        </div>
-
-        <form id="create-post-form" class="flex flex-col gap-5" novalidate>
-            <div id="post-media-wrap" class="flex flex-col gap-4">
-                <label for="event-media-input"
-                    class="relative w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800 overflow-hidden">
-                    <div id="event-media-empty-state" class="flex flex-col items-center gap-3">
-                        <div class="p-4 bg-white/5 rounded-full"><i data-lucide="image-plus"
-                                class="w-8 h-8"></i></div>
-                        <span class="text-sm font-medium">Upload Visuals (Max 10)</span>
-                    </div>
-                    <div id="event-media-stage" class="hidden absolute inset-0">
-                        <div id="event-media-frame" class="w-full h-full"></div>
-                        <button type="button" data-action="shift-pending-media" data-direction="-1"
-                            class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&lsaquo;</button>
-                        <button type="button" data-action="shift-pending-media" data-direction="1"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&rsaquo;</button>
-                        <div id="event-media-counter"
-                            class="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10"></div>
-                    </div>
-                </label>
-                <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*">
-            </div>
-            <div id="post-caption-wrap">
-                <textarea id="post-caption" placeholder="What's the vibe?"
-                    class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
-            </div>
-            <div id="post-submit-wrap">
-                <button id="post-submit-btn" type="submit"
-                    class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it</button>
-            </div>
-
-            <div id="event-fields" class="hidden flex-col gap-6 animation-slide-up">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold uppercase tracking-widest text-gray-400">Event Builder</span>
-                    <button type="button" data-action="cancel-event-create"
-                        class="w-9 h-9 rounded-full border border-white/10 bg-slate-800/60 text-gray-300 hover:text-white hover:bg-rose-500/30 hover:border-rose-400/40 transition-colors flex items-center justify-center">
-                        <i data-lucide="x" class="w-4 h-4"></i>
-                    </button>
-                </div>
-                <div id="event-stepper" class="space-y-6">
-                    <div id="step-1" class="step-container active space-y-5">
-                        <div class="relative neon-border rounded-xl transition-all">
-                            <i data-lucide="zap" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                            <input id="event-title" type="text" placeholder="Event Title (Max 50 chars)" maxlength="50" required class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
-                        </div>        
-                        <div class="relative w-full h-56 md:h-72 bg-slate-800/50 rounded-2xl border-2 border-white/10 overflow-hidden group focus:outline-none focus:border-fuchsia-500/50 transition-colors" tabindex="0" id="carousel-wrapper">
-                            <button type="button" data-action="scroll-carousel" data-direction="-1" class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-prev">
-                                <i data-lucide="chevron-left" class="w-5 h-5"></i>
-                            </button>
-                            <button type="button" data-action="scroll-carousel" data-direction="1" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-next">
-                                <i data-lucide="chevron-right" class="w-5 h-5"></i>
-                            </button>
-
-                            <div id="media-track" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide cursor-grab active:cursor-grabbing relative"></div>
-
-                            <div class="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/70 backdrop-blur rounded-full text-xs font-medium text-white z-20 border border-white/10 shadow-lg pointer-events-none">
-                                <span id="media-counter">1 / 2</span>
-                            </div>
-
-                            <input type="file" id="cover-upload" accept="image/*" class="hidden">
-                            <input type="file" id="highlight-upload" accept="image/*,video/*" class="hidden" multiple>
-                            <input type="file" id="highlight-change" accept="image/*,video/*" class="hidden">
-                        </div>
-
-                        <!-- Step-1 highlights, details, location -->
-                        <div class="relative neon-border rounded-xl transition-all">
-                            <textarea id="event-bio" placeholder="Event Bio (Tell us the vibe...)" rows="3" required
-                                class="w-full p-4 bg-slate-800/50 rounded-xl outline-none resize-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800"></textarea>
-                        </div>
-                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="relative neon-border rounded-xl transition-all md:col-span-2">
-                                <i data-lucide="sparkles" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="event-highlights" type="text" placeholder="Event Highlights (Optional - e.g. Free Drinks, Live DJ)"
-                                    class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800">
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div class="relative col-span-3">
-                                <i data-lucide="layout-grid" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                <div id="event-type-picker" class="event-type-picker">
-                                    <button id="event-type-trigger" type="button" data-action="toggle-event-type-menu"
-                                        class="event-type-trigger w-full pl-10 pr-10 p-3 rounded-xl text-left text-sm text-white border border-transparent">
-                                        <span id="event-type-label" data-placeholder="Event type"></span>
-                                        <i data-lucide="chevron-down"
-                                            class="pointer-events-none absolute right-4 top-3.5 w-4 h-4 text-cyan-300/90"></i>
-                                    </button>
-                                    <div id="event-type-menu" class="event-type-menu hidden"></div>
-                                </div>
-                                <select id="event-type" class="hidden" required>
-                                    <option value="">Event type</option>
-                                </select>
-                            </div>
-                            <div id="event-type-other-wrap" class="hidden relative md:col-span-3">
-                                <i data-lucide="pen-line"
-                                    class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                <input id="event-type-other" type="text" maxlength="60"
-                                    placeholder="Enter your event type"
-                                    class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
-                            </div>
-                            <div class="relative neon-border rounded-xl transition-all col-span-1">
-                                <i data-lucide="user-check" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <select id="event-age" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 appearance-none">
-                                    <option value="All Ages">3+</option>
-                                    <option value="16+">16+</option>
-                                    <option value="18+">18+</option>
-                                    <option value="21+">21+</option>
-                                </select>
-                                <i data-lucide="chevron-down" class="absolute right-4 top-3.5 w-4 h-4 text-gray-400 pointer-events-none"></i>
-                            </div>
-                        </div>
-                        <div class="relative neon-border rounded-xl transition-all">
-                            <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                            <input id="event-location" type="text" readonly data-action="open-location-modal" data-context="event"
-                                placeholder="Select location from map"
-                                class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer" required>
-                        </div>
-
-                        <label class="text-xs text-gray-400 flex items-center gap-2">
-                            <input id="event-use-current-location" type="checkbox" checked class="accent-fuchsia-500">
-                            Use my current location as exact event pin
-                        </label>
-
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div class="relative neon-border rounded-xl transition-all col-span-2">
-                                <i data-lucide="calendar-days" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="event-date-display" type="text" readonly placeholder="Event date" required
-                                    data-action="open-event-date-modal" data-input-id="event-date-display"
-                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer">
-                                <input id="event-date" type="hidden">
-                            </div>
-                            <div class="relative neon-border rounded-xl transition-all col-span-2">
-                                <i data-lucide="clock-3" class="absolute left-3 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                <input id="event-time-display" type="text" readonly disabled placeholder="Start time" required
-                                    data-action="open-analog-time-modal" data-input-id="event-time-display"
-                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800 cursor-pointer">
-                                <input id="event-time" type="hidden">
-                            </div>
-                        </div>                        
-                        <div id="event-advanced-time-row" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div class="relative neon-border rounded-xl transition-all">
-                                <i data-lucide="timer-reset" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="event-end-time-display" type="text" readonly disabled placeholder="End Time"
-                                    data-action="open-analog-time-modal" data-input-id="event-end-time-display"
-                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer">
-                                <input id="event-end-time" type="hidden">
-                            </div>
-                            <div class="relative neon-border rounded-xl transition-all">
-                                <i data-lucide="hourglass" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="event-duration-display" type="text" inputmode="text" disabled
-                                    placeholder="Duration (e.g. 2h 30m)"
-                                    class="w-full pl-9 pr-10 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800">
-                                <button id="event-duration-clear-btn" type="button" data-action="clear-duration"
-                                    class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white/10 text-white/70 text-xs leading-none">
-                                    ×
-                                </button>
-                                <input id="event-duration-minutes" type="hidden">
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Step 2 Additional details-->
-                    <div id="step-2" class="step-container space-y-6">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="layers" class="text-cyan-400 w-5 h-5"></i> Event Details</h2>
-
-                        <div>
-                            <label class="block text-sm text-gray-400 mb-3">Services Provided (Optional - Select all that apply)</label>
-                            <div id="services-container" class="flex flex-wrap gap-2">
-                                <label class="cursor-pointer relative service-item group">
-                                    <input type="checkbox" class="sr-only service-checkbox" value="Food">
-                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
-                                        <i data-lucide="utensils" class="w-4 h-4"></i> Food
-                                    </div>
-                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
-                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </label>
-                                <label class="cursor-pointer relative service-item group">
-                                    <input type="checkbox" class="sr-only service-checkbox" value="Alcohol">
-                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
-                                        <i data-lucide="glass-water" class="w-4 h-4"></i> Alcohol
-                                    </div>
-                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
-                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </label>
-                                <label class="cursor-pointer relative service-item group">
-                                    <input type="checkbox" class="sr-only service-checkbox" value="Valet">
-                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
-                                        <i data-lucide="car" class="w-4 h-4"></i> Valet Parking
-                                    </div>
-                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
-                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </label>
-                                <label class="cursor-pointer relative service-item group">
-                                    <input type="checkbox" class="sr-only service-checkbox" value="Security">
-                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
-                                        <i data-lucide="shield" class="w-4 h-4"></i> Security
-                                    </div>
-                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
-                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </label>
-                                <div id="btn-add-service-wrap">
-                                    <button type="button" data-action="toggle-custom-service" class="px-4 py-2 bg-slate-800/50 hover:bg-slate-700 border border-dashed border-white/30 rounded-full text-sm text-cyan-400 transition-colors flex items-center gap-2">
-                                        <i data-lucide="plus" class="w-4 h-4"></i> Add Custom
-                                    </button>
-                                </div>
-                            </div>
-                            <div id="custom-service-wrap" class="hidden mt-3 flex items-center gap-2">
-                                <input type="text" id="inp-custom-service" placeholder="Type service name (e.g. VIP Lounge)" class="flex-1 p-2.5 bg-slate-800/50 rounded-lg outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50">
-                                <button type="button" data-action="add-custom-service" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-bold text-white transition-colors shadow-lg">Add</button>
-                            </div>
-                        </div>
-
-                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm font-medium text-white">Specific Dress Code?</p>
-                                    <p class="text-xs text-gray-400">Set a vibe for the attire (Optional)</p>
-                                </div>
-                                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                                    <input type="checkbox" id="dresscode-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-all duration-300"/>
-                                    <label for="dresscode-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer transition-colors duration-300"></label>
-                                </div>
-                            </div>
-                            <div id="dresscode-input-wrap" class="hidden mt-4 relative neon-border rounded-xl transition-all">
-                                <i data-lucide="shirt" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="inp-dresscode" type="text" placeholder="e.g. Smart Casual, Neon Colors, etc." class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50">
-                            </div>
-                        </div>
-
-                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5">
-                            <label class="block text-sm font-medium text-white mb-1">Event Tags <span class="text-rose-400">*</span></label>
-                            <p class="text-xs text-gray-400 mb-3">Add tags to help people find your vibe (Min 2, Max 10).</p>
-
-                            <div id="tags-container" class="flex flex-wrap gap-2 mb-3 empty:hidden"></div>
-
-                            <div class="relative neon-border rounded-xl transition-all">
-                                <i data-lucide="hash" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                                <input id="inp-tag-entry" type="text" placeholder="Type a tag and press Enter or Comma..." class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50">
-                            </div>
-                        </div>
-
-                        <div class="relative neon-border rounded-xl transition-all">
-                            <i data-lucide="handshake" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                            <input id="inp-collabs" type="text" placeholder="Collaborators / Sponsors (@username) - Optional" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
-                        </div>
-
-                        <div class="flex items-center gap-3 pt-2">
-                            <input type="checkbox" id="promo-toggle" class="w-5 h-5 accent-fuchsia-500 rounded border-gray-600 bg-slate-800">
-                            <label for="promo-toggle" class="text-sm text-gray-300 cursor-pointer">Offer a Promo Code</label>
-                        </div>
-                        <div id="promo-input-wrap" class="hidden relative neon-border rounded-xl transition-all">
-                            <i data-lucide="ticket-percent" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
-                            <input id="inp-promo" type="text" placeholder="e.g. VIBE20" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 uppercase">
-                        </div>
-                    </div>
-                    <!-- Step 3 Seating and pricing-->
-                    <div id="step-3" class="step-container space-y-6">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="ticket" class="text-fuchsia-500 w-5 h-5"></i> Ticketing</h2>
-
-                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5 mb-6">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm font-medium text-white">Limited Capacity / Seats</p>
-                                    <p class="text-xs text-gray-400">Restrict the maximum number of attendees</p>
-                                </div>
-                                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                                    <input type="checkbox" name="toggle" id="capacity-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-all duration-300" data-action="capacity-toggle"/>
-                                    <label for="capacity-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer transition-colors duration-300"></label>
-                                </div>
-                            </div>
-                            <div id="capacity-input-wrap" class="hidden mt-4 space-y-3">
-                                <div class="relative neon-border rounded-xl transition-all">
-                                    <i data-lucide="users" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
-                                    <input id="inp-capacity" type="number" placeholder="Enter Total Capacity" class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50" data-action="capacity-input">
-                                </div>
-                                <label class="flex items-center gap-2 cursor-pointer w-fit">
-                                    <input type="checkbox" id="inp-capacity-flex" class="w-5 h-5 accent-fuchsia-500 rounded border-gray-600 bg-slate-800" data-action="capacity-flex">
-                                    <span class="text-sm text-gray-300">Flexible (Allow overbooking beyond total limit)</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <p class="text-sm text-gray-400">Choose how attendees join your vibe.</p>
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <label class="cursor-pointer relative">
-                                <input type="radio" name="ticket_type" value="Free" class="sr-only ticket-radio" checked data-action="ticket-type">
-                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all hover:bg-slate-800">
-                                    <i data-lucide="smile" class="w-8 h-8 mx-auto mb-2 text-green-400"></i>
-                                    <h3 class="font-bold text-white mb-1">Free Event</h3>
-                                    <p class="text-xs text-gray-400">Open for everyone, no charge.</p>
-                                </div>
-                            </label>
-                            <label class="cursor-pointer relative">
-                                <input type="radio" name="ticket_type" value="Paid" class="sr-only ticket-radio" data-action="ticket-type">
-                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all hover:bg-slate-800">
-                                    <i data-lucide="banknote" class="w-8 h-8 mx-auto mb-2 text-cyan-400"></i>
-                                    <h3 class="font-bold text-white mb-1">Paid Tickets</h3>
-                                    <p class="text-xs text-gray-400">Sell tickets with different tiers.</p>
-                                </div>
-                            </label>
-                            <label class="relative cursor-not-allowed opacity-40">
-                                <input type="radio" name="ticket_type" value="Guestlist" class="sr-only ticket-radio" disabled>
-                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
-                                    <i data-lucide="clipboard-list" class="w-8 h-8 mx-auto mb-2 text-gray-500"></i>
-                                    <h3 class="font-bold text-white mb-1">Guestlist</h3>
-                                    <p class="text-xs text-gray-400">Currently disabled.</p>
-                                </div>
-                            </label>
-                        </div>
-
-                        <div id="paid-tiers-section" class="hidden space-y-4 pt-4 border-t border-white/10">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-sm font-semibold text-cyan-400">Configure Ticket Tiers</h3>
-                                <span id="remaining-seats-badge" class="hidden text-xs font-bold px-3 py-1 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.2)]">Seats Left: 0</span>
-                            </div>
-
-                            <div id="paid-tiers-container" class="space-y-4"></div>
-
-                            <button type="button" id="btn-add-tier" data-action="add-tier" class="text-sm text-fuchsia-400 font-medium hover:text-fuchsia-300 flex items-center gap-1 mt-2 transition-all">
-                                <i data-lucide="plus-circle" class="w-4 h-4"></i> Add another tier / section
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Step 4 Review-->
-                    <div id="step-4" class="step-container space-y-6">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="eye" class="text-cyan-400 w-5 h-5"></i> Preview Vibe</h2>
-
-                        <div class="bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden shadow-2xl pb-4">
-                            <div class="h-48 bg-gradient-to-tr from-fuchsia-900/40 to-cyan-900/40 relative flex items-center justify-center border-b border-white/5">
-                                <i data-lucide="image" class="w-12 h-12 text-white/20"></i>
-                                <span id="prev-category" class="absolute top-3 right-3 bg-black/60 backdrop-blur text-xs px-3 py-1 rounded-full border border-white/10 text-cyan-300 shadow-lg">Category</span>
-                            </div>
-
-                            <div class="p-5 space-y-4 pb-0">
-                                <div class="flex justify-between items-start gap-4">
-                                    <div>
-                                        <h3 id="prev-title" class="text-2xl font-black text-white">Event Title Here</h3>
-                                        <p id="prev-venue" class="text-sm text-gray-400 flex items-center gap-1 mt-1"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Venue Name</p>
-                                    </div>
-                                    <div class="text-right">
-                                        <div id="prev-date" class="text-fuchsia-400 font-bold text-sm">Oct 24</div>
-                                        <div id="prev-time" class="text-xs text-gray-400">10:00 PM</div>
-                                    </div>
-                                </div>
-
-                                <div id="prev-highlights-wrap" class="hidden mt-3 p-3 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl">
-                                    <h4 class="text-xs font-bold text-fuchsia-400 mb-1"><i data-lucide="sparkles" class="w-3 h-3 inline"></i> Event Highlights</h4>
-                                    <p id="prev-highlights" class="text-sm text-gray-200"></p>
-                                </div>
-
-                                <p id="prev-bio" class="text-sm text-gray-300 line-clamp-3">This is where the event bio will appear. It tells people what the vibe is all about.</p>
-
-                                <div class="flex flex-wrap gap-1.5 pt-2" id="prev-tags-services"></div>
-
-                                <div class="flex flex-wrap gap-2 pt-2 border-t border-white/5">
-                                    <span id="prev-ticket" class="bg-cyan-500/10 text-cyan-400 text-xs px-2.5 py-1 rounded border border-cyan-500/20">Free Event</span>
-                                    <span id="prev-age" class="bg-fuchsia-500/10 text-fuchsia-400 text-xs px-2.5 py-1 rounded border border-fuchsia-500/20">All Ages</span>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-3 mt-4 text-sm border-t border-white/5 pt-4">
-                                    <div id="prev-dresscode-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Dress Code</span><span id="prev-dresscode" class="text-white text-sm"></span></div>
-                                    <div id="prev-capacity-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Capacity</span><span id="prev-capacity" class="text-white text-sm"></span></div>
-                                    <div id="prev-collabs-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Collaborators</span><span id="prev-collabs" class="text-white text-sm"></span></div>
-                                    <div id="prev-promo-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Promo Code</span><span id="prev-promo" class="text-fuchsia-400 font-bold uppercase text-sm"></span></div>
-                                </div>
-
-                                <div id="prev-tiers-wrap" class="hidden mt-4 border-t border-white/5 pt-4 space-y-2">
-                                    <h4 class="text-xs font-bold text-cyan-400 mb-2 uppercase tracking-wide">Ticket Tiers</h4>
-                                    <div id="prev-tiers-list" class="space-y-2"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex gap-3 text-sm text-yellow-200">
-                            <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i>
-                            <p>Review your details carefully. Once published, notifications will be sent to your followers.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-3 pt-6 mt-4 border-t border-white/10">
-                        <button type="button" id="btn-prev" data-action="change-step" data-step="-1" class="hidden flex-1 py-3.5 rounded-xl font-bold text-white bg-slate-800 border border-white/10 hover:bg-slate-700 transition-colors">
-                            Back
-                        </button>
-                        <button type="button" id="btn-next" data-action="change-step" data-step="1" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-600 to-cyan-600 neon-button">
-                            Next Step
-                        </button>
-                        <button type="submit" id="event-submit-btn" class="hidden flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-fuchsia-700 neon-button shadow-[0_0_20px_rgba(217,70,239,0.5)]">
-                            Publish Vibe
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <p id="location-status" class="hidden text-xs text-rose-300"></p>
-        </form>
-    </div>
-</div>
-
-
-<link rel="stylesheet" href="{% static 'css/create_post_event.css' %}">
-
-
-<!-- Js code started here-->
-
-<script src="{% static 'js/create_post_event.js' %}"></script>
+{% load static %}
+<!-- ADD VIEW (Create) -->
+<div id="view-add" class="view-section">
+    <div class="p-5 pt-4 md:max-w-lg md:mx-auto">
+        <h2 class="text-3xl font-black mb-8 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
+            Vibe</h2>
+
+        <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-8">
+            <button type="button" data-action="toggle-post-type" data-event-mode="false" id="btn-type-post"
+                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Post</button>
+            <button type="button" data-action="toggle-post-type" data-event-mode="true" id="btn-type-event"
+                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
+        </div>
+
+        <form id="create-post-form" class="flex flex-col gap-5" novalidate>
+            <div id="post-media-wrap" class="flex flex-col gap-4">
+                <label for="event-media-input"
+                    class="relative w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800 overflow-hidden">
+                    <div id="event-media-empty-state" class="flex flex-col items-center gap-3">
+                        <div class="p-4 bg-white/5 rounded-full"><i data-lucide="image-plus"
+                                class="w-8 h-8"></i></div>
+                        <span class="text-sm font-medium">Upload Visuals (Max 10)</span>
+                    </div>
+                    <div id="event-media-stage" class="hidden absolute inset-0">
+                        <div id="event-media-frame" class="w-full h-full"></div>
+                        <button type="button" data-action="shift-pending-media" data-direction="-1"
+                            class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&lsaquo;</button>
+                        <button type="button" data-action="shift-pending-media" data-direction="1"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&rsaquo;</button>
+                        <div id="event-media-counter"
+                            class="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10"></div>
+                    </div>
+                </label>
+                <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*">
+            </div>
+            <div id="post-caption-wrap">
+                <textarea id="post-caption" placeholder="What's the vibe&times;"
+                    class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
+            </div>
+            <div id="post-submit-wrap">
+                <button id="post-submit-btn" type="submit"
+                    class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it</button>
+            </div>
+
+            <div id="event-fields" class="hidden flex-col gap-6 animation-slide-up">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-widest text-gray-400">Event Builder</span>
+                    <button type="button" data-action="cancel-event-create"
+                        class="w-9 h-9 rounded-full border border-white/10 bg-slate-800/60 text-gray-300 hover:text-white hover:bg-rose-500/30 hover:border-rose-400/40 transition-colors flex items-center justify-center">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div id="event-stepper" class="space-y-6">
+                    <div id="step-1" class="step-container active space-y-5">
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="zap" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                            <input id="event-title" type="text" placeholder="Event Title (Max 50 chars)" maxlength="50" required class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
+                        </div>        
+                        <div class="relative w-full h-56 md:h-72 bg-slate-800/50 rounded-2xl border-2 border-white/10 overflow-hidden group focus:outline-none focus:border-fuchsia-500/50 transition-colors" tabindex="0" id="carousel-wrapper">
+                            <button type="button" data-action="scroll-carousel" data-direction="-1" class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-prev">
+                                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                            </button>
+                            <button type="button" data-action="scroll-carousel" data-direction="1" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-next">
+                                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                            </button>
+
+                            <div id="media-track" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide cursor-grab active:cursor-grabbing relative"></div>
+
+                            <div class="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/70 backdrop-blur rounded-full text-xs font-medium text-white z-20 border border-white/10 shadow-lg pointer-events-none">
+                                <span id="media-counter">1 / 2</span>
+                            </div>
+
+                            <input type="file" id="cover-upload" accept="image/*" class="hidden">
+                            <input type="file" id="highlight-upload" accept="image/*,video/*" class="hidden" multiple>
+                            <input type="file" id="highlight-change" accept="image/*,video/*" class="hidden">
+                        </div>
+
+                        <!-- Step-1 highlights, details, location -->
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <textarea id="event-bio" placeholder="Event Bio (Tell us the vibe...)" rows="3" required
+                                class="w-full p-4 bg-slate-800/50 rounded-xl outline-none resize-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800"></textarea>
+                        </div>
+                         
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="relative neon-border rounded-xl transition-all md:col-span-2">
+                                <i data-lucide="sparkles" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="event-highlights" type="text" placeholder="Event Highlights (Optional - e.g. Free Drinks, Live DJ)"
+                                    class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="relative col-span-3">
+                                <i data-lucide="layout-grid" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                <div id="event-type-picker" class="event-type-picker">
+                                    <button id="event-type-trigger" type="button" data-action="toggle-event-type-menu"
+                                        class="event-type-trigger w-full pl-10 pr-10 p-3 rounded-xl text-left text-sm text-white border border-transparent">
+                                        <span id="event-type-label" data-placeholder="Event type"></span>
+                                        <i data-lucide="chevron-down"
+                                            class="pointer-events-none absolute right-4 top-3.5 w-4 h-4 text-cyan-300/90"></i>
+                                    </button>
+                                    <div id="event-type-menu" class="event-type-menu hidden"></div>
+                                </div>
+                                <select id="event-type" class="hidden" required>
+                                    <option value="">Event type</option>
+                                </select>
+                            </div>
+                            <div id="event-type-other-wrap" class="hidden relative md:col-span-3">
+                                <i data-lucide="pen-line"
+                                    class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                <input id="event-type-other" type="text" maxlength="60"
+                                    placeholder="Enter your event type"
+                                    class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
+                            </div>
+                            <div class="relative neon-border rounded-xl transition-all col-span-1">
+                                <i data-lucide="user-check" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <select id="event-age" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 appearance-none">
+                                    <option value="All Ages">3+</option>
+                                    <option value="16+">16+</option>
+                                    <option value="18+">18+</option>
+                                    <option value="21+">21+</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="absolute right-4 top-3.5 w-4 h-4 text-gray-400 pointer-events-none"></i>
+                            </div>
+                        </div>
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                            <input id="event-location" type="text" readonly data-action="open-location-modal" data-context="event"
+                                placeholder="Select location from map"
+                                class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer" required>
+                        </div>
+
+                        <label class="text-xs text-gray-400 flex items-center gap-2">
+                            <input id="event-use-current-location" type="checkbox" checked class="accent-fuchsia-500">
+                            Use my current location as exact event pin
+                        </label>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="relative neon-border rounded-xl transition-all col-span-2">
+                                <i data-lucide="calendar-days" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="event-date-display" type="text" readonly placeholder="Event date" required
+                                    data-action="open-event-date-modal" data-input-id="event-date-display"
+                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer">
+                                <input id="event-date" type="hidden">
+                            </div>
+                            <div class="relative neon-border rounded-xl transition-all col-span-2">
+                                <i data-lucide="clock-3" class="absolute left-3 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                <input id="event-time-display" type="text" readonly disabled placeholder="Start time" required
+                                    data-action="open-analog-time-modal" data-input-id="event-time-display"
+                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800 cursor-pointer">
+                                <input id="event-time" type="hidden">
+                            </div>
+                        </div>                        
+                        <div id="event-advanced-time-row" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="timer-reset" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="event-end-time-display" type="text" readonly disabled placeholder="End Time"
+                                    data-action="open-analog-time-modal" data-input-id="event-end-time-display"
+                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer">
+                                <input id="event-end-time" type="hidden">
+                            </div>
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="hourglass" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="event-duration-display" type="text" inputmode="text" disabled
+                                    placeholder="Duration (e.g. 2h 30m)"
+                                    class="w-full pl-9 pr-10 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800">
+                                <button id="event-duration-clear-btn" type="button" data-action="clear-duration"
+                                    class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white/10 text-white/70 text-xs leading-none">
+                                    ×
+                                </button>
+                                <input id="event-duration-minutes" type="hidden">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Step 2 Additional details-->
+                    <div id="step-2" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="layers" class="text-cyan-400 w-5 h-5"></i> Event Details</h2>
+
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-3">Services Provided (Optional - Select all that apply)</label>
+                            <div id="services-container" class="flex flex-wrap gap-2">
+                                <label class="cursor-pointer relative service-item group">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Food">
+                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
+                                        <i data-lucide="utensils" class="w-4 h-4"></i> Food
+                                    </div>
+                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
+                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </label>
+                                <label class="cursor-pointer relative service-item group">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Alcohol">
+                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
+                                        <i data-lucide="glass-water" class="w-4 h-4"></i> Alcohol
+                                    </div>
+                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
+                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </label>
+                                <label class="cursor-pointer relative service-item group">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Valet">
+                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
+                                        <i data-lucide="car" class="w-4 h-4"></i> Valet Parking
+                                    </div>
+                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
+                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </label>
+                                <label class="cursor-pointer relative service-item group">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Security">
+                                    <div class="px-4 py-2 pr-10 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors flex items-center gap-2">
+                                        <i data-lucide="shield" class="w-4 h-4"></i> Security
+                                    </div>
+                                    <button type="button" data-action="remove-service" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all text-gray-400 z-10">
+                                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </label>
+                                <div id="btn-add-service-wrap">
+                                    <button type="button" data-action="toggle-custom-service" class="px-4 py-2 bg-slate-800/50 hover:bg-slate-700 border border-dashed border-white/30 rounded-full text-sm text-cyan-400 transition-colors flex items-center gap-2">
+                                        <i data-lucide="plus" class="w-4 h-4"></i> Add Custom
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="custom-service-wrap" class="hidden mt-3 flex items-center gap-2">
+                                <input type="text" id="inp-custom-service" placeholder="Type service name (e.g. VIP Lounge)" class="flex-1 p-2.5 bg-slate-800/50 rounded-lg outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50">
+                                <button type="button" data-action="add-custom-service" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-bold text-white transition-colors shadow-lg">Add</button>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-white">Specific Dress Code&times;</p>
+                                    <p class="text-xs text-gray-400">Set a vibe for the attire (Optional)</p>
+                                </div>
+                                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" id="dresscode-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-all duration-300"/>
+                                    <label for="dresscode-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer transition-colors duration-300"></label>
+                                </div>
+                            </div>
+                            <div id="dresscode-input-wrap" class="hidden mt-4 relative neon-border rounded-xl transition-all">
+                                <i data-lucide="shirt" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="inp-dresscode" type="text" placeholder="e.g. Smart Casual, Neon Colors, etc." class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50">
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5">
+                            <label class="block text-sm font-medium text-white mb-1">Event Tags <span class="text-rose-400">*</span></label>
+                            <p class="text-xs text-gray-400 mb-3">Add tags to help people find your vibe (Min 2, Max 10).</p>
+
+                            <div id="tags-container" class="flex flex-wrap gap-2 mb-3 empty:hidden"></div>
+
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="hash" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="inp-tag-entry" type="text" placeholder="Type a tag and press Enter or Comma..." class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50">
+                            </div>
+                        </div>
+
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="handshake" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                            <input id="inp-collabs" type="text" placeholder="Collaborators / Sponsors (@username) - Optional" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
+                        </div>
+
+                        <div class="flex items-center gap-3 pt-2">
+                            <input type="checkbox" id="promo-toggle" class="w-5 h-5 accent-fuchsia-500 rounded border-gray-600 bg-slate-800">
+                            <label for="promo-toggle" class="text-sm text-gray-300 cursor-pointer">Offer a Promo Code</label>
+                        </div>
+                        <div id="promo-input-wrap" class="hidden relative neon-border rounded-xl transition-all">
+                            <i data-lucide="ticket-percent" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                            <input id="inp-promo" type="text" placeholder="e.g. VIBE20" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 uppercase">
+                        </div>
+                    </div>
+                    <!-- Step 3 Seating and pricing-->
+                    <div id="step-3" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="ticket" class="text-fuchsia-500 w-5 h-5"></i> Ticketing</h2>
+
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5 mb-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-white">Limited Capacity / Seats</p>
+                                    <p class="text-xs text-gray-400">Restrict the maximum number of attendees</p>
+                                </div>
+                                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                    <input type="checkbox" name="toggle" id="capacity-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-all duration-300" data-action="capacity-toggle"/>
+                                    <label for="capacity-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer transition-colors duration-300"></label>
+                                </div>
+                            </div>
+                            <div id="capacity-input-wrap" class="hidden mt-4 space-y-3">
+                                <div class="relative neon-border rounded-xl transition-all">
+                                    <i data-lucide="users" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                    <input id="inp-capacity" type="number" placeholder="Enter Total Capacity" class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50" data-action="capacity-input">
+                                </div>
+                                <label class="flex items-center gap-2 cursor-pointer w-fit">
+                                    <input type="checkbox" id="inp-capacity-flex" class="w-5 h-5 accent-fuchsia-500 rounded border-gray-600 bg-slate-800" data-action="capacity-flex">
+                                    <span class="text-sm text-gray-300">Flexible (Allow overbooking beyond total limit)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <p class="text-sm text-gray-400">Choose how attendees join your vibe.</p>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="ticket_type" value="Free" class="sr-only ticket-radio" checked data-action="ticket-type">
+                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all hover:bg-slate-800">
+                                    <i data-lucide="smile" class="w-8 h-8 mx-auto mb-2 text-green-400"></i>
+                                    <h3 class="font-bold text-white mb-1">Free Event</h3>
+                                    <p class="text-xs text-gray-400">Open for everyone, no charge.</p>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="ticket_type" value="Paid" class="sr-only ticket-radio" data-action="ticket-type">
+                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all hover:bg-slate-800">
+                                    <i data-lucide="banknote" class="w-8 h-8 mx-auto mb-2 text-cyan-400"></i>
+                                    <h3 class="font-bold text-white mb-1">Paid Tickets</h3>
+                                    <p class="text-xs text-gray-400">Sell tickets with different tiers.</p>
+                                </div>
+                            </label>
+                            <label class="relative cursor-not-allowed opacity-40">
+                                <input type="radio" name="ticket_type" value="Guestlist" class="sr-only ticket-radio" disabled>
+                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
+                                    <i data-lucide="clipboard-list" class="w-8 h-8 mx-auto mb-2 text-gray-500"></i>
+                                    <h3 class="font-bold text-white mb-1">Guestlist</h3>
+                                    <p class="text-xs text-gray-400">Currently disabled.</p>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div id="paid-tiers-section" class="hidden space-y-4 pt-4 border-t border-white/10">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-cyan-400">Configure Ticket Tiers</h3>
+                                <span id="remaining-seats-badge" class="hidden text-xs font-bold px-3 py-1 rounded-full bg-slate-900 border border-cyan-500/30 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.2)]">Seats Left: 0</span>
+                            </div>
+
+                            <div id="paid-tiers-container" class="space-y-4"></div>
+
+                            <button type="button" id="btn-add-tier" data-action="add-tier" class="text-sm text-fuchsia-400 font-medium hover:text-fuchsia-300 flex items-center gap-1 mt-2 transition-all">
+                                <i data-lucide="plus-circle" class="w-4 h-4"></i> Add another tier / section
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4 Review-->
+                    <div id="step-4" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="eye" class="text-cyan-400 w-5 h-5"></i> Preview Vibe</h2>
+
+                        <div class="bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden shadow-2xl pb-4">
+                            <div class="h-48 bg-gradient-to-tr from-fuchsia-900/40 to-cyan-900/40 relative flex items-center justify-center border-b border-white/5">
+                                <i data-lucide="image" class="w-12 h-12 text-white/20"></i>
+                                <span id="prev-category" class="absolute top-3 right-3 bg-black/60 backdrop-blur text-xs px-3 py-1 rounded-full border border-white/10 text-cyan-300 shadow-lg">Category</span>
+                            </div>
+
+                            <div class="p-5 space-y-4 pb-0">
+                                <div class="flex justify-between items-start gap-4">
+                                    <div>
+                                        <h3 id="prev-title" class="text-2xl font-black text-white">Event Title Here</h3>
+                                        <p id="prev-venue" class="text-sm text-gray-400 flex items-center gap-1 mt-1"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Venue Name</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div id="prev-date" class="text-fuchsia-400 font-bold text-sm">Oct 24</div>
+                                        <div id="prev-time" class="text-xs text-gray-400">10:00 PM</div>
+                                    </div>
+                                </div>
+
+                                <div id="prev-highlights-wrap" class="hidden mt-3 p-3 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl">
+                                    <h4 class="text-xs font-bold text-fuchsia-400 mb-1"><i data-lucide="sparkles" class="w-3 h-3 inline"></i> Event Highlights</h4>
+                                    <p id="prev-highlights" class="text-sm text-gray-200"></p>
+                                </div>
+
+                                <p id="prev-bio" class="text-sm text-gray-300 line-clamp-3">This is where the event bio will appear. It tells people what the vibe is all about.</p>
+
+                                <div class="flex flex-wrap gap-1.5 pt-2" id="prev-tags-services"></div>
+
+                                <div class="flex flex-wrap gap-2 pt-2 border-t border-white/5">
+                                    <span id="prev-ticket" class="bg-cyan-500/10 text-cyan-400 text-xs px-2.5 py-1 rounded border border-cyan-500/20">Free Event</span>
+                                    <span id="prev-age" class="bg-fuchsia-500/10 text-fuchsia-400 text-xs px-2.5 py-1 rounded border border-fuchsia-500/20">All Ages</span>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3 mt-4 text-sm border-t border-white/5 pt-4">
+                                    <div id="prev-dresscode-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Dress Code</span><span id="prev-dresscode" class="text-white text-sm"></span></div>
+                                    <div id="prev-capacity-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Capacity</span><span id="prev-capacity" class="text-white text-sm"></span></div>
+                                    <div id="prev-collabs-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Collaborators</span><span id="prev-collabs" class="text-white text-sm"></span></div>
+                                    <div id="prev-promo-wrap" class="hidden"><span class="text-gray-500 text-[10px] uppercase font-bold block mb-0.5">Promo Code</span><span id="prev-promo" class="text-fuchsia-400 font-bold uppercase text-sm"></span></div>
+                                </div>
+
+                                <div id="prev-tiers-wrap" class="hidden mt-4 border-t border-white/5 pt-4 space-y-2">
+                                    <h4 class="text-xs font-bold text-cyan-400 mb-2 uppercase tracking-wide">Ticket Tiers</h4>
+                                    <div id="prev-tiers-list" class="space-y-2"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex gap-3 text-sm text-yellow-200">
+                            <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i>
+                            <p>Review your details carefully. Once published, notifications will be sent to your followers.</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-3 pt-6 mt-4 border-t border-white/10">
+                        <button type="button" id="btn-prev" data-action="change-step" data-step="-1" class="hidden flex-1 py-3.5 rounded-xl font-bold text-white bg-slate-800 border border-white/10 hover:bg-slate-700 transition-colors">
+                            Back
+                        </button>
+                        <button type="button" id="btn-next" data-action="change-step" data-step="1" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-600 to-cyan-600 neon-button">
+                            Next Step
+                        </button>
+                        <button type="submit" id="event-submit-btn" class="hidden flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-fuchsia-700 neon-button shadow-[0_0_20px_rgba(217,70,239,0.5)]">
+                            Publish Vibe
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <p id="location-status" class="hidden text-xs text-rose-300"></p>
+        </form>
+    </div>
+</div>
+
+
+<link rel="stylesheet" href="{% static 'css/create_post_event.css' %}">
+
+
+<!-- Js code started here-->
+
+<script src="{% static 'js/create_post_event.js' %}"></script>
