@@ -1,5 +1,5 @@
 /* Utilities */
-body { background-color: black; color: white; -webkit-tap-highlight-color: transparent; }
+body { background-color: black; color: white; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 

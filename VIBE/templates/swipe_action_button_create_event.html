@@ -1,0 +1,303 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swipe Action Panel - Final Energetic Version</title>
+    <!-- Tailwind CSS (Aapke project mein ye already setup hoga) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Sirf Demo ke liye body styling - Apne project mein ise use mat karna */
+        body {
+            background-color: #0f172a; 
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
+        }
+
+        /* ===== SWIPE COMPONENT CSS (Ise apne style.css mein daalein) ===== */
+        
+        /* The dynamic background layer for neon lights */
+        .swipe-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            /* inherit bohot zaroori hai taaki glow exactly outer shape ko follow kare */
+            border-radius: inherit; 
+            transition: opacity 0.1s ease-out;
+            z-index: 1;
+        }
+
+        /* Energetic Pulse Animation jab threshold meet hota hai */
+        @keyframes energeticSurge {
+            0% { filter: brightness(1) contrast(1); box-shadow: inset 0 0 20px rgba(0,0,0,0.5); }
+            100% { filter: brightness(1.6) contrast(1.2); box-shadow: inset 0 0 40px rgba(255,255,255,0.2); }
+        }
+
+        .energetic-active {
+            animation: energeticSurge 0.15s infinite alternate;
+        }
+
+        /* Thumb/Knob */
+        .swipe-thumb {
+            position: absolute;
+            /* calc ka use karke center karna, complex JS math se bachata hai */
+            left: calc(50% - 25px); 
+            top: calc(50% - 25px);
+            width: 50px;
+            height: 50px;
+            background-color: #ffffff;
+            border-radius: 50%; /* Hamesha round rahega */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: grab;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            z-index: 10;
+            /* Sirf background aur shadow smooth chahiye, position instant honi chahiye */
+            transition: background-color 0.2s, box-shadow 0.2s; 
+        }
+
+        .swipe-thumb:active {
+            cursor: grabbing;
+        }
+
+        /* V icon inside the thumb */
+        .v-icon {
+            width: 24px;
+            height: 24px;
+            stroke: #121212;
+            transition: stroke 0.2s ease;
+        }
+
+        /* Smooth snap back when released */
+        .snap-back {
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .snap-back-bg {
+            transition: opacity 0.4s ease, background-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        /* ===== END OF SWIPE COMPONENT CSS ===== */
+    </style>
+</head>
+<body>
+
+    <div class="flex flex-col items-center gap-8">
+        <h2 class="text-xl font-bold text-gray-300 tracking-wider">Create Event</h2>
+        
+        <!-- ===== SWIPE COMPONENT HTML (Ise apne template mein daalein) ===== -->
+        <!-- Added specific shapes, backdrop blur, and padding as requested -->
+        <div class="relative flex items-center justify-center w-[340px] h-[74px] bg-white/[0.03] backdrop-blur-lg border-[2px] border-white/10 shadow-2xl rounded-[70px] rounded-t-[20px] select-none touch-none" id="swipeContainer">
+            
+            <!-- Neon Background Layer (Matches parent shape) -->
+            <div class="swipe-bg snap-back-bg" id="swipeBg"></div>
+            
+            <!-- Helper Texts -->
+            <span class="absolute left-6 text-sm font-semibold text-white/40 pointer-events-none z-10 transition-opacity" id="textLeft">Back</span>
+            <span class="absolute right-6 text-sm font-semibold text-white/40 pointer-events-none z-10 transition-opacity" id="textRight">Next</span>
+
+            <!-- Draggable Thumb (Initial state zero translation ke sath) -->
+            <div class="swipe-thumb snap-back" id="swipeThumb" style="transform: translateX(0px) scale(1);">
+                <!-- SVG Icon -->
+                <svg class="v-icon" id="vIcon" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+        </div>
+        <!-- ===== END OF SWIPE COMPONENT HTML ===== -->
+        
+        <p id="statusMsg" class="text-sm text-gray-400 h-6 font-medium transition-all"></p>
+    </div>
+
+    <!-- ===== SWIPE COMPONENT JAVASCRIPT (Ise apne JS file ya script tag mein daalein) ===== -->
+    <script>
+        const container = document.getElementById('swipeContainer');
+        const thumb = document.getElementById('swipeThumb');
+        const bg = document.getElementById('swipeBg');
+        const vIcon = document.getElementById('vIcon');
+        const textLeft = document.getElementById('textLeft');
+        const textRight = document.getElementById('textRight');
+        const statusMsg = document.getElementById('statusMsg');
+
+        // Colors setup
+        const colorRight = '#0D3A63'; // Base Blue
+        const glowRight = '#00d2ff';  // Electric Cyan for energy
+        
+        const colorLeft = '#C84C49';  // Base Red
+        const glowLeft = '#ff4d4d';   // Bright Red for energy
+
+        let isDragging = false;
+        let startX = 0;
+        let currentX = 0;
+        
+        let maxDrag = 133; 
+        let triggerThreshold = 113;
+
+        // Event Listeners for Touch & Mouse
+        thumb.addEventListener('pointerdown', dragStart);
+        window.addEventListener('pointermove', dragMove);
+        window.addEventListener('pointerup', dragEnd);
+
+        function dragStart(e) {
+            isDragging = true;
+            startX = e.clientX;
+            
+            // Container aur thumb ka width calculate karna (CDN delay issue fix karne ke liye)
+            let cWidth = container.offsetWidth || 340;
+            let tWidth = thumb.offsetWidth || 50;
+            
+            // PADDING = 22 set ki hai taaki button hamesha round rahe aur end se thoda pehle ruk jaye
+            const padding = 22; 
+            maxDrag = (cWidth / 2) - (tWidth / 2) - padding;
+            triggerThreshold = maxDrag * 0.85;
+
+            thumb.classList.remove('snap-back');
+            bg.classList.remove('snap-back-bg');
+            bg.classList.remove('energetic-active');
+            
+            // Pointer capture taaki agar user fast swipe kare to bhi drag chalta rahe
+            thumb.setPointerCapture(e.pointerId);
+            statusMsg.textContent = "";
+        }
+
+        function dragMove(e) {
+            if (!isDragging) return;
+
+            let deltaX = e.clientX - startX;
+
+            // Movement ko maxDrag tak constrain karna
+            if (deltaX > maxDrag) deltaX = maxDrag;
+            if (deltaX < -maxDrag) deltaX = -maxDrag;
+
+            currentX = deltaX;
+            let dragPercentage = Math.abs(deltaX) / maxDrag;
+
+            if (deltaX > 0) {
+                // Moving RIGHT (Next / Publish)
+                bg.style.backgroundColor = colorRight;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercentage}px ${colorRight}, 0 0 ${20 * dragPercentage}px ${glowRight}`;
+                bg.style.opacity = dragPercentage + 0.2; 
+                
+                // Rotate V to Right
+                vIcon.style.transform = `rotate(${-90 * dragPercentage}deg)`;
+
+                // Energy Surge Check
+                if (deltaX >= triggerThreshold) {
+                    bg.classList.add('energetic-active');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`; 
+                    vIcon.style.stroke = glowRight; 
+                } else {
+                    bg.classList.remove('energetic-active');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    vIcon.style.stroke = "#121212";
+                }
+
+                textRight.style.opacity = 1 - dragPercentage;
+                textLeft.style.opacity = 1;
+
+            } else if (deltaX < 0) {
+                // Moving LEFT (Back / Abort)
+                bg.style.backgroundColor = colorLeft;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercentage}px ${colorLeft}, 0 0 ${20 * dragPercentage}px ${glowLeft}`;
+                bg.style.opacity = dragPercentage + 0.2;
+                
+                // Rotate V to Left
+                vIcon.style.transform = `rotate(${90 * dragPercentage}deg)`;
+
+                // Energy Surge Check
+                if (deltaX <= -triggerThreshold) {
+                    bg.classList.add('energetic-active');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`;
+                    vIcon.style.stroke = glowLeft;
+                } else {
+                    bg.classList.remove('energetic-active');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    vIcon.style.stroke = "#121212";
+                }
+
+                textLeft.style.opacity = 1 - dragPercentage;
+                textRight.style.opacity = 1;
+            } else {
+                resetVisuals();
+            }
+        }
+
+        function dragEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            thumb.releasePointerCapture(e.pointerId);
+
+            thumb.classList.add('snap-back');
+            bg.classList.add('snap-back-bg');
+            bg.classList.remove('energetic-active');
+
+            // Agar user ne kaafi door tak drag kar diya hai, toh action trigger karo
+            if (currentX >= triggerThreshold) {
+                actionNext();
+            } else if (currentX <= -triggerThreshold) {
+                actionBack();
+            } else {
+                resetSlider();
+            }
+        }
+
+        function resetVisuals() {
+            bg.style.opacity = 0;
+            bg.style.boxShadow = 'none';
+            vIcon.style.transform = `rotate(0deg)`;
+            vIcon.style.stroke = "#121212";
+            textLeft.style.opacity = 1;
+            textRight.style.opacity = 1;
+            // Clean transform reset
+            thumb.style.transform = `translateX(0px) scale(1)`;
+        }
+
+        function resetSlider() {
+            currentX = 0;
+            resetVisuals();
+        }
+
+        // --- ACTIONS KI LOGIC YAHAN LIKHEIN ---
+
+        function actionNext() {
+            // UI Update dikhane ke liye
+            statusMsg.innerHTML = `<span class="text-[#00d2ff] drop-shadow-[0_0_8px_rgba(0,210,255,0.8)]">Action: Next / Publish triggered! ⚡</span>`;
+            
+            // Button ko uski max position par lock rakhein jab tak process chale
+            thumb.style.transform = `translateX(${maxDrag}px) scale(1)`;
+            
+            // Yahan par aap form submit ka logic daal sakte hain
+            // Example: document.getElementById('eventForm').submit();
+
+            // Demo ke liye, action complete hone ke 1.2s baad reset karna
+            setTimeout(resetSlider, 1200);
+        }
+
+        function actionBack() {
+            // UI Update dikhane ke liye
+            statusMsg.innerHTML = `<span class="text-[#ff4d4d] drop-shadow-[0_0_8px_rgba(255,77,77,0.8)]">Action: Back / Abort triggered! 🛑</span>`;
+            
+            // Button ko uski min position par lock rakhein jab tak process chale
+            thumb.style.transform = `translateX(${-maxDrag}px) scale(1)`;
+
+            // Yahan par aap back jaane ka logic daal sakte hain
+            // Example: window.history.back();
+
+            // Demo ke liye, action complete hone ke 1.2s baad reset karna
+            setTimeout(resetSlider, 1200);
+        }
+    </script>
+    <!-- ===== END OF SWIPE COMPONENT JAVASCRIPT ===== -->
+
+</body>
+</html>

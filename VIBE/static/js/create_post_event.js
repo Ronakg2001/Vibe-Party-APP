@@ -330,6 +330,10 @@ function togglePostType(isEvent) {
         if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, true);
     }
 
+    function confirmAbortEventCreation() {
+        return window.confirm('Discard event creation? Your progress will be lost.');
+    }
+
     function bindCreatePostActions() {
         document.addEventListener('click', (event) => {
             const actionEl = event.target.closest('[data-action]');
@@ -402,7 +406,9 @@ function togglePostType(isEvent) {
                     changeStep(Number(actionEl.dataset.step || 0));
                     break;
                 case 'cancel-event-create':
-                    resetEventCreation();
+                    if (confirmAbortEventCreation()) {
+                        resetEventCreation();
+                    }
                     break;
                 case 'confirm-booking':
                     confirmBooking();
@@ -704,6 +710,194 @@ function togglePostType(isEvent) {
         { name: 'Regular Entry', price: '', qty: '', flex: false, services: '' }
     ];
 
+    let swipeReady = false;
+    let swipeDragging = false;
+    let swipeStartX = 0;
+    let swipeCurrentX = 0;
+    let swipeMaxDrag = 120;
+    let swipeThreshold = 100;
+
+    function updateSwipeLabels() {
+        const left = document.getElementById('eventSwipeTextLeft');
+        const right = document.getElementById('eventSwipeTextRight');
+        if (!left || !right) return;
+
+        if (currentStep === 1) {
+            left.textContent = 'Abort';
+            right.textContent = 'Next';
+        } else if (currentStep === totalSteps) {
+            left.textContent = 'Back';
+            right.textContent = 'Publish';
+        } else {
+            left.textContent = 'Back';
+            right.textContent = 'Next';
+        }
+    }
+
+    function resetSwipeVisuals() {
+        const thumb = document.getElementById('eventSwipeThumb');
+        const bg = document.getElementById('eventSwipeBg');
+        const icon = document.getElementById('eventSwipeIcon');
+        const left = document.getElementById('eventSwipeTextLeft');
+        const right = document.getElementById('eventSwipeTextRight');
+        if (!thumb || !bg || !icon) return;
+
+        bg.style.opacity = 0;
+        bg.style.boxShadow = 'none';
+        icon.style.transform = 'rotate(0deg)';
+        icon.style.stroke = '#141414';
+        if (left) left.style.opacity = 1;
+        if (right) right.style.opacity = 1;
+        thumb.style.transform = 'translateX(0px) scale(1)';
+        swipeCurrentX = 0;
+    }
+
+    function resetSwipeSlider() {
+        const thumb = document.getElementById('eventSwipeThumb');
+        const bg = document.getElementById('eventSwipeBg');
+        if (thumb) thumb.classList.add('event-swipe-snap');
+        if (bg) bg.classList.add('event-swipe-snap-bg');
+        resetSwipeVisuals();
+    }
+
+    function swipeActionNext() {
+        if (currentStep < totalSteps) {
+            changeStep(1);
+            return;
+        }
+
+        const form = document.getElementById('create-post-form');
+        if (form && typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return;
+        }
+        document.getElementById('event-submit-btn')?.click();
+    }
+
+    function swipeActionBack() {
+        if (currentStep === 1) {
+            if (confirmAbortEventCreation()) {
+                if (typeof resetEventCreation === 'function') resetEventCreation();
+            }
+            return;
+        }
+        changeStep(-1);
+    }
+
+    function initSwipePanel() {
+        const panel = document.getElementById('eventSwipePanel');
+        const thumb = document.getElementById('eventSwipeThumb');
+        const bg = document.getElementById('eventSwipeBg');
+        const icon = document.getElementById('eventSwipeIcon');
+        const left = document.getElementById('eventSwipeTextLeft');
+        const right = document.getElementById('eventSwipeTextRight');
+
+        if (!panel || !thumb || !bg || !icon || !left || !right || swipeReady) return;
+        swipeReady = true;
+
+        const colorRight = '#0D3A63';
+        const glowRight = '#00d2ff';
+        const colorLeft = '#C84C49';
+        const glowLeft = '#ff4d4d';
+
+        const dragStart = (e) => {
+            swipeDragging = true;
+            swipeStartX = e.clientX;
+
+            const cWidth = panel.offsetWidth || 340;
+            const tWidth = thumb.offsetWidth || 50;
+            const padding = 22;
+            swipeMaxDrag = (cWidth / 2) - (tWidth / 2) - padding;
+            swipeThreshold = swipeMaxDrag * 0.85;
+
+            thumb.classList.remove('event-swipe-snap');
+            bg.classList.remove('event-swipe-snap-bg');
+            bg.classList.remove('event-swipe-energetic');
+            thumb.setPointerCapture(e.pointerId);
+        };
+
+        const dragMove = (e) => {
+            if (!swipeDragging) return;
+
+            let deltaX = e.clientX - swipeStartX;
+            if (deltaX > swipeMaxDrag) deltaX = swipeMaxDrag;
+            if (deltaX < -swipeMaxDrag) deltaX = -swipeMaxDrag;
+
+            swipeCurrentX = deltaX;
+            const dragPercent = Math.abs(deltaX) / swipeMaxDrag;
+
+            if (deltaX > 0) {
+                bg.style.backgroundColor = colorRight;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercent}px ${colorRight}, 0 0 ${20 * dragPercent}px ${glowRight}`;
+                bg.style.opacity = dragPercent + 0.2;
+                icon.style.transform = `rotate(${-90 * dragPercent}deg)`;
+
+                if (deltaX >= swipeThreshold) {
+                    bg.classList.add('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`;
+                    icon.style.stroke = glowRight;
+                } else {
+                    bg.classList.remove('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    icon.style.stroke = '#141414';
+                }
+
+                right.style.opacity = 1 - dragPercent;
+                left.style.opacity = 1;
+            } else if (deltaX < 0) {
+                bg.style.backgroundColor = colorLeft;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercent}px ${colorLeft}, 0 0 ${20 * dragPercent}px ${glowLeft}`;
+                bg.style.opacity = dragPercent + 0.2;
+                icon.style.transform = `rotate(${90 * dragPercent}deg)`;
+
+                if (deltaX <= -swipeThreshold) {
+                    bg.classList.add('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`;
+                    icon.style.stroke = glowLeft;
+                } else {
+                    bg.classList.remove('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    icon.style.stroke = '#141414';
+                }
+
+                left.style.opacity = 1 - dragPercent;
+                right.style.opacity = 1;
+            } else {
+                resetSwipeVisuals();
+            }
+        };
+
+        const dragEnd = (e) => {
+            if (!swipeDragging) return;
+            swipeDragging = false;
+            thumb.releasePointerCapture(e.pointerId);
+
+            thumb.classList.add('event-swipe-snap');
+            bg.classList.add('event-swipe-snap-bg');
+            bg.classList.remove('event-swipe-energetic');
+
+            if (swipeCurrentX >= swipeThreshold) {
+                thumb.style.transform = `translateX(${swipeMaxDrag}px) scale(1)`;
+                swipeActionNext();
+                setTimeout(resetSwipeSlider, 350);
+                return;
+            }
+            if (swipeCurrentX <= -swipeThreshold) {
+                thumb.style.transform = `translateX(${-swipeMaxDrag}px) scale(1)`;
+                swipeActionBack();
+                setTimeout(resetSwipeSlider, 350);
+                return;
+            }
+            resetSwipeSlider();
+        };
+
+        thumb.addEventListener('pointerdown', dragStart);
+        window.addEventListener('pointermove', dragMove);
+        window.addEventListener('pointerup', dragEnd);
+        updateSwipeLabels();
+        resetSwipeSlider();
+    }
+
     function resetEventCreation() {
         const form = document.getElementById('create-post-form');
         if (form) {
@@ -775,6 +969,7 @@ function togglePostType(isEvent) {
         }
 
         setStep(1);
+        initSwipePanel();
         renderCarousel();
         bindCarouselDrag();
         toggleTicketTypes();
@@ -860,10 +1055,19 @@ function togglePostType(isEvent) {
         const btnPrev = document.getElementById('btn-prev');
         const btnNext = document.getElementById('btn-next');
         const btnSubmit = document.getElementById('event-submit-btn');
+        const swipePanel = document.getElementById('eventSwipePanel');
 
-        if (btnPrev) btnPrev.classList.toggle('hidden', currentStep === 1);
-        if (btnNext) btnNext.classList.toggle('hidden', currentStep === totalSteps);
-        if (btnSubmit) btnSubmit.classList.toggle('hidden', currentStep !== totalSteps);
+        if (swipePanel) {
+            if (btnPrev) btnPrev.classList.add('hidden');
+            if (btnNext) btnNext.classList.add('hidden');
+            if (btnSubmit) btnSubmit.classList.add('hidden');
+            updateSwipeLabels();
+            resetSwipeSlider();
+        } else {
+            if (btnPrev) btnPrev.classList.toggle('hidden', currentStep === 1);
+            if (btnNext) btnNext.classList.toggle('hidden', currentStep === totalSteps);
+            if (btnSubmit) btnSubmit.classList.toggle('hidden', currentStep !== totalSteps);
+        }
 
         if (currentStep === totalSteps) {
             generatePreview();

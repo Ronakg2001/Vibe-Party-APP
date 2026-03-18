@@ -899,6 +899,10 @@ function getInitialTabFromUrl() {
     if (dataTab && allowedTabs.includes(dataTab)) {
         return dataTab;
     }
+    const storedTab = localStorage.getItem('vibe_active_tab');
+    if (storedTab && allowedTabs.includes(storedTab)) {
+        return storedTab;
+    }
     return "home";
 }
 
@@ -916,6 +920,80 @@ function hideLoaderWhenReady() {
             loader.remove();
         }, 420);
     }, waitMs);
+}
+
+function refreshActiveTab() {
+    const tabId = state.activeTab || getInitialTabFromUrl();
+    if (tabId === 'home') {
+        loadNearbyEvents();
+        renderFeed();
+        return;
+    }
+    if (tabId === 'search') {
+        renderExplore();
+        return;
+    }
+    if (tabId === 'tickets') {
+        renderTicketList();
+        renderHostedEventList();
+        switchMyEventsTab(state.myEventsTab);
+        return;
+    }
+    if (tabId === 'profile') {
+        loadCurrentUserProfile();
+    }
+}
+
+function initPullToRefresh() {
+    const allowedTabs = ['home', 'search', 'tickets', 'profile'];
+    let pullActive = false;
+    let pullTriggered = false;
+    let startY = 0;
+
+    const isInteractiveTarget = (target) => {
+        if (!target) return false;
+        if (target.isContentEditable) return true;
+        const tag = target.tagName?.toLowerCase();
+        return ['input', 'textarea', 'select', 'button'].includes(tag);
+    };
+
+    const isAtTop = () => {
+        const scroller = document.scrollingElement || document.documentElement;
+        return (scroller?.scrollTop || 0) <= 0;
+    };
+
+    document.addEventListener('touchstart', (event) => {
+        if (event.touches.length !== 1) return;
+        if (!allowedTabs.includes(state.activeTab)) return;
+        if (!isAtTop()) return;
+        if (isInteractiveTarget(event.target)) return;
+        pullActive = true;
+        pullTriggered = false;
+        startY = event.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (event) => {
+        if (!pullActive || pullTriggered) return;
+        const currentY = event.touches[0].clientY;
+        const delta = currentY - startY;
+        if (delta < 0) {
+            pullActive = false;
+            return;
+        }
+        if (delta > 0) {
+            event.preventDefault();
+        }
+        if (delta > 90) {
+            pullTriggered = true;
+            refreshActiveTab();
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchend', () => {
+        pullActive = false;
+        pullTriggered = false;
+        startY = 0;
+    });
 }
 
 function setEventTypeValue(value) {
@@ -2088,6 +2166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     loadCurrentUserProfile();
     switchTab(getInitialTabFromUrl());
+    initPullToRefresh();
     lucide.createIcons();
     if (!state.locationEnabled) {
         setLocationStatus('Location is OFF. Nearby detection stopped.');
@@ -2639,6 +2718,14 @@ function bindHomePageActions() {
 
 function switchTab(tabId) {
     state.activeTab = tabId;
+    localStorage.setItem('vibe_active_tab', tabId);
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tabId);
+        window.history.replaceState({}, '', url);
+    } catch (err) {
+        // ignore URL update failures (e.g., sandboxed environments)
+    }
     
     // Update Navigation UI (Handles both Mobile and Desktop navs)
     document.querySelectorAll('.nav-btn').forEach(btn => {

@@ -117,3 +117,95 @@
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }
+
+.event-swipe-panel {
+    position: relative;
+    flex: 1 1 100%;
+    height: 70px;
+    border-radius: 70px;
+    border-top-left-radius: 22px;
+    border-bottom-right-radius: 22px;
+    background: linear-gradient(145deg, rgba(12, 18, 36, 0.7), rgba(8, 12, 26, 0.8));
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 40px rgba(6, 8, 20, 0.7);
+    backdrop-filter: blur(14px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+    touch-action: none;
+}
+
+.event-swipe-bg {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    border-radius: inherit;
+    transition: opacity 0.12s ease-out;
+    z-index: 1;
+}
+
+@keyframes eventSwipeSurge {
+    0% { filter: brightness(1) contrast(1); box-shadow: inset 0 0 16px rgba(0,0,0,0.45); }
+    100% { filter: brightness(1.6) contrast(1.2); box-shadow: inset 0 0 36px rgba(255,255,255,0.2); }
+}
+
+.event-swipe-energetic {
+    animation: eventSwipeSurge 0.15s infinite alternate;
+}
+
+.event-swipe-thumb {
+    position: absolute;
+    left: calc(50% - 25px);
+    top: calc(50% - 25px);
+    width: 50px;
+    height: 50px;
+    background-color: #ffffff;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    z-index: 4;
+    transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.event-swipe-thumb:active {
+    cursor: grabbing;
+}
+
+.event-swipe-icon {
+    width: 24px;
+    height: 24px;
+    stroke: #141414;
+    transition: stroke 0.2s ease, transform 0.15s ease;
+}
+
+.event-swipe-snap {
+    transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.event-swipe-snap-bg {
+    transition: opacity 0.38s ease, background-color 0.38s ease, box-shadow 0.38s ease;
+}
+
+.event-swipe-text {
+    position: absolute;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.5);
+    z-index: 3;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.event-swipe-left {
+    left: 22px;
+}
+
+.event-swipe-right {
+    right: 22px;
+}
