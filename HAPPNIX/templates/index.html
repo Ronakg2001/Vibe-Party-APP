@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happnix | Welcome</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{% static 'css/index.css' %}">
+</head>
+<body>
+  <div class="orb orb-violet"></div>
+  <div class="orb orb-fuchsia"></div>
+  <div class="orb orb-cyan"></div>
+
+  <div class="happnix-splash-brand">
+    <img src="{% static 'img/Logo_H.PNG' %}" alt="Happnix Icon" class="logo-icon">
+    <img src="{% static 'img/logo_happnix.PNG' %}" alt="Happnix Text" class="logo-text">
+  </div>
+
+  <div id="party-loader" class="party-loader-overlay">
+    <div class="party-loader-wrap">
+      <div class="bass-speaker">
+        <div class="sound-ripple"></div>
+        <div class="sound-ripple ripple-alt"></div>
+        <div class="speaker-cone">
+          <div class="speaker-inner"></div>
+        </div>
+      </div>
+      <div class="spark s1"></div>
+      <div class="spark s2"></div>
+      <div class="spark s3"></div>
+      <div class="eq-grid">
+        <div class="eq-bar bar-1"></div>
+        <div class="eq-bar bar-2"></div>
+        <div class="eq-bar bar-3"></div>
+        <div class="eq-bar bar-4"></div>
+        <div class="eq-bar bar-5"></div>
+      </div>
+      <p id="splash-status-text" class="party-loader-text">Tuning the party vibe...</p>
+    </div>
+  </div>
+
+  <div id="hyper-drive" class="hyper-drive"></div>
+  
+  <script src="{% static 'js/index.js' %}"></script>
+</body>
+</html>

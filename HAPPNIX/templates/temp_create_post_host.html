@@ -1,0 +1,242 @@
+<!-- ADD VIEW (Create) -->
+<div id="view-add" class="view-section min-h-screen bg-slate-950 text-slate-100">
+    <div class="p-5 pt-4 md:max-w-lg md:mx-auto">
+        <h2 class="text-3xl font-black mb-8 bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
+            Create Vibe</h2>
+
+        <div class="bg-slate-800/50 p-1 rounded-xl flex gap-1 mb-8 border border-white/5">
+            <button data-action="toggle-post-type" data-event-mode="false" id="btn-type-post"
+                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all bg-slate-700 text-white shadow-lg">Post</button>
+            <button data-action="toggle-post-type" data-event-mode="true" id="btn-type-event"
+                class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-white">Event</button>
+        </div>
+
+        <form id="create-post-form" class="flex flex-col gap-5">
+            <!-- Standard Post UI -->
+            <div id="post-ui-wrap" class="flex flex-col gap-5">
+                <div id="post-media-wrap" class="flex flex-col gap-4">
+                    <label for="event-media-input"
+                        class="relative w-full h-64 md:h-80 bg-slate-800/50 rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center text-gray-500 cursor-pointer hover:border-fuchsia-500/50 transition-colors hover:bg-slate-800 overflow-hidden">
+                        <div id="event-media-empty-state" class="flex flex-col items-center gap-3">
+                            <div class="p-4 bg-white/5 rounded-full"><i data-lucide="image-plus" class="w-8 h-8"></i></div>
+                            <span class="text-sm font-medium">Upload Visuals (Max 10)</span>
+                        </div>
+                        <div id="event-media-stage" class="hidden absolute inset-0">
+                            <div id="event-media-frame" class="w-full h-full"></div>
+                            <button type="button" data-action="shift-pending-media" data-direction="-1"
+                                class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&lsaquo;</button>
+                            <button type="button" data-action="shift-pending-media" data-direction="1"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/45 border border-white/10 text-white grid place-items-center">&rsaquo;</button>
+                            <div id="event-media-counter"
+                                class="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/45 text-xs text-white border border-white/10"></div>
+                        </div>
+                    </label>
+                    <input id="event-media-input" type="file" class="hidden" multiple accept="image/*,video/*">
+                </div>
+                <div id="post-caption-wrap">
+                    <textarea id="post-caption" placeholder="What's the vibe?"
+                        class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
+                </div>
+            </div>
+
+            <!-- Event Builder UI -->
+            <div id="event-fields" class="hidden flex-col gap-6 animation-slide-up">
+                <div id="event-stepper" class="w-full space-y-6">
+                    <!-- Step 1: Basic Info -->
+                    <div id="step-1" class="step-container active space-y-5">
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="zap" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400"></i>
+                            <input id="event-title" type="text" placeholder="Event Title (Max 50 chars)" maxlength="50" required class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800">
+                        </div>        
+                        
+                        <div class="relative w-full h-56 md:h-72 bg-slate-800/50 rounded-2xl border-2 border-white/10 overflow-hidden group focus:outline-none focus:border-fuchsia-500/50 transition-colors" tabindex="0" id="carousel-wrapper">
+                            <button type="button" data-action="scroll-carousel" data-direction="-1" class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-prev">
+                                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                            </button>
+                            <button type="button" data-action="scroll-carousel" data-direction="1" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 border border-white/20 text-white z-20 hover:bg-fuchsia-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none" id="btn-car-next">
+                                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                            </button>
+
+                            <div id="media-track" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide cursor-grab active:cursor-grabbing relative"></div>
+
+                            <div class="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/70 backdrop-blur rounded-full text-xs font-medium text-white z-20 border border-white/10 shadow-lg pointer-events-none">
+                                <span id="media-counter">1 / 1</span>
+                            </div>
+
+                            <input type="file" id="cover-upload" accept="image/*" class="hidden">
+                            <input type="file" id="highlight-upload" accept="image/*,video/*" class="hidden" multiple>
+                            <input type="file" id="highlight-change" accept="image/*,video/*" class="hidden">
+                        </div>
+
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <textarea id="event-bio" placeholder="Event Bio (Tell us the vibe...)" rows="3" required
+                                class="w-full p-4 bg-slate-800/50 rounded-xl outline-none resize-none text-sm text-white border border-white/5 focus:border-cyan-400/50 focus:bg-slate-800"></textarea>
+                        </div>
+                         
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="sparkles" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                            <input id="event-highlights" type="text" placeholder="Event Highlights (e.g. Free Drinks, Live DJ)"
+                                class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800">
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="relative col-span-2">
+                                <i data-lucide="layout-grid" class="absolute left-4 top-3.5 w-4 h-4 text-cyan-400 z-10"></i>
+                                <div id="event-type-picker" class="event-type-picker relative">
+                                    <button id="event-type-trigger" type="button" data-action="toggle-event-type-menu"
+                                        class="event-type-trigger w-full pl-10 pr-10 p-3.5 rounded-xl text-left text-sm text-white border border-white/5 bg-slate-800/50">
+                                        <span id="event-type-label" data-placeholder="Select Category"></span>
+                                        <i data-lucide="chevron-down" class="absolute right-4 top-3.5 w-4 h-4 text-gray-400"></i>
+                                    </button>
+                                    <div id="event-type-menu" class="event-type-menu hidden">
+                                        <!-- Categories injected via JS -->
+                                    </div>
+                                </div>
+                                <input type="hidden" id="event-type" required>
+                            </div>
+                            <div class="relative neon-border rounded-xl transition-all col-span-1">
+                                <i data-lucide="user-check" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <select id="event-age" class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 appearance-none">
+                                    <option value="All Ages">All Ages</option>
+                                    <option value="16+">16+</option>
+                                    <option value="18+">18+</option>
+                                    <option value="21+">21+</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="relative neon-border rounded-xl transition-all">
+                            <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                            <input id="event-location" type="text" placeholder="Event Location (Venue Name)"
+                                class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800" required>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="calendar-days" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="event-date" type="date" required
+                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5">
+                            </div>
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="clock-3" class="absolute left-3 top-3.5 w-4 h-4 text-cyan-400"></i>
+                                <input id="event-time" type="time" required
+                                    class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5">
+                            </div>
+                        </div>                        
+                    </div>
+
+                    <!-- Step 2: Extras -->
+                    <div id="step-2" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="layers" class="text-cyan-400 w-5 h-5"></i> Event Details</h2>
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-3">Services Provided</label>
+                            <div id="services-container" class="flex flex-wrap gap-2">
+                                <label class="cursor-pointer service-item">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Food">
+                                    <div class="px-4 py-2 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors">Food</div>
+                                </label>
+                                <label class="cursor-pointer service-item">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Alcohol">
+                                    <div class="px-4 py-2 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors">Alcohol</div>
+                                </label>
+                                <label class="cursor-pointer service-item">
+                                    <input type="checkbox" class="sr-only service-checkbox" value="Parking">
+                                    <div class="px-4 py-2 bg-slate-800 border border-white/10 rounded-full text-sm text-gray-300 transition-colors">Parking</div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-white/5">
+                            <label class="block text-sm font-medium text-white mb-1">Event Tags <span class="text-rose-400">*</span></label>
+                            <div id="tags-container" class="flex flex-wrap gap-2 mb-3 empty:hidden"></div>
+                            <div class="relative neon-border rounded-xl transition-all">
+                                <i data-lucide="hash" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                                <input id="inp-tag-entry" type="text" placeholder="Add tags (Enter or comma)" class="w-full pl-11 p-3.5 bg-slate-900 rounded-xl outline-none text-sm text-white border border-white/5">
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" id="promo-toggle" class="w-5 h-5 accent-fuchsia-500">
+                            <label for="promo-toggle" class="text-sm text-gray-300 cursor-pointer">Offer a Promo Code</label>
+                        </div>
+                        <div id="promo-input-wrap" class="hidden relative neon-border rounded-xl transition-all">
+                            <i data-lucide="ticket-percent" class="absolute left-4 top-3.5 w-4 h-4 text-fuchsia-500"></i>
+                            <input id="inp-promo" type="text" placeholder="e.g. HAPPNIX20" class="w-full pl-11 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white uppercase">
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Ticketing -->
+                    <div id="step-3" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="ticket" class="text-fuchsia-500 w-5 h-5"></i> Ticketing</h2>
+                        <div class="grid grid-cols-2 gap-4">
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="ticket_type" value="Free" class="sr-only ticket-radio" checked data-action="ticket-type">
+                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
+                                    <i data-lucide="smile" class="w-8 h-8 mx-auto mb-2 text-green-400"></i>
+                                    <h3 class="font-bold text-white mb-1">Free</h3>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="ticket_type" value="Paid" class="sr-only ticket-radio" data-action="ticket-type">
+                                <div class="p-5 bg-slate-800/50 border border-white/10 rounded-2xl text-center transition-all">
+                                    <i data-lucide="banknote" class="w-8 h-8 mx-auto mb-2 text-cyan-400"></i>
+                                    <h3 class="font-bold text-white mb-1">Paid</h3>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div id="paid-tiers-section" class="hidden space-y-4 pt-4 border-t border-white/10">
+                            <div id="paid-tiers-container" class="space-y-4"></div>
+                            <button type="button" id="btn-add-tier" data-action="add-tier" class="text-sm text-fuchsia-400 font-medium flex items-center gap-1">
+                                <i data-lucide="plus-circle" class="w-4 h-4"></i> Add Ticket Tier
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Review -->
+                    <div id="step-4" class="step-container space-y-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="eye" class="text-cyan-400 w-5 h-5"></i> Preview Vibe</h2>
+                        <div class="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl pb-4">
+                            <div id="prev-img-area" class="h-48 bg-slate-800 relative flex items-center justify-center border-b border-white/5">
+                                <i data-lucide="image" class="w-12 h-12 text-white/20"></i>
+                                <span id="prev-category" class="absolute top-3 right-3 bg-black/60 backdrop-blur text-xs px-3 py-1 rounded-full border border-white/10 text-cyan-300">Category</span>
+                            </div>
+                            <div class="p-5 space-y-4">
+                                <h3 id="prev-title" class="text-2xl font-black text-white">Event Title</h3>
+                                <div class="flex justify-between items-center text-sm">
+                                    <p id="prev-venue" class="text-gray-400"><i data-lucide="map-pin" class="w-3.5 h-3.5 inline"></i> Location</p>
+                                    <div class="text-right">
+                                        <div id="prev-date" class="text-fuchsia-400 font-bold">Oct 24</div>
+                                        <div id="prev-time" class="text-xs text-gray-500">10:00 PM</div>
+                                    </div>
+                                </div>
+                                <p id="prev-bio" class="text-sm text-gray-300 line-clamp-2">Bio content...</p>
+                                <div id="prev-tags-services" class="flex flex-wrap gap-1.5"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Navigation -->
+                    <div class="flex gap-3 pt-6 border-t border-white/10">
+                        <button type="button" id="btn-prev" data-action="change-step" data-step="-1" class="hidden flex-1 py-3.5 rounded-xl font-bold text-white bg-slate-800 border border-white/10">Back</button>
+                        <button type="button" id="btn-next" data-action="change-step" data-step="1" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-600 to-cyan-600 neon-button">Next Step</button>
+                        <button type="submit" id="event-submit-btn" class="hidden flex-[2] py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-fuchsia-700 neon-button">Publish Vibe</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Post Submit -->
+            <div id="post-submit-wrap">
+                <button id="post-submit-btn" type="submit"
+                    class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<link rel="stylesheet" href="{% static 'css/temp_create_post_host.css' %}">
+
+
+
+<script src="{% static 'js/temp_create_post_host.js' %}"></script>

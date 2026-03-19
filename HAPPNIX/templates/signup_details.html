@@ -1,0 +1,59 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happnix | Complete Details</title>
+  <link rel="stylesheet" href="{% static 'css/signup_flow.css' %}" />
+</head>
+<body>
+  <main class="card">
+    <h1>Complete Your Account</h1>
+    <p class="sub">Fill mandatory details to continue.</p>
+
+    <form id="detailsForm" novalidate>
+      <label for="fullName">Full Name</label>
+      <input id="fullName" type="text" placeholder="Enter your full name" required />
+
+      <label for="username">Username (unique)</label>
+      <input id="username" type="text" placeholder="Choose a username" required />
+
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="Create a password" required />
+      <p class="sub" style="margin-top:-8px;">Use at least 8 chars with uppercase, lowercase, number, and special character.</p>
+
+      <label for="sex">Sex</label>
+      <select id="sex" required>
+        <option value="">Select</option>
+        <option value="mr.">Mr.</option>
+        <option value="miss.">Miss.</option>
+        <option value="mrs.">Mrs.</option>
+        <option value="other">Other</option>
+      </select>
+
+      <label for="dob">Date of Birth (18+ only)</label>
+      <input id="dob" type="date" required />
+
+      <label for="email">Email Address</label>
+      <input id="email" type="email" placeholder="you@example.com" required />
+
+      <label for="mobile">Mobile Number</label>
+      <input id="mobile" type="text" value="{{ mobile }}" readonly />
+
+      <label for="govId">Government ID (optional for now)</label>
+      <input id="govId" type="text" placeholder="e.g. Passport/Aadhaar/Driver ID number" />
+      <p class="sub" style="margin-top:-8px;">Later this will be required to create or join parties.</p>
+
+      <p id="error" class="error"></p>
+      <p id="success" class="success"></p>
+      <button id="submitBtn" type="submit">Continue</button>
+    </form>
+  </main>
+
+  
+  
+  <script id="signup-details-boot-config" type="application/json">{"csrfToken":"{{ csrf_token|escapejs }}"}</script>
+  <script src="{% static 'js/signup_details.js' %}"></script>
+</body>
+</html>

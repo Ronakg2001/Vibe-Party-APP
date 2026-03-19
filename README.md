@@ -1,4 +1,4 @@
-# Vibe-Party-APP
+# Happnix-Party-APP
 
 ## Hybrid Database Design (SQL + MongoDB)
 
