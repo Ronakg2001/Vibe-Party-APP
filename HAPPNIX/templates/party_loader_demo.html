@@ -1,0 +1,45 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happnix | Thumping EQ Party Loader</title>
+  <link rel="stylesheet" href="{% static 'css/party_loader_demo.css' %}" />
+</head>
+<body>
+  <main id="loader-showcase" class="stage">
+    <div class="halo"></div>
+
+    <div class="party-loader-wrap">
+      
+      <!-- Thumping Bass Speaker -->
+      <div class="bass-speaker">
+        <div class="sound-ripple"></div>
+        <div class="sound-ripple" style="animation-delay: 0.55s; border-color: var(--fuchsia);"></div>
+        <div class="speaker-cone">
+          <div class="speaker-inner"></div>
+        </div>
+      </div>
+
+      <!-- Floating Sparks -->
+      <div class="spark s1"></div>
+      <div class="spark s2"></div>
+      <div class="spark s3"></div>
+
+      <!-- Dancing Equalizer -->
+      <div class="eq-grid">
+        <div class="eq-bar bar-1"></div>
+        <div class="eq-bar bar-2"></div>
+        <div class="eq-bar bar-3"></div>
+        <div class="eq-bar bar-4"></div>
+        <div class="eq-bar bar-5"></div>
+      </div>
+
+      <!-- Animated Text -->
+      <h3 class="loading-text">Tuning Happnix...</h3>
+      
+    </div>
+  </main>
+</body>
+</html>

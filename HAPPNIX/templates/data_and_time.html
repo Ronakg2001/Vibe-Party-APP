@@ -1,0 +1,89 @@
+{% load static %}
+
+<link rel="stylesheet" href="{% static 'css/data_and_time.css' %}">
+
+
+<!-- Analog Time Picker Modal -->
+<div id="analog-time-modal"
+    class="fixed inset-0 z-[75] hidden opacity-0 transition-opacity duration-300 bg-slate-950/70 backdrop-blur-xl">
+    <div id="analog-time-modal-card"
+        class="absolute left-1/2 top-1/2 w-[94%] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900/92 via-slate-900/85 to-violet-950/70 p-5 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-black text-white">Select Time</h3>
+            <button type="button" data-action="close-analog-time" class="text-gray-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="mb-4 flex items-center justify-center">
+            <div class="analog-digital-clock">
+                <button id="analog-digital-hour" type="button" data-action="set-analog-mode" data-mode="hour"
+                    class="analog-digital-segment is-active">10</button>
+                <span class="analog-digital-separator">:</span>
+                <button id="analog-digital-minute" type="button" data-action="set-analog-mode" data-mode="minute"
+                    class="analog-digital-segment">00</button>
+                <button id="analog-digital-period" type="button" data-action="toggle-analog-period"
+                    class="analog-digital-period">PM</button>
+            </div>
+        </div>
+        <div class="analog-clock-dial-wrap">
+            <div id="analog-clock-dial" class="analog-clock-dial">
+                <div id="analog-clock-hand" class="analog-clock-hand"></div>
+                <div id="analog-clock-second-hand" class="analog-clock-second-hand"></div>
+                <div class="analog-clock-center"></div>
+            </div>
+        </div>
+        <p class="text-[11px] text-gray-400 mt-3 text-center">Only future time is allowed for selected date.</p>
+        <div class="flex gap-3 pt-4">
+            <button type="button" data-action="save-analog-time"
+                class="flex-1 px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save
+                time</button>
+            <button type="button" data-action="clear-analog-time"
+                class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
+        </div>
+    </div>
+</div>
+
+<!-- Event Date Picker Modal -->
+<div id="event-date-modal"
+    class="fixed inset-0 z-[74] hidden opacity-0 transition-opacity duration-300 bg-slate-950/70 backdrop-blur-xl">
+    <div id="event-date-modal-card"
+        class="absolute left-1/2 top-1/2 w-[94%] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900/92 via-slate-900/85 to-violet-950/70 p-5 shadow-2xl shadow-fuchsia-900/20 transform scale-95 transition-transform duration-300">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-black text-white">Select Event Date</h3>
+            <button type="button" data-action="close-event-date" class="text-gray-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="event-calendar-head">
+            <button type="button" data-action="change-event-month" data-step="-1" class="event-calendar-nav" aria-label="Previous month">&lsaquo;</button>
+            <button id="event-calendar-month-label" type="button" data-action="toggle-month-year"
+                class="event-calendar-month-label" aria-label="Select month and year">--</button>
+            <button type="button" data-action="change-event-month" data-step="1" class="event-calendar-nav" aria-label="Next month">&rsaquo;</button>
+        </div>
+        <div id="event-month-year-picker" class="event-month-year-picker hidden">
+            <div class="event-month-year-top">
+                <button type="button" data-action="change-event-year" data-step="-1" class="event-calendar-nav" aria-label="Previous year">&lsaquo;</button>
+                <p id="event-calendar-year-label" class="event-calendar-year-label">2026</p>
+                <button type="button" data-action="change-event-year" data-step="1" class="event-calendar-nav" aria-label="Next year">&rsaquo;</button>
+            </div>
+            <div id="event-month-grid" class="event-month-grid"></div>
+        </div>
+        <div class="event-calendar-weekdays">
+            <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+        </div>
+        <div id="event-calendar-grid" class="event-calendar-grid"></div>
+        <p id="event-date-preview" class="text-center text-sm text-cyan-300 mt-3">No date selected</p>
+        <p class="text-center text-[11px] text-gray-400 mt-2">Tap dates to toggle them. In start date, you can also swipe across dates to multi-select.</p>
+        <div class="flex gap-3 pt-4">
+            <button type="button" data-action="save-event-date"
+                class="flex-1 px-4 py-2 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/40 transition-colors">Save
+                date</button>
+            <button type="button" data-action="clear-event-date"
+                class="px-4 py-2 rounded-lg bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10 transition-colors">Clear</button>
+        </div>
+    </div>
+</div>
+
+
+<script src="{% static 'js/data_and_time.js' %}"></script>
+

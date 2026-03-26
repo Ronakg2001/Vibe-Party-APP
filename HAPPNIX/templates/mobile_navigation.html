@@ -1,0 +1,45 @@
+{% load static %}
+<div class="md:hidden fixed bottom-6 w-full px-6 z-50 flex justify-center">
+    <nav id="nav-container" class="bg-white/1 backdrop-blur-lg border-[2px] border-white/10 shadow-x10 rounded-[70px] rounded-t-[20px] p-3 flex justify-evenly items-center pointer-events-auto">
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button data-action="nav-click" data-tab="home" data-color="rgba(219, 48, 130, 0.7)"
+                class="nav-btn active flex flex-col items-center justify-center h-10 w-10"
+                data-target="home">
+                <i class="ph-fill ph-house text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button data-action="nav-click" data-tab="search" data-color="rgba(155, 60, 212, 0.7)"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="search">
+                <i class="ph-fill ph-compass text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper flex justify-center w-[60px] cursor-pointer">
+            <div id="center-logo" class="center-logo-wrapper relative top-0 group flex items-center justify-center"
+                 data-action="nav-center">
+                <img src="{% static 'img/HX_Logo.PNG' %}"
+                     class="h-7 w-auto drop-shadow-[0_0_10px_rgba(98, 91, 214,0.3)]"
+                     alt="Happnix Create">
+            </div>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button data-action="nav-click" data-tab="tickets" data-color="rgba(54, 118, 198, 0.7)"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="tickets">
+                <i class="ph-fill ph-ticket text-[28px]"></i>
+            </button>
+        </div>
+
+        <div class="icon-wrapper side-icon flex justify-center">
+            <button data-action="nav-click" data-tab="profile" data-color="rgba(20, 146, 175, 0.7)"
+                class="nav-btn flex flex-col items-center justify-center h-10 w-10"
+                data-target="profile">
+                <i class="ph-fill ph-user-circle text-[28px]"></i>
+            </button>
+        </div>
+    </nav>
+</div>
