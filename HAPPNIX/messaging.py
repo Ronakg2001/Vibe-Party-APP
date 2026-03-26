@@ -37,6 +37,10 @@ def _conversation_other_user(conversation, viewer):
 def _basic_message_user_payload(user):
     mongo_profile = mongo_store.profile_for_user(user.id) or {}
     profile = getattr(user, "profile", None)
+    last_active = getattr(profile, "last_active", None)
+    is_online = False
+    if last_active:
+        is_online = (timezone.now() - last_active).total_seconds() < 30
     return {
         "sql_user_id": user.id,
         "username": user.username,
@@ -44,6 +48,8 @@ def _basic_message_user_payload(user):
         "profile_picture_url": mongo_profile.get("profile_picture_url") or (getattr(profile, "profile_picture_url", "") if profile else ""),
         "gov_id_verified": bool(mongo_profile.get("gov_id_verified", getattr(profile, "gov_id_verified", False))),
         "is_private": bool(mongo_profile.get("is_private", getattr(profile, "is_private", False))),
+        "lastActive": last_active.isoformat() if last_active else None,
+        "isOnline": is_online,
     }
 
 

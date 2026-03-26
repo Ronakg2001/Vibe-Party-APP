@@ -90,6 +90,40 @@ function formatBytes(value) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getDynamicOnlineStatus(lastActive) {
+    if (!lastActive || lastActive === 'undefined') return false;
+    const date = new Date(lastActive);
+    if (isNaN(date.getTime())) return false;
+    // 45 seconds threshold to account for network delays
+    return (new Date() - date) < 45000; 
+}
+
+function formatActiveStatus(lastActive) {
+    const isOnline = getDynamicOnlineStatus(lastActive);
+    
+    if (isOnline) {
+        return '<span class="text-emerald-400 font-medium tracking-wide flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>Online</span>';
+    }
+    if (!lastActive || lastActive === 'undefined') return '<span class="text-gray-500">Offline</span>';
+    
+    const date = new Date(lastActive);
+    if (isNaN(date.getTime())) return '<span class="text-gray-500">Offline</span>';
+
+    const now = new Date();
+    let diffMins = Math.floor((now - date) / 60000);
+    diffMins = Math.max(0, diffMins); 
+
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return '<span class="text-gray-400">Active just now</span>';
+    if (diffMins < 60) return `<span class="text-gray-400">Active ${diffMins}m ago</span>`;
+    if (diffHours < 24) return `<span class="text-gray-400">Active ${diffHours}h ago</span>`;
+    if (diffDays === 1) return `<span class="text-gray-400">Active yesterday</span>`;
+    
+    return `<span class="text-gray-400">Active ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>`;
+}
+
 function autosizeComposer() { if (!composeInput) return; composeInput.style.height = 'auto'; composeInput.style.height = `${Math.min(composeInput.scrollHeight, 144)}px`; }
 
 function showComposeStatus(message, isError) {
@@ -165,7 +199,23 @@ function renderConversationList() {
     const other = conversation.otherUser || {};
     const preview = escapeHtml(conversation.previewText || conversation.lastMessage?.body || 'No messages yet');
     const active = Number(conversation.id) === Number(state.activeConversationId);
-    return `<button type="button" data-message-action="open-conversation" data-conversation-id="${conversation.id}" class="flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left ${active ? 'border-fuchsia-400/40 bg-fuchsia-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}"><div class="relative"><img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover">${conversation.unreadCount ? `<span class="absolute -right-1 -top-1 inline-flex min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[10px] font-bold text-white">${conversation.unreadCount}</span>` : ''}</div><div class="min-w-0 flex-1"><div class="flex items-center justify-between gap-3"><div class="truncate text-sm font-bold text-white">${escapeHtml(other.full_name || other.username || 'Unknown')}</div><div class="shrink-0 text-[11px] text-gray-500">${escapeHtml(formatTime(conversation.lastMessage?.createdAt || conversation.updatedAt))}</div></div><div class="mt-1 truncate text-xs ${conversation.unreadCount ? 'text-white' : 'text-gray-400'}">${preview}</div></div></button>`;
+    const isOnline = getDynamicOnlineStatus(other.lastActive);
+    return `<button type="button" data-message-action="open-conversation" data-conversation-id="${conversation.id}" class="flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left ${active ? 'border-fuchsia-400/40 bg-fuchsia-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}">
+        <div class="relative">
+            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover">
+            
+            ${isOnline ? `<span class="absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-slate-900"></span>` : ''}
+            
+            ${conversation.unreadCount ? `<span class="absolute -right-1 -top-1 inline-flex min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[10px] font-bold text-white">${conversation.unreadCount}</span>` : ''}
+        </div>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-3">
+                <div class="truncate text-sm font-bold text-white">${escapeHtml(other.full_name || other.username || 'Unknown')}</div>
+                <div class="shrink-0 text-[11px] text-gray-500">${escapeHtml(formatTime(conversation.lastMessage?.createdAt || conversation.updatedAt))}</div>
+            </div>
+            <div class="mt-1 truncate text-xs ${conversation.unreadCount ? 'text-white' : 'text-gray-400'}">${preview}</div>
+        </div>
+    </button>`;
   }).join('');
 }
 
@@ -238,8 +288,9 @@ function renderThread() {
         <div class="font-bold text-fuchsia-300">@${escapeHtml(message.repliedTo.senderUsername)}</div>
         <div class="truncate text-white/70">${escapeHtml(message.repliedTo.body || 'Attachment')}</div>
     </div>`;
-};
-  threadHeaderEl.innerHTML = `<div class="flex items-center gap-3"><img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover"><div class="min-w-0"><div class="truncate text-base font-black text-white">${escapeHtml(other.full_name || other.username || 'Unknown')}</div><div class="truncate text-xs text-gray-400">@${escapeHtml(other.username || '')}</div></div></div>`;
+  };
+  const activeStatusHtml = formatActiveStatus(other.lastActive);
+  threadHeaderEl.innerHTML = `<div class="flex items-center gap-3"><img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover"><div class="min-w-0"><div class="truncate text-base font-black text-white">${escapeHtml(other.full_name || other.username || 'Unknown')}</div><div id="active-chat-status" class="truncate text-xs text-gray-400mt-0.5">${activeStatusHtml}</div></div></div>`;
   composeInput.disabled = false; sendBtn.disabled = state.sending;
   if (!messages.length) { threadBodyEl.innerHTML = '<div class="flex h-full items-center justify-center text-center text-sm text-gray-500">No messages yet. Say hello to start the conversation.</div>'; refreshIcons(); return; }
   threadBodyEl.innerHTML = `<div class="mx-auto flex max-w-3xl flex-col gap-3">${messages.map((message) => `<div class="flex ${message.isOwn ? 'justify-end' : 'justify-start'}"><div class="flex max-w-[92%] items-start ${message.isOwn ? 'flex-row-reverse' : 'flex-row'}"><div id="chat-bubble-${message.id}" class="transition-all duration-500 max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg ${message.isOwn ? 'bg-fuchsia-600 text-white' : 'border border-white/10 bg-white/[0.06] text-white'}">${renderRepliedTo(message)}${renderForwardedFrom(message)}${message.body ? `<div class="whitespace-pre-wrap break-words text-sm leading-6 ${message.isUnsent ? 'italic text-white/80' : ''}">${escapeHtml(message.body)}</div>` : ''}${renderMessageAttachments(message)}<div class="mt-2 text-[11px] ${message.isOwn ? 'text-fuchsia-100/80' : 'text-gray-400'}">${escapeHtml(formatTime(message.createdAt))}${message.isEdited ? ' � Edited' : ''}${message.isOwn && message.readAt ? ' � Read' : ''}</div></div>${renderMessageMenu(message)}</div></div>`).join('')}</div>`;
@@ -454,9 +505,9 @@ async function handleSocketPayload(payload) {
 function connectSocket() {
   if (state.socket && (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)) return;
   try { state.socket = new WebSocket(socketUrl()); } catch (_e) { scheduleSocketReconnect(); return; }
-  state.socket.addEventListener('open', () => { state.socketConnected = true; setLiveStatus(); clearSocketReconnect(); renderConversationList(); });
+  state.socket.addEventListener('open', () => { state.socketConnected = true; setLiveStatus(); clearSocketReconnect(); renderConversationList(); state.pingInterval = setInterval(() => { if (state.socket && state.socket.readyState === WebSocket.OPEN) { state.socket.send(JSON.stringify({ type: 'ping' }));}}, 15000);});
   state.socket.addEventListener('message', (event) => { try { handleSocketPayload(JSON.parse(event.data || '{}')); } catch (_e) {} });
-  state.socket.addEventListener('close', () => { state.socketConnected = false; setLiveStatus(); renderConversationList(); scheduleSocketReconnect(); });
+  state.socket.addEventListener('close', () => { state.socketConnected = false; setLiveStatus(); renderConversationList(); scheduleSocketReconnect(); if (state.pingInterval) clearInterval(state.pingInterval);});
   state.socket.addEventListener('error', () => { state.socketConnected = false; setLiveStatus(); });
 }
 
@@ -619,5 +670,41 @@ autosizeComposer();
 renderAttachmentPreview();
 renderForwardResults();
 refreshIcons();
+// --- BACKGROUND PRESENCE UPDATER ---
+
+function updateAllPresenceUI() {
+    // 1. Update the Active Chat Header text
+    const conversation = getActiveConversation();
+    if (conversation) {
+        const other = conversation.otherUser || {};
+        const statusEl = document.getElementById('active-chat-status');
+        if (statusEl) statusEl.innerHTML = formatActiveStatus(other.lastActive);
+    }
+    // 2. Redraw the sidebar (to update green dots and time ago)
+    renderConversationList();
+}
+
+async function silentPresencePoll() {
+    if (!state.socketConnected || modal.classList.contains('hidden')) return;
+    try {
+        const data = await getJson('/api/messages/conversations');
+        if (Array.isArray(data.conversations)) {
+            // Update our local cache with the newest timestamps
+            data.conversations.forEach(updatedConvo => {
+                const idx = state.conversations.findIndex(c => Number(c.id) === Number(updatedConvo.id));
+                if (idx >= 0) {
+                    state.conversations[idx].otherUser.lastActive = updatedConvo.otherUser.lastActive;
+                }
+            });
+            // Force the UI to reflect the new times
+            updateAllPresenceUI();
+        }
+    } catch(e) {
+        // Fail silently so the user isn't bothered by network blips
+    }
+}
+
+// Run the silent poll every 15 seconds
+setInterval(silentPresencePoll, 15000);
 })
 ();

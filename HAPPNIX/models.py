@@ -23,7 +23,7 @@ class UserProfile(models.Model):
     gov_id_number = models.CharField(max_length=64, blank=True)
     gov_id_verified = models.BooleanField(default=False)
     is_private = models.BooleanField(default=False)
-
+    last_active = models.DateTimeField(null=True, blank=True)
     def __str__(self):
         return f"{self.user.username} profile"
 
