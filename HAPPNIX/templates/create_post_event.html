@@ -75,16 +75,46 @@
                     class="w-full p-4 bg-slate-800/50 rounded-2xl outline-none resize-none h-32 text-sm text-white placeholder:text-gray-500 focus:ring-2 focus:ring-fuchsia-500/50 transition-all border border-transparent"></textarea>
 
             </div>
+            <div id="post-link-wrap" class="space-y-3">
 
-            <div id="post-submit-wrap">
+                <div class="flex items-center justify-between">
 
-                <button id="post-submit-btn" type="submit"
+                    <label for="post-linked-event-id" class="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">Attach To Event</label>
 
-                    class="w-full mt-4 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 shadow-lg shadow-fuchsia-500/30 hover:scale-[1.02] transition-transform">Drop it</button>
+                    <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300/80">Optional</span>
+
+                </div>
+
+                <div class="rounded-2xl border border-white/10 bg-slate-800/50 px-4 py-3">
+
+                    <select id="post-linked-event-id" class="w-full bg-transparent text-sm text-white outline-none">
+
+                        <option value="">Just a normal post</option>
+
+                    </select>
+
+                </div>
+
+                <p id="post-link-helper" class="text-xs text-gray-400">Choose one of your hosted events to turn this into a highlight.</p>
 
             </div>
 
+            <div id="post-submit-wrap" class="space-y-3">
 
+                <p class="text-[11px] uppercase tracking-[0.24em] text-gray-500">Swipe right to publish. Swipe left to cancel.</p>
+
+                <div class="event-swipe-panel" id="postSwipePanel">
+                    <div class="event-swipe-bg" id="postSwipeBg"></div>
+                    <span class="event-swipe-text event-swipe-left" id="postSwipeTextLeft">Cancel</span>
+                    <span class="event-swipe-text event-swipe-right" id="postSwipeTextRight">Publish</span>
+                    <div class="event-swipe-thumb" id="postSwipeThumb" style="transform: translateX(0px) scale(1);">
+                        <svg class="event-swipe-icon" id="postSwipeIcon" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                </div>
+
+            </div>
 
             <div id="event-fields" class="hidden flex-col gap-6 animation-slide-up">
 
@@ -278,13 +308,14 @@
 
                                 <i data-lucide="calendar-days" class="absolute left-3 top-3.5 w-4 h-4 text-fuchsia-500"></i>
 
-                                <input id="event-date-display" type="text" readonly placeholder="Event date" required
+                                <input id="event-date-display" type="text" readonly placeholder="Date" required
 
                                     data-action="open-event-date-modal" data-input-id="event-date-display"
 
                                     class="w-full pl-9 p-3.5 bg-slate-800/50 rounded-xl outline-none text-sm text-white border border-white/5 focus:border-fuchsia-500/50 focus:bg-slate-800 cursor-pointer">
 
                                 <input id="event-date" type="hidden">
+                                <input id="event-date-multi" type="hidden">
 
                             </div>
 
@@ -305,6 +336,10 @@
                         </div>                        
 
                         <div id="event-advanced-time-row" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                            <input id="event-end-date-display" type="hidden">
+
+                            <input id="event-end-date" type="hidden">
 
                             <div class="relative neon-border rounded-xl transition-all">
 
@@ -334,7 +369,7 @@
 
                                     class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white/10 text-white/70 text-xs leading-none">
 
-                                    ×
+                                    x
 
                                 </button>
 
@@ -841,7 +876,7 @@
 
 
 
-<link rel="stylesheet" href="{% static 'css/create_post_event.css' %}">
+<link rel="stylesheet" href="{% static 'css/create_post_event.css' %}?v=20260320c">
 
 
 
@@ -851,5 +886,5 @@
 
 
 
-<script src="{% static 'js/create_post_event.js' %}"></script>
+<script src="{% static 'js/create_post_event.js' %}?v=20260320c"></script>
 

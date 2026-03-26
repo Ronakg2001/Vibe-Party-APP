@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, signin_signup
+from . import messaging, views, signin_signup
 
 urlpatterns = [
     path('', views.index_page, name='Landing page'),
@@ -16,9 +16,31 @@ urlpatterns = [
     path('api/signup/profile', signin_signup.complete_profile_setup, name='complete-profile-setup'),
     path('api/events/create', views.create_event_api, name='create-event-api'),
     path('api/events/<int:event_id>', views.delete_event_api, name='delete-event-api'),
+    path('api/events/mine', views.my_events_api, name='my-events-api'),
     path('api/events/nearby', views.nearby_events_api, name='nearby-events-api'),
+    path('api/events/live', views.live_events_api, name='live-events-api'),
+    path('api/tickets', views.tickets_api, name='tickets-api'),
+    path('api/tickets/book', views.book_ticket_api, name='book-ticket-api'),
+    path('api/tickets/<int:ticket_id>/cancel', views.cancel_ticket_api, name='cancel-ticket-api'),
+    path('api/tickets/<int:ticket_id>/archive', views.archive_ticket_api, name='archive-ticket-api'),
+    path('api/tickets/<int:ticket_id>/delete', views.delete_ticket_api, name='delete-ticket-api'),
     path('api/users/search', views.search_users_api, name='search-users-api'),
+    path('api/users/follow', views.follow_user_api, name='follow-user-api'),
+    path('api/users/<int:user_id>/profile', views.public_profile_api, name='public-profile-api'),
     path('api/profile/me', views.current_profile_api, name='current-profile-api'),
+    path('api/profile/privacy', views.profile_privacy_api, name='profile-privacy-api'),
+    path('api/profile/follow-requests', views.follow_requests_api, name='follow-requests-api'),
+    path('api/notifications', views.notifications_api, name='notifications-api'),
+    path('api/notifications/activity', views.log_activity_api, name='log-activity-api'),
+    path('api/profile/<str:graph_type>', views.profile_follow_graph_api, name='profile-follow-graph-api'),
+    path('api/messages/conversations', messaging.conversations_api, name='message-conversations-api'),
+    path('api/messages/conversations/start', messaging.start_conversation_api, name='message-start-conversation-api'),
+    path('api/messages/conversations/<int:conversation_id>/messages', messaging.conversation_messages_api, name='message-conversation-messages-api'),
+    path('api/messages/conversations/<int:conversation_id>/read', messaging.mark_conversation_read_api, name='message-conversation-read-api'),
+    path('api/messages/messages/<int:message_id>/edit', messaging.edit_message_api, name='message-edit-api'),
+    path('api/messages/messages/<int:message_id>/forward', messaging.forward_message_api, name='message-forward-api'),
+    path('api/messages/messages/<int:message_id>/delete', messaging.delete_message_for_me_api, name='message-delete-for-me-api'),
+    path('api/messages/messages/<int:message_id>/unsend', messaging.unsend_message_api, name='message-unsend-api'),
     path('location/custom/', views.custom_location_page, name='custom-location'),
     path('party-loader-demo/', views.party_loader_demo_page, name='Party Loader Demo'),
     path('home/', views.Home_page, name='Home Page'),
@@ -26,3 +48,4 @@ urlpatterns = [
     path('api/auth/aadhaar/send-otp', signin_signup.send_aadhaar_otp_api, name='send-aadhaar-otp'),
     path('api/auth/aadhaar/verify-otp', signin_signup.verify_aadhaar_otp_api, name='verify-aadhaar-otp'),
 ]
+

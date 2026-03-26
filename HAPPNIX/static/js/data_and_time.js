@@ -16,7 +16,12 @@ const eventCalendarState = {
     viewYear: new Date().getFullYear(),
     viewMonth: new Date().getMonth(),
     selectedDate: '',
-    targetInputId: 'event-date-display'
+    selectedDates: [],
+    targetInputId: 'event-date-display',
+    dragMode: '',
+    dragVisitedDates: [],
+    dragDidMove: false,
+    suppressCalendarClick: false
 };
 
 function formatTime12(hour12, minute, period) {
@@ -76,23 +81,69 @@ function startAnalogLiveTicker() {
     }, 1000);
 }
 
+function normalizeEventDateKeys(dateKeys) {
+    const todayKey = getTodayDateKey();
+    return Array.from(new Set((Array.isArray(dateKeys) ? dateKeys : [])
+        .map((dateKey) => String(dateKey || '').trim())
+        .filter((dateKey) => !!parseDateParts(dateKey) && dateKey >= todayKey))).sort();
+}
+
+function parseStoredEventDateKeys(rawValue) {
+    const raw = String(rawValue || '').trim();
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return normalizeEventDateKeys(parsed);
+        }
+    } catch (_error) {
+        // Fall back to comma-separated values.
+    }
+    return normalizeEventDateKeys(raw.split(','));
+}
+
+function serializeEventDateKeys(dateKeys) {
+    const normalized = normalizeEventDateKeys(dateKeys);
+    return normalized.length > 0 ? JSON.stringify(normalized) : '';
+}
+
+function getStartEventDateKeys() {
+    const multiInput = document.getElementById('event-date-multi');
+    const parsedMulti = parseStoredEventDateKeys(multiInput?.value || '');
+    if (parsedMulti.length > 0) return parsedMulti;
+    const singleDate = document.getElementById('event-date')?.value || '';
+    return singleDate ? [singleDate] : [];
+}
+
+function getPrimaryStartEventDateKey() {
+    return getStartEventDateKeys()[0] || '';
+}
+
+function getAnalogTargetDateKey() {
+    if (analogClockState.targetInputId === 'event-end-time-display') {
+        return document.getElementById('event-end-date')?.value || getPrimaryStartEventDateKey();
+    }
+    return getPrimaryStartEventDateKey();
+}
+
 function isTodayEventDateSelected() {
-    const selectedDate = document.getElementById('event-date')?.value || '';
-    return selectedDate && selectedDate === getTodayDateKey();
+    const selectedDate = getAnalogTargetDateKey();
+    return !!selectedDate && selectedDate === getTodayDateKey();
 }
 
 function isAnalogCandidateAllowed(hour12, minute, period) {
     const candidateTime = to24HourTime(hour12, minute, period);
-    if (isTodayEventDateSelected() && !isFutureEventDateTime(getTodayDateKey(), candidateTime)) {
+    const targetDateKey = getAnalogTargetDateKey();
+    if (targetDateKey && targetDateKey === getTodayDateKey() && !isFutureEventDateTime(targetDateKey, candidateTime)) {
         return false;
     }
-    // If user is selecting end time, enforce duration window [30 min, 24 hr].
     if (analogClockState.targetInputId === 'event-end-time-display') {
-        const startTime = document.getElementById('event-time')?.value || '';
-        if (startTime) {
-            const duration = calculateDurationMinutesFromTimes(startTime, candidateTime);
-            if (duration === null) return false;
-            if (duration < 30 || duration > 24 * 60) return false;
+        const startDate = getPrimaryStartEventDateKey();
+        const startTime = document.getElementById('event-time')?.value || '00:00';
+        const endDate = document.getElementById('event-end-date')?.value || '';
+        if (startDate) {
+            const duration = calculateDurationMinutesFromTimes(startTime, candidateTime, startDate, endDate);
+            if (duration === null || duration < 30 || duration > 24 * 60) return false;
         }
     }
     return true;
@@ -127,7 +178,30 @@ function time24ToMinutes(time24) {
     return (hour24 * 60) + parsed.minute;
 }
 
-function calculateDurationMinutesFromTimes(startTime24, endTime24) {
+function calculateDurationMinutesFromDateTimes(startDateKey, startTime24, endDateKey, endTime24, options = {}) {
+    if (!startDateKey || !startTime24 || !endTime24) return null;
+    const startAt = new Date(`${startDateKey}T${startTime24}:00`);
+    const baseEndDate = endDateKey || startDateKey;
+    const endAt = new Date(`${baseEndDate}T${endTime24}:00`);
+    if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
+    if (options.allowImplicitOvernight && endAt.getTime() <= startAt.getTime()) {
+        endAt.setDate(endAt.getDate() + 1);
+    }
+    const diffMinutes = Math.round((endAt.getTime() - startAt.getTime()) / 60000);
+    return diffMinutes > 0 ? diffMinutes : null;
+}
+
+function calculateDurationMinutesFromTimes(startTime24, endTime24, startDateKey = '', endDateKey = '') {
+    const effectiveStartDate = startDateKey || getPrimaryStartEventDateKey();
+    if (effectiveStartDate) {
+        return calculateDurationMinutesFromDateTimes(
+            effectiveStartDate,
+            startTime24,
+            endDateKey || document.getElementById('event-end-date')?.value || '',
+            endTime24,
+            { allowImplicitOvernight: !(endDateKey || document.getElementById('event-end-date')?.value || '') }
+        );
+    }
     const startMin = time24ToMinutes(startTime24);
     const endMin = time24ToMinutes(endTime24);
     if (startMin === null || endMin === null) return null;
@@ -150,13 +224,13 @@ function parseDurationDisplayToMinutes(value) {
     const raw = String(value || '').trim().toLowerCase();
     if (!raw) return 0;
 
-    if (/^\\d+$/.test(raw)) {
+    if (/^\d+$/.test(raw)) {
         const minutesOnly = Number(raw);
         return Number.isFinite(minutesOnly) && minutesOnly > 0 ? minutesOnly : 0;
     }
 
-    const compact = raw.replace(/\\s+/g, '');
-    const bothMatch = /^(\\d+)h(?:ours?)?(\\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    const compact = raw.replace(/\s+/g, '');
+    const bothMatch = /^(\d+)h(?:ours?)?(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
     if (bothMatch) {
         const h = Number(bothMatch[1]);
         const m = Number(bothMatch[2]);
@@ -164,20 +238,20 @@ function parseDurationDisplayToMinutes(value) {
         return Number.isFinite(total) && total > 0 ? total : 0;
     }
 
-    const hourMatch = /^(\\d+)h(?:ours?)?$/.exec(compact);
+    const hourMatch = /^(\d+)h(?:ours?)?$/.exec(compact);
     if (hourMatch) {
         const h = Number(hourMatch[1]);
         const total = h * 60;
         return Number.isFinite(total) && total > 0 ? total : 0;
     }
 
-    const minMatch = /^(\\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
+    const minMatch = /^(\d+)m(?:in(?:ute)?s?)?$/.exec(compact);
     if (minMatch) {
         const m = Number(minMatch[1]);
         return Number.isFinite(m) && m > 0 ? m : 0;
     }
 
-    const clockMatch = /^(\\d{1,2}):(\\d{1,2})$/.exec(raw);
+    const clockMatch = /^(\d{1,2}):(\d{1,2})$/.exec(raw);
     if (clockMatch) {
         const h = Number(clockMatch[1]);
         const m = Number(clockMatch[2]);
@@ -220,19 +294,21 @@ function clearDurationSelection() {
 }
 
 function recalculateEventDurationFromTimes() {
-    const startTime = document.getElementById('event-time')?.value || '';
+    const startDate = getPrimaryStartEventDateKey();
+    const startTime = document.getElementById('event-time')?.value || '00:00';
+    const endDate = document.getElementById('event-end-date')?.value || '';
     const endTime = document.getElementById('event-end-time')?.value || '';
     const durationHidden = document.getElementById('event-duration-minutes');
     const durationDisplay = document.getElementById('event-duration-display');
     if (!durationHidden || !durationDisplay) return;
 
-    if (!endTime || !startTime) {
+    if (!endTime || !startTime || !startDate) {
         durationDisplay.readOnly = false;
         syncDurationHiddenFromDisplay();
         return;
     }
 
-    const delta = calculateDurationMinutesFromTimes(startTime, endTime);
+    const delta = calculateDurationMinutesFromTimes(startTime, endTime, startDate, endDate);
     if (delta === null) {
         durationDisplay.readOnly = false;
         syncDurationHiddenFromDisplay();
@@ -249,56 +325,57 @@ function syncEventTimeDependencyUi() {
     const startHidden = document.getElementById('event-time');
     const advancedRow = document.getElementById('event-advanced-time-row');
     const timeChoiceHint = document.getElementById('event-time-choice-hint');
+    const endDateDisplay = document.getElementById('event-end-date-display');
+    const endDateHidden = document.getElementById('event-end-date');
     const endDisplay = document.getElementById('event-end-time-display');
     const endHidden = document.getElementById('event-end-time');
     const durationDisplay = document.getElementById('event-duration-display');
     const durationHidden = document.getElementById('event-duration-minutes');
-    if (!dateHidden || !startDisplay || !startHidden || !advancedRow || !endDisplay || !endHidden || !durationDisplay || !durationHidden) return;
+    if (!dateHidden || !startDisplay || !startHidden || !advancedRow || !endDateDisplay || !endDateHidden || !endDisplay || !endHidden || !durationDisplay || !durationHidden) return;
 
     const hasDate = Boolean(dateHidden.value);
     startDisplay.disabled = !hasDate;
     if (!hasDate) {
         startDisplay.value = '';
         startHidden.value = '';
+        endDateDisplay.value = '';
+        endDateHidden.value = '';
         endDisplay.value = '';
         endHidden.value = '';
         durationDisplay.value = '';
         durationHidden.value = '';
+        durationDisplay.disabled = true;
         durationDisplay.readOnly = false;
         advancedRow.classList.add('hidden');
         if (timeChoiceHint) timeChoiceHint.classList.add('hidden');
         return;
     }
 
-    const hasStart = Boolean(startHidden.value);
-    advancedRow.classList.toggle('hidden', !hasStart);
-    if (timeChoiceHint) timeChoiceHint.classList.toggle('hidden', !hasStart);
-    if (!hasStart) {
-        endDisplay.value = '';
-        endHidden.value = '';
-        durationDisplay.value = '';
-        durationHidden.value = '';
-        durationDisplay.readOnly = false;
-        endDisplay.disabled = true;
-        durationDisplay.disabled = true;
-        return;
-    }
+    advancedRow.classList.remove('hidden');
+    if (timeChoiceHint) timeChoiceHint.classList.remove('hidden');
 
+    const hasVisibleEndDateField = endDateDisplay.type !== 'hidden' && !endDateDisplay.classList.contains('hidden');
+    const hasEndDate = hasVisibleEndDateField && Boolean(endDateHidden.value);
     const hasEnd = Boolean(endHidden.value);
     const manualDurationMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
-    const hasManualDuration = !hasEnd && manualDurationMinutes > 0;
+    const hasManualDuration = !hasEnd && !hasEndDate && manualDurationMinutes > 0;
 
-    if (hasEnd) {
+    if (hasEndDate || hasEnd) {
+        endDateDisplay.disabled = false;
         endDisplay.disabled = false;
         durationDisplay.disabled = true;
         durationDisplay.readOnly = true;
     } else if (hasManualDuration) {
+        endDateDisplay.disabled = true;
         endDisplay.disabled = true;
         durationDisplay.disabled = false;
         durationDisplay.readOnly = false;
+        endDateHidden.value = '';
+        endDateDisplay.value = '';
         endHidden.value = '';
         endDisplay.value = '';
     } else {
+        endDateDisplay.disabled = false;
         endDisplay.disabled = false;
         durationDisplay.disabled = false;
         durationDisplay.readOnly = false;
@@ -532,10 +609,6 @@ function openAnalogTimeModal(inputId) {
         return;
     }
     if (analogClockState.targetInputId === 'event-end-time-display') {
-        if (!startTimeValue) {
-            setLocationStatus('Please select start time first.', true);
-            return;
-        }
         const hasManualDuration = parseDurationDisplayToMinutes(durationDisplay?.value || '') > 0 && !durationDisplay?.readOnly;
         if (hasManualDuration) {
             setLocationStatus('Choose either End Time or Duration.', true);
@@ -654,6 +727,57 @@ function localDateToDateKey(localDate) {
     return toDateKey(localDate.getFullYear(), localDate.getMonth(), localDate.getDate());
 }
 
+function getEventCalendarSelectionKeys() {
+    if (eventCalendarState.targetInputId === 'event-date-display') {
+        return normalizeEventDateKeys(eventCalendarState.selectedDates);
+    }
+    return eventCalendarState.selectedDate ? [eventCalendarState.selectedDate] : [];
+}
+
+function setEventCalendarSelectionKeys(dateKeys) {
+    const normalized = normalizeEventDateKeys(dateKeys);
+    if (eventCalendarState.targetInputId === 'event-date-display') {
+        eventCalendarState.selectedDates = normalized;
+        eventCalendarState.selectedDate = normalized[normalized.length - 1] || '';
+        return;
+    }
+    eventCalendarState.selectedDates = normalized.slice(0, 1);
+    eventCalendarState.selectedDate = eventCalendarState.selectedDates[0] || '';
+}
+
+function toggleEventCalendarDateKey(dateKey, forceMode = '') {
+    const current = getEventCalendarSelectionKeys();
+    const exists = current.includes(dateKey);
+    const mode = forceMode || (exists ? 'remove' : 'add');
+    if (eventCalendarState.targetInputId === 'event-date-display') {
+        const next = mode === 'add' ? [...current, dateKey] : current.filter((item) => item !== dateKey);
+        setEventCalendarSelectionKeys(next);
+    } else {
+        setEventCalendarSelectionKeys(mode === 'remove' && exists ? [] : [dateKey]);
+    }
+}
+
+function formatCompactDate(dateKey) {
+    const localDate = dateKeyToLocalDate(dateKey);
+    return localDate ? localDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : dateKey;
+}
+
+function formatEventDateSelectionDisplay(dateKeys) {
+    const normalized = normalizeEventDateKeys(dateKeys);
+    if (normalized.length === 0) return '';
+    if (normalized.length === 1) return formatDateDisplay(normalized[0]);
+    const firstDate = normalized[0];
+    const lastDate = normalized[normalized.length - 1];
+    const suffix = normalized.length > 2 ? ` (+${normalized.length - 2} more)` : '';
+    return `${formatCompactDate(firstDate)} - ${formatCompactDate(lastDate)}${suffix}`;
+}
+
+function stopEventCalendarDrag() {
+    eventCalendarState.dragMode = '';
+    eventCalendarState.dragVisitedDates = [];
+    eventCalendarState.dragDidMove = false;
+}
+
 function getSafeSelectedOrTodayDateKey() {
     const todayKey = getTodayDateKey();
     if (!eventCalendarState.selectedDate) return todayKey;
@@ -749,6 +873,9 @@ function moveEventDateSelectionByDays(daysDelta) {
     if (nextKey < todayKey) nextKey = todayKey;
 
     eventCalendarState.selectedDate = nextKey;
+    if (eventCalendarState.targetInputId === 'event-date-display') {
+        eventCalendarState.selectedDates = [nextKey];
+    }
     setCalendarViewToSelectedDate(nextKey);
     renderEventCalendar();
 }
@@ -829,11 +956,13 @@ function renderEventCalendar() {
     const startWeekday = firstDay.getDay();
     const daysInMonth = new Date(eventCalendarState.viewYear, eventCalendarState.viewMonth + 1, 0).getDate();
     const todayKey = getTodayDateKey();
+    const selectedKeys = getEventCalendarSelectionKeys();
+    const selectedSet = new Set(selectedKeys);
 
     monthLabel.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    preview.textContent = eventCalendarState.selectedDate
-        ? formatDateDisplay(eventCalendarState.selectedDate)
-        : 'No date selected';
+    preview.textContent = eventCalendarState.targetInputId === 'event-date-display'
+        ? (selectedKeys.length > 0 ? formatEventDateSelectionDisplay(selectedKeys) : 'No date selected')
+        : (eventCalendarState.selectedDate ? formatDateDisplay(eventCalendarState.selectedDate) : 'No date selected');
 
     const cells = [];
     for (let i = 0; i < startWeekday; i += 1) {
@@ -843,7 +972,7 @@ function renderEventCalendar() {
     for (let day = 1; day <= daysInMonth; day += 1) {
         const dateKey = toDateKey(eventCalendarState.viewYear, eventCalendarState.viewMonth, day);
         const isPast = dateKey < todayKey;
-        const isSelected = dateKey === eventCalendarState.selectedDate;
+        const isSelected = selectedSet.has(dateKey);
         cells.push(
             `<button type="button" class="event-calendar-cell${isSelected ? ' is-selected' : ''}${isPast ? ' is-disabled' : ''}" ${isPast ? 'disabled' : ''} data-date="${dateKey}">${day}</button>`
         );
@@ -851,9 +980,41 @@ function renderEventCalendar() {
 
     grid.innerHTML = cells.join('');
     grid.querySelectorAll('button[data-date]').forEach((buttonEl) => {
-        buttonEl.addEventListener('click', () => {
-            eventCalendarState.selectedDate = buttonEl.getAttribute('data-date') || '';
+        buttonEl.addEventListener('pointerdown', (event) => {
+            const dateKey = buttonEl.getAttribute('data-date') || '';
+            if (!dateKey) return;
+            const alreadySelected = selectedSet.has(dateKey);
+            eventCalendarState.dragMode = alreadySelected ? 'remove' : 'add';
+            eventCalendarState.dragVisitedDates = [dateKey];
+            eventCalendarState.dragDidMove = false;
+            eventCalendarState.suppressCalendarClick = true;
+            toggleEventCalendarDateKey(dateKey, eventCalendarState.dragMode);
             renderEventCalendar();
+            event.preventDefault();
+        });
+        buttonEl.addEventListener('pointerenter', () => {
+            const dateKey = buttonEl.getAttribute('data-date') || '';
+            if (!dateKey || !eventCalendarState.dragMode) return;
+            if (eventCalendarState.dragVisitedDates.includes(dateKey)) return;
+            eventCalendarState.dragVisitedDates.push(dateKey);
+            eventCalendarState.dragDidMove = true;
+            toggleEventCalendarDateKey(dateKey, eventCalendarState.dragMode);
+            renderEventCalendar();
+        });
+        buttonEl.addEventListener('click', (event) => {
+            const dateKey = buttonEl.getAttribute('data-date') || '';
+            if (!dateKey) return;
+            if (eventCalendarState.suppressCalendarClick) {
+                eventCalendarState.suppressCalendarClick = false;
+                event.preventDefault();
+                if (eventCalendarState.dragDidMove) {
+                    stopEventCalendarDrag();
+                }
+                return;
+            }
+            toggleEventCalendarDateKey(dateKey);
+            renderEventCalendar();
+            event.preventDefault();
         });
     });
     renderEventMonthYearPicker();
@@ -865,15 +1026,44 @@ function openEventDateModal(inputId) {
     const card = document.getElementById('event-date-modal-card');
     if (!modal || !card) return;
 
-    const hiddenDate = document.getElementById('event-date');
-    const selectedDate = hiddenDate?.value || getTodayDateKey();
-    const parsed = parseDateParts(selectedDate);
-    if (parsed) {
+    if (eventCalendarState.targetInputId === 'event-end-date-display') {
+        const startDate = getPrimaryStartEventDateKey();
+        if (!startDate) {
+            setLocationStatus('Please select start date first.', true);
+            return;
+        }
+        const hiddenEndDate = document.getElementById('event-end-date');
+        const selectedDate = hiddenEndDate?.value || startDate;
+        setEventCalendarSelectionKeys(selectedDate ? [selectedDate] : []);
         eventCalendarState.selectedDate = selectedDate;
-        eventCalendarState.viewYear = parsed.year;
-        eventCalendarState.viewMonth = parsed.month - 1;
+        const parsed = parseDateParts(selectedDate || startDate);
+        if (parsed) {
+            eventCalendarState.viewYear = parsed.year;
+            eventCalendarState.viewMonth = parsed.month - 1;
+        }
+    } else {
+        const selectedDates = getStartEventDateKeys();
+        if (selectedDates.length > 0) {
+            setEventCalendarSelectionKeys(selectedDates);
+            const anchorDate = selectedDates[selectedDates.length - 1];
+            const parsed = parseDateParts(anchorDate);
+            if (parsed) {
+                eventCalendarState.viewYear = parsed.year;
+                eventCalendarState.viewMonth = parsed.month - 1;
+            }
+        } else {
+            const todayKey = getTodayDateKey();
+            setEventCalendarSelectionKeys([]);
+            eventCalendarState.selectedDate = todayKey;
+            const parsed = parseDateParts(todayKey);
+            if (parsed) {
+                eventCalendarState.viewYear = parsed.year;
+                eventCalendarState.viewMonth = parsed.month - 1;
+            }
+        }
     }
     closeEventMonthYearPicker();
+    stopEventCalendarDrag();
     renderEventCalendar();
 
     modal.classList.remove('hidden');
@@ -887,6 +1077,7 @@ function closeEventDateModal() {
     const modal = document.getElementById('event-date-modal');
     const card = document.getElementById('event-date-modal-card');
     if (!modal || !card) return;
+    stopEventCalendarDrag();
     closeEventMonthYearPicker();
     modal.classList.add('opacity-0');
     card.classList.add('scale-95');
@@ -904,36 +1095,97 @@ function changeEventCalendarMonth(step) {
 }
 
 function saveEventDateSelection() {
-    const dateValue = eventCalendarState.selectedDate || '';
-    if (!dateValue) {
-        setLocationStatus('Please select a date.', true);
+    if (eventCalendarState.targetInputId === 'event-end-date-display') {
+        const startDate = getPrimaryStartEventDateKey();
+        const endDateValue = eventCalendarState.selectedDate || '';
+        if (!endDateValue) {
+            setLocationStatus('Please select a date.', true);
+            return;
+        }
+        if (endDateValue < startDate) {
+            setLocationStatus('End date cannot be before the start date.', true);
+            return;
+        }
+        const hiddenEndDate = document.getElementById('event-end-date');
+        const displayEndDate = document.getElementById('event-end-date-display');
+        if (hiddenEndDate) hiddenEndDate.value = endDateValue;
+        if (displayEndDate) displayEndDate.value = formatDateDisplay(endDateValue);
+
+        const startTime = document.getElementById('event-time')?.value || '00:00';
+        const hiddenEndTime = document.getElementById('event-end-time');
+        const displayEndTime = document.getElementById('event-end-time-display');
+        if (startDate && hiddenEndTime?.value) {
+            const delta = calculateDurationMinutesFromTimes(startTime, hiddenEndTime.value, startDate, endDateValue);
+            if (delta === null || delta < 30 || delta > 24 * 60) {
+                hiddenEndTime.value = '';
+                if (displayEndTime) displayEndTime.value = '';
+                recalculateEventDurationFromTimes();
+                setLocationStatus('Selected end date changed. Please re-select end time.', true);
+            } else {
+                setLocationStatus('');
+            }
+        }
+        syncEventTimeDependencyUi();
+        closeEventDateModal();
         return;
     }
-    if (dateValue < getTodayDateKey()) {
-        setLocationStatus('Past dates are not allowed.', true);
+
+    const selectedDates = getEventCalendarSelectionKeys();
+    if (selectedDates.length === 0) {
+        setLocationStatus('Please select at least one date.', true);
         return;
     }
+    const primaryDate = selectedDates[0];
     const hiddenDate = document.getElementById('event-date');
-    const displayInput = document.getElementById(eventCalendarState.targetInputId || 'event-date-display');
-    if (hiddenDate) hiddenDate.value = dateValue;
-    if (displayInput) displayInput.value = formatDateDisplay(dateValue);
+    const hiddenMulti = document.getElementById('event-date-multi');
+    const displayInput = document.getElementById('event-date-display');
+    if (hiddenDate) hiddenDate.value = primaryDate;
+    if (hiddenMulti) hiddenMulti.value = serializeEventDateKeys(selectedDates);
+    if (displayInput) displayInput.value = formatEventDateSelectionDisplay(selectedDates);
 
     const hiddenTime = document.getElementById('event-time');
     const displayTime = document.getElementById('event-time-display');
+    const hiddenEndDate = document.getElementById('event-end-date');
+    const displayEndDate = document.getElementById('event-end-date-display');
     const hiddenEndTime = document.getElementById('event-end-time');
     const displayEndTime = document.getElementById('event-end-time-display');
-    if (hiddenTime?.value && !isFutureEventDateTime(dateValue, hiddenTime.value)) {
+    const durationDisplay = document.getElementById('event-duration-display');
+    const durationHidden = document.getElementById('event-duration-minutes');
+    const derivedEndDate = selectedDates.length > 1 ? selectedDates[selectedDates.length - 1] : '';
+    if (hiddenEndDate) hiddenEndDate.value = derivedEndDate;
+    if (displayEndDate) displayEndDate.value = derivedEndDate ? formatDateDisplay(derivedEndDate) : '';
+
+    if (hiddenTime?.value && !isFutureEventDateTime(primaryDate, hiddenTime.value)) {
         hiddenTime.value = '';
         if (displayTime) displayTime.value = '';
+        if (hiddenEndDate) hiddenEndDate.value = derivedEndDate;
+        if (displayEndDate) displayEndDate.value = derivedEndDate ? formatDateDisplay(derivedEndDate) : '';
+        if (hiddenEndTime) hiddenEndTime.value = '';
+        if (displayEndTime) displayEndTime.value = '';
+        if (durationDisplay) {
+            durationDisplay.value = '';
+            durationDisplay.readOnly = false;
+        }
+        if (durationHidden) durationHidden.value = '';
+        recalculateEventDurationFromTimes();
+        setLocationStatus('Selected start date changed. Please re-select time.', true);
+    } else if (hiddenEndDate?.value && hiddenEndDate.value < primaryDate) {
+        hiddenEndDate.value = '';
+        if (displayEndDate) displayEndDate.value = '';
         if (hiddenEndTime) hiddenEndTime.value = '';
         if (displayEndTime) displayEndTime.value = '';
         recalculateEventDurationFromTimes();
-        setLocationStatus('Selected date changed. Please re-select time.', true);
-    } else if (hiddenEndTime?.value && !isFutureEventDateTime(dateValue, hiddenEndTime.value)) {
-        hiddenEndTime.value = '';
-        if (displayEndTime) displayEndTime.value = '';
-        recalculateEventDurationFromTimes();
-        setLocationStatus('Selected date changed. End time was cleared.', true);
+        setLocationStatus('Selected start date changed. End date/time was cleared.', true);
+    } else if (hiddenEndTime?.value) {
+        const delta = calculateDurationMinutesFromTimes(hiddenTime?.value || '', hiddenEndTime.value, primaryDate, hiddenEndDate?.value || '');
+        if (delta === null || delta < 30 || delta > 24 * 60) {
+            hiddenEndTime.value = '';
+            if (displayEndTime) displayEndTime.value = '';
+            recalculateEventDurationFromTimes();
+            setLocationStatus('Selected start date changed. End time was cleared.', true);
+        } else {
+            setLocationStatus('');
+        }
     } else {
         setLocationStatus('');
     }
@@ -942,24 +1194,40 @@ function saveEventDateSelection() {
 }
 
 function clearEventDateSelection() {
+    if (eventCalendarState.targetInputId === 'event-end-date-display') {
+        const hiddenEndDate = document.getElementById('event-end-date');
+        const displayEndDate = document.getElementById('event-end-date-display');
+        if (hiddenEndDate) hiddenEndDate.value = '';
+        if (displayEndDate) displayEndDate.value = '';
+        eventCalendarState.selectedDate = '';
+        syncEventTimeDependencyUi();
+        closeEventDateModal();
+        return;
+    }
+
     const hiddenDate = document.getElementById('event-date');
-    const displayInput = document.getElementById(eventCalendarState.targetInputId || 'event-date-display');
+    const hiddenMulti = document.getElementById('event-date-multi');
+    const displayInput = document.getElementById('event-date-display');
     if (hiddenDate) hiddenDate.value = '';
+    if (hiddenMulti) hiddenMulti.value = '';
     if (displayInput) displayInput.value = '';
     eventCalendarState.selectedDate = '';
+    eventCalendarState.selectedDates = [];
     const hiddenTime = document.getElementById('event-time');
     const displayTime = document.getElementById('event-time-display');
+    const hiddenEndDate = document.getElementById('event-end-date');
+    const displayEndDate = document.getElementById('event-end-date-display');
     const hiddenEndTime = document.getElementById('event-end-time');
     const displayEndTime = document.getElementById('event-end-time-display');
     const durationInput = document.getElementById('event-duration-minutes');
     const durationDisplay = document.getElementById('event-duration-display');
     if (hiddenTime) hiddenTime.value = '';
     if (displayTime) displayTime.value = '';
+    if (hiddenEndDate) hiddenEndDate.value = '';
+    if (displayEndDate) displayEndDate.value = '';
     if (hiddenEndTime) hiddenEndTime.value = '';
     if (displayEndTime) displayEndTime.value = '';
-    if (durationInput) {
-        durationInput.value = '';
-    }
+    if (durationInput) durationInput.value = '';
     if (durationDisplay) {
         durationDisplay.value = '';
         durationDisplay.readOnly = false;
@@ -969,8 +1237,7 @@ function clearEventDateSelection() {
 }
 
 function saveAnalogTimeSelection() {
-    const dateInput = document.getElementById('event-date');
-    const dateValue = dateInput?.value || '';
+    const dateValue = getAnalogTargetDateKey();
     const time24 = to24HourTime(analogClockState.hour, analogClockState.minute, analogClockState.period);
     if (dateValue && !isFutureEventDateTime(dateValue, time24)) {
         setLocationStatus('Please select a future time for the selected date.', true);
@@ -984,14 +1251,20 @@ function saveAnalogTimeSelection() {
 
 function initEventDateTimePicker() {
     const dateInput = document.getElementById('event-date');
+    const dateMultiInput = document.getElementById('event-date-multi');
     const dateDisplayInput = document.getElementById('event-date-display');
+    const endDateInput = document.getElementById('event-end-date');
+    const endDateDisplayInput = document.getElementById('event-end-date-display');
     if (!dateInput || !dateDisplayInput) return;
 
-    const selectedDate = dateInput.value || '';
-    if (selectedDate) {
-        dateDisplayInput.value = formatDateDisplay(selectedDate);
-        eventCalendarState.selectedDate = selectedDate;
-        const parsed = parseDateParts(selectedDate);
+    const selectedDates = getStartEventDateKeys();
+    if (selectedDates.length > 0) {
+        dateInput.value = selectedDates[0];
+        if (dateMultiInput) dateMultiInput.value = serializeEventDateKeys(selectedDates);
+        dateDisplayInput.value = formatEventDateSelectionDisplay(selectedDates);
+        eventCalendarState.selectedDates = [...selectedDates];
+        eventCalendarState.selectedDate = selectedDates[selectedDates.length - 1];
+        const parsed = parseDateParts(eventCalendarState.selectedDate);
         if (parsed) {
             eventCalendarState.viewYear = parsed.year;
             eventCalendarState.viewMonth = parsed.month - 1;
@@ -1001,11 +1274,17 @@ function initEventDateTimePicker() {
         eventCalendarState.viewYear = today.getFullYear();
         eventCalendarState.viewMonth = today.getMonth();
     }
+
+    if (endDateInput?.value && endDateDisplayInput) {
+        endDateDisplayInput.value = formatDateDisplay(endDateInput.value);
+    }
     syncEventTimeDependencyUi();
 }
 
 function initEventCalendarKeyboardNavigation() {
     document.addEventListener('keydown', handleEventCalendarKeyboard);
+    window.addEventListener('pointerup', stopEventCalendarDrag);
+    window.addEventListener('pointercancel', stopEventCalendarDrag);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

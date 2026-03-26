@@ -1,0 +1,85 @@
+<div id="messages-modal"
+    class="fixed inset-0 z-[79] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
+    <div id="messages-card"
+        class="absolute left-1/2 top-1/2 flex h-[92vh] w-[95%] max-w-6xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-900 shadow-2xl transform scale-95 transition-transform duration-300 md:h-[84vh] md:flex-row">
+        <aside class="flex w-full flex-col border-b border-white/10 bg-white/[0.03] md:w-[360px] md:border-b-0 md:border-r">
+            <div class="border-b border-white/10 p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-xl font-black text-white">Messages</h3>
+                        <p id="message-live-status" class="text-xs uppercase tracking-[0.24em] text-gray-500">Two-way chat</p>
+                    </div>
+                    <button type="button" data-action="close-messages" class="text-gray-400 hover:text-white">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div class="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+                    <label for="message-user-search" class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Start chat</label>
+                    <div class="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                        <i data-lucide="search" class="w-4 h-4 text-gray-500"></i>
+                        <input id="message-user-search" type="text" placeholder="Search username or name"
+                            class="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-500" autocomplete="off">
+                    </div>
+                    <div id="message-user-search-results" class="mt-3 space-y-2"></div>
+                </div>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto p-3">
+                <div id="message-conversation-status" class="px-3 py-4 text-xs uppercase tracking-[0.18em] text-gray-500">Your conversations</div>
+                <div id="message-conversation-list" class="space-y-2"></div>
+            </div>
+        </aside>
+        <section class="flex min-h-0 flex-1 flex-col">
+            <div id="message-thread-header" class="border-b border-white/10 p-5">
+                <div class="text-sm text-gray-400">Select a conversation to start messaging.</div>
+            </div>
+            <div id="message-thread-body" class="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(168,85,247,0.12),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-4 md:p-6">
+                <div class="flex h-full items-center justify-center text-center text-sm text-gray-500">Pick someone from the left or search for a user to begin.</div>
+            </div>
+            <div class="border-t border-white/10 p-4 md:p-5">
+                <div id="message-compose-status" class="mb-2 hidden text-sm text-rose-300"></div>
+                <div id="message-forward-panel" class="mb-3 hidden rounded-2xl border border-sky-400/20 bg-sky-500/10 p-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-200/80">Forward message</div>
+                            <div id="message-forward-status" class="mt-1 text-sm text-sky-100">Choose a conversation or search for someone.</div>
+                        </div>
+                        <button id="message-forward-cancel-btn" type="button" class="text-xs font-semibold text-sky-100/80 hover:text-white">Cancel</button>
+                    </div>
+                    <div class="mt-3 rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2.5">
+                        <input id="message-forward-search" type="text" placeholder="Search conversations or username"
+                            class="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-500" autocomplete="off">
+                    </div>
+                    <div id="message-forward-results" class="mt-3 space-y-2"></div>
+                </div>
+                <div id="message-compose-preview" class="mb-3 hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                        <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Ready to send</div>
+                        <button id="message-clear-preview-btn" type="button" class="text-xs font-semibold text-gray-400 hover:text-white">Clear</button>
+                    </div>
+                    <div id="message-compose-preview-items" class="space-y-2"></div>
+                </div>
+                <input id="message-attachment-input" type="file" class="hidden" multiple>
+                <div class="flex items-end gap-3 rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-3">
+                    <div class="flex flex-col gap-2">
+                        <button id="message-attach-btn" type="button"
+                            class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white transition hover:bg-white/[0.08]"
+                            aria-label="Add attachment">
+                            <i data-lucide="paperclip" class="w-4 h-4"></i>
+                        </button>
+                        <button id="message-voice-btn" type="button"
+                            class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white transition hover:bg-white/[0.08]"
+                            aria-label="Record voice note">
+                            <i data-lucide="mic" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <textarea id="message-compose-input" rows="1" maxlength="2000" placeholder="Write a message"
+                        class="max-h-36 min-h-[44px] flex-1 resize-none bg-transparent text-sm text-white outline-none placeholder:text-gray-500"></textarea>
+                    <button id="message-send-btn" type="button"
+                        class="inline-flex h-11 min-w-[96px] items-center justify-center rounded-full bg-fuchsia-600 px-5 text-sm font-bold text-white shadow-lg shadow-fuchsia-900/25 transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-50">
+                        Send
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>

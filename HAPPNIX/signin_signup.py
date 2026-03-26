@@ -1,6 +1,10 @@
 import re
-import requests
 import json
+
+try:
+    import requests
+except Exception:  # pragma: no cover - optional in local/dev envs
+    requests = None
 from django.contrib.auth import authenticate, get_user_model, login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -9,6 +13,7 @@ from django.http import JsonResponse
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 from . import mongo_store
 from .models import UserProfile
@@ -16,6 +21,7 @@ from .models import UserProfile
 from .utils import _json_body, _error, _generate_otp, _calculate_age
 
 
+@csrf_exempt
 @require_POST
 def forgot_password_request(request):
     payload = _json_body(request)
@@ -38,6 +44,7 @@ def forgot_password_request(request):
     return JsonResponse({"message": message})
 
 
+@csrf_exempt
 @require_POST
 def send_mobile_otp(request):
     payload = _json_body(request)
@@ -61,6 +68,7 @@ def send_mobile_otp(request):
     )
 
 
+@csrf_exempt
 @require_POST
 def resend_mobile_otp(request):
     payload = _json_body(request)
@@ -82,6 +90,7 @@ def resend_mobile_otp(request):
     )
 
 
+@csrf_exempt
 @require_POST
 def verify_mobile_otp(request):
     payload = _json_body(request)
@@ -132,6 +141,7 @@ def verify_mobile_otp(request):
     )
 
 
+@csrf_exempt
 @require_POST
 def login_with_password(request):
     payload = _json_body(request)
@@ -164,6 +174,7 @@ def login_with_password(request):
     )
 
 
+@csrf_exempt
 @require_POST
 def register_user_details(request):
     pending_mobile = request.session.get("pending_signup_mobile")
@@ -247,6 +258,7 @@ def register_user_details(request):
     )
 
 
+@csrf_exempt
 @require_POST
 def complete_profile_setup(request):
     if not request.user.is_authenticated:
@@ -286,6 +298,7 @@ def complete_profile_setup(request):
 KYC_API_URL = "https://sandbox.kyc-provider.com/api/v1/aadhaar" 
 KYC_API_TOKEN = "YOUR_BEARER_TOKEN_HERE"
 
+@csrf_exempt
 @require_POST
 def send_aadhaar_otp_api(request):
     if not request.user.is_authenticated:
@@ -315,6 +328,9 @@ def send_aadhaar_otp_api(request):
         "id_number": profile.gov_id_number
     }
 
+    if requests is None:
+        return _error("KYC service dependency is not installed on the server.", status=503)
+
     try:
         response = requests.post(f"{KYC_API_URL}/generate-otp", json=api_payload, headers=headers)
         response_data = response.json()
@@ -334,6 +350,7 @@ def send_aadhaar_otp_api(request):
         return _error("KYC Service is currently down. Please try again later.")
 
 
+@csrf_exempt
 @require_POST
 def verify_aadhaar_otp_api(request):
     if not request.user.is_authenticated:
@@ -356,6 +373,9 @@ def verify_aadhaar_otp_api(request):
         "client_id": client_id,
         "otp": otp
     }
+
+    if requests is None:
+        return _error("KYC service dependency is not installed on the server.", status=503)
 
     try:
         response = requests.post(f"{KYC_API_URL}/submit-otp", json=api_payload, headers=headers)

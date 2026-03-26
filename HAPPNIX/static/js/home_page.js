@@ -26,13 +26,19 @@ const state = {
     hostedMenuEventPostId: null,
     hostedPressTimerId: null,
     hostedSuppressClickPostId: null,
+    ticketPressTimerId: null,
+    ticketDeleteRevealId: null,
     uploadActivityItems: [],
     uploadActivitySeq: 0,
     currentUser: {
+        id: null,
         username: currentUsernameTemplate,
         avatar: currentAvatarTemplate || defaultAvatar,
         fullName: currentUsernameTemplate,
-        bio: ''
+        bio: '',
+        isPrivate: false,
+        govIdVerified: false,
+        pendingFollowRequestsCount: 0
     },
     locationEnabled: true,
     customLocationName: '',
@@ -41,38 +47,65 @@ const state = {
     eventLocationPoint: null,
     nearbyRadiusKm: 30,
     nearbyEventPosts: [],
-    posts: [
-        {
-            id: 'local-1',
-            username: 'neon_nights',
-            avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop',
-            image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&h=600&fit=crop',
-            caption: 'The bass drop was unreal tonight.',
-            likes: 1240,
-            isEvent: false
-        },
-        {
-            id: 'local-event-1',
-            username: 'electric_jungle',
-            avatar: 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=100&h=100&fit=crop',
-            image: 'https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop',
-            caption: 'Secret warehouse party. Limited slots tonight.',
-            likes: 856,
-            isEvent: true,
-            eventDetails: {
-                title: 'Neon Jungle Rave',
-                date: 'Oct 24, 10:00 PM',
-                location: 'Warehouse 42, BK',
-                price: 45,
-                mapUrl: 'https://www.google.com/maps/search/?api=1&query=40.7128,-74.0060'
-            }
-        }
-    ],
-    tickets: []
+    liveNowPosts: [],
+    hostedEventPosts: [],
+    followingEventPosts: [],
+    followingUserIds: [],
+    posts: [],
+    tickets: [],
+    discoverQuery: '',
+    discoverResults: [],
+    discoverLoading: false,
+    discoverSearchTimer: null,
+    discoverHistory: [],
+    followGraph: { type: 'followers', users: [], loading: false },
+    notifications: [],
+    notificationsLoading: false,
+    unreadNotificationsCount: 0,
+    activeDiscoverProfile: null,
+    publicProfileEventPosts: {},
+    settings: {
+        followRequests: [],
+        loading: false,
+        savingPrivacy: false,
+        processingRequestId: null
+    },
+    liveSync: {
+        timerId: null,
+        inFlight: false,
+        intervalMs: 15000
+    }
 };
 const loaderStartTs = Date.now();
 
+function showStartupDebug(message) {
+    const text = String(message || 'Unknown startup error.');
+    let box = document.getElementById('startup-debug-box');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'startup-debug-box';
+        box.style.position = 'fixed';
+        box.style.top = '12px';
+        box.style.left = '12px';
+        box.style.right = '12px';
+        box.style.zIndex = '10001';
+        box.style.padding = '10px 12px';
+        box.style.border = '1px solid rgba(248,113,113,0.45)';
+        box.style.background = 'rgba(20,20,25,0.92)';
+        box.style.color = '#fecaca';
+        box.style.fontSize = '12px';
+        box.style.lineHeight = '1.4';
+        box.style.borderRadius = '12px';
+        box.style.whiteSpace = 'pre-wrap';
+        document.body.appendChild(box);
+    }
+    box.textContent = `Startup error: ${text}`;
+}
+
 const THEME_STORAGE_KEY = 'happnix-theme';
+const DISCOVER_HISTORY_STORAGE_KEY = 'happnix-discover-history';
+const SHARED_POSTS_STORAGE_KEY = 'happnix-shared-posts-v1';
+const TICKETS_STORAGE_KEY = 'happnix-tickets-v1';
 
 function getStoredTheme() {
     try {
@@ -80,6 +113,454 @@ function getStoredTheme() {
     } catch (_error) {
         return null;
     }
+}
+
+function getStoredDiscoverHistory() {
+    try {
+        const raw = localStorage.getItem(DISCOVER_HISTORY_STORAGE_KEY);
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed.filter((item) => String(item || '').trim()) : [];
+    } catch (_error) {
+        return [];
+    }
+}
+
+function setStoredDiscoverHistory(items) {
+    try {
+        localStorage.setItem(DISCOVER_HISTORY_STORAGE_KEY, JSON.stringify((items || []).slice(0, 8)));
+    } catch (_error) {
+        // Ignore storage errors.
+    }
+}
+
+function syncDiscoverHistory(items) {
+    state.discoverHistory = (items || []).map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8);
+    setStoredDiscoverHistory(state.discoverHistory);
+}
+
+function addDiscoverHistoryItem(query) {
+    const trimmed = String(query || '').trim();
+    if (!trimmed) return;
+    const deduped = [trimmed, ...state.discoverHistory.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())];
+    syncDiscoverHistory(deduped);
+}
+
+function removeDiscoverHistoryItem(query) {
+    const trimmed = String(query || '').trim().toLowerCase();
+    syncDiscoverHistory(state.discoverHistory.filter((item) => item.toLowerCase() !== trimmed));
+}
+
+function getStoredSharedPosts() {
+    try {
+        const raw = localStorage.getItem(SHARED_POSTS_STORAGE_KEY);
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+        return [];
+    }
+}
+
+function setStoredSharedPosts(items) {
+    try {
+        localStorage.setItem(SHARED_POSTS_STORAGE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+    } catch (_error) {
+        // Ignore storage errors.
+    }
+}
+
+function normalizeStoredPost(post) {
+    if (!post || post.isEvent) return null;
+    const mediaUrls = Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0
+        ? post.mediaUrls.filter(Boolean)
+        : (post.mediaUrl ? [post.mediaUrl] : []);
+    const mediaTypes = Array.isArray(post.mediaTypes) && post.mediaTypes.length === mediaUrls.length
+        ? post.mediaTypes
+        : mediaUrls.map((url) => (/\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(url || '') ? 'video' : 'image'));
+    return {
+        id: String(post.id || `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+        userId: Number(post.userId) || null,
+        username: String(post.username || '').trim(),
+        avatar: post.avatar || defaultAvatar,
+        image: post.image || mediaUrls[0] || defaultAvatar,
+        mediaUrl: post.mediaUrl || mediaUrls[0] || '',
+        mediaType: post.mediaType || mediaTypes[0] || 'image',
+        mediaUrls,
+        mediaTypes,
+        caption: String(post.caption || '').trim(),
+        likes: Number(post.likes || 0),
+        isEvent: false,
+        linkedEventId: post.linkedEventId || null,
+        linkedEventTitle: post.linkedEventTitle || '',
+        createdAt: post.createdAt || new Date().toISOString()
+    };
+}
+
+function dedupeStoredPosts(items) {
+    const seen = new Map();
+    (Array.isArray(items) ? items : []).forEach((post) => {
+        if (!post) return;
+        const key = JSON.stringify({
+            userId: Number(post.userId || 0),
+            username: String(post.username || '').trim().toLowerCase(),
+            caption: String(post.caption || '').trim().toLowerCase(),
+            mediaUrls: post.mediaUrls || [],
+            linkedEventId: post.linkedEventId || ''
+        });
+        const existing = seen.get(key);
+        if (!existing) {
+            seen.set(key, post);
+            return;
+        }
+        const existingTs = new Date(existing.createdAt || 0).getTime();
+        const nextTs = new Date(post.createdAt || 0).getTime();
+        if (Number.isNaN(existingTs) || nextTs > existingTs) {
+            seen.set(key, post);
+        }
+    });
+    return Array.from(seen.values()).sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+}
+
+function loadSharedPosts() {
+    const normalizedPosts = getStoredSharedPosts()
+        .map(normalizeStoredPost)
+        .filter(Boolean);
+    const dedupedPosts = dedupeStoredPosts(normalizedPosts);
+    state.posts = dedupedPosts;
+    setStoredSharedPosts(dedupedPosts);
+}
+
+function persistSharedPost(post) {
+    const normalized = normalizeStoredPost(post);
+    if (!normalized) return;
+    const normalizedCaption = String(normalized.caption || '').trim().toLowerCase();
+    const normalizedMedia = JSON.stringify(normalized.mediaUrls || []);
+    const recentMatchWindowMs = 15000;
+    const nextPosts = [
+        normalized,
+        ...getStoredSharedPosts()
+            .map(normalizeStoredPost)
+            .filter((item) => {
+                if (!item) return false;
+                if (item.id === normalized.id) return false;
+                const sameUser = Number(item.userId || 0) === Number(normalized.userId || 0);
+                const sameCaption = String(item.caption || '').trim().toLowerCase() == normalizedCaption;
+                const sameMedia = JSON.stringify(item.mediaUrls || []) === normalizedMedia;
+                const createdGap = Math.abs(new Date(item.createdAt || 0).getTime() - new Date(normalized.createdAt || 0).getTime());
+                if (sameUser && sameCaption && sameMedia && createdGap <= recentMatchWindowMs) {
+                    return false;
+                }
+                return true;
+            })
+    ];
+    setStoredSharedPosts(nextPosts);
+    loadSharedPosts();
+}
+
+function getStoredTickets() {
+    try {
+        const raw = localStorage.getItem(TICKETS_STORAGE_KEY);
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+        return [];
+    }
+}
+
+function setStoredTickets(items) {
+    try {
+        localStorage.setItem(TICKETS_STORAGE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+    } catch (_error) {
+        // Ignore storage errors.
+    }
+}
+
+function normalizeStoredTicket(ticket) {
+    if (!ticket || !ticket.event) return null;
+    const event = ticket.event;
+    const eventDetails = event.eventDetails || {};
+    const normalizedEvent = event.isEvent ? event : serverEventToPost(event);
+    return {
+        id: String(ticket.id || `ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+        userId: Number(ticket.userId || state.currentUser.id || 0) || null,
+        username: String(ticket.username || state.currentUser.username || '').trim(),
+        qty: Math.max(1, Number(ticket.qty || 1)),
+        status: ticket.status === 'cancelled' ? 'cancelled' : 'active',
+        createdAt: ticket.createdAt || new Date().toISOString(),
+        cancelledAt: ticket.cancelledAt || null,
+        event: {
+            ...normalizedEvent,
+            id: String(normalizedEvent.id || event.id || ''),
+            image: normalizedEvent.image || defaultAvatar,
+            eventDetails: {
+                ...(normalizedEvent.eventDetails || {}),
+                ...eventDetails,
+                title: String((normalizedEvent.eventDetails || {}).title || eventDetails.title || event.title || 'Untitled event').trim(),
+                date: String((normalizedEvent.eventDetails || {}).date || eventDetails.date || eventDetails.startLabel || 'Date TBD').trim(),
+                startLabel: String((normalizedEvent.eventDetails || {}).startLabel || eventDetails.startLabel || eventDetails.date || '').trim(),
+                endLabel: String((normalizedEvent.eventDetails || {}).endLabel || eventDetails.endLabel || '').trim()
+            }
+        }
+    };
+}
+
+function loadStoredTickets() {
+    state.tickets = getStoredTickets()
+        .map(normalizeStoredTicket)
+        .filter(Boolean)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+    setStoredTickets(state.tickets);
+}
+
+async function loadTickets() {
+    try {
+        const data = await getJson('/api/tickets');
+        state.tickets = (data.tickets || [])
+            .map(normalizeStoredTicket)
+            .filter(Boolean)
+            .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+        setStoredTickets(state.tickets);
+    } catch (_error) {
+        loadStoredTickets();
+    }
+    renderTicketList();
+}
+
+function persistTickets() {
+    setStoredTickets(state.tickets);
+}
+
+function getActiveTicketForEvent(eventId) {
+    const safeEventId = String(eventId || '');
+    const currentUserId = Number(state.currentUser.id || 0);
+    const currentUsername = String(state.currentUser.username || '').trim().toLowerCase();
+    return (state.tickets || []).find((ticket) => {
+        if (!ticket || ticket.status === 'cancelled') return false;
+        if (String(ticket.event?.id || '') !== safeEventId) return false;
+        const ticketUserId = Number(ticket.userId || 0);
+        const ticketUsername = String(ticket.username || '').trim().toLowerCase();
+        if (currentUserId > 0 && ticketUserId > 0) return ticketUserId === currentUserId;
+        return currentUsername && ticketUsername === currentUsername;
+    }) || null;
+}
+
+function hasActiveTicketForEvent(eventId) {
+    return !!getActiveTicketForEvent(eventId);
+}
+
+function isTicketExpired(ticket) {
+    return !!ticket?.isExpired || (ticket?.status === 'active' && isEventEndedFromDetails(ticket?.event?.eventDetails));
+}
+
+function canDeleteTicket(ticket) {
+    return !!ticket && (ticket.status === 'cancelled' || isTicketExpired(ticket));
+}
+
+function canArchiveTicket(ticket) {
+    return !!ticket && ticket.status === 'active' && isTicketExpired(ticket);
+}
+
+async function archiveTicket(ticketId) {
+    const safeTicketId = String(ticketId || '');
+    const ticket = (state.tickets || []).find((entry) => String(entry.id) === safeTicketId);
+    if (!ticket) return;
+    try {
+        await postJson(`/api/tickets/${safeTicketId}/archive`, {});
+        state.tickets = state.tickets.filter((entry) => String(entry.id) !== safeTicketId);
+        state.ticketDeleteRevealId = null;
+        persistTickets();
+        renderTicketList();
+        setLocationStatus('Ticket archived.');
+    } catch (error) {
+        setLocationStatus(error.message || 'Failed to archive ticket.', true);
+    }
+}
+
+async function deleteTicket(ticketId) {
+    const safeTicketId = String(ticketId || '');
+    const ticket = (state.tickets || []).find((entry) => String(entry.id) === safeTicketId);
+    if (!ticket) return;
+
+    const applyLocalDelete = () => {
+        state.tickets = state.tickets.filter((entry) => String(entry.id) !== safeTicketId);
+        state.ticketDeleteRevealId = null;
+        persistTickets();
+        renderTicketList();
+        setLocationStatus('Ticket deleted.');
+    };
+
+    const numericTicketId = Number(safeTicketId);
+    if (!Number.isFinite(numericTicketId) || numericTicketId <= 0) {
+        applyLocalDelete();
+        return;
+    }
+
+    try {
+        await fetch(`/api/tickets/${numericTicketId}/delete`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCsrfToken() },
+            credentials: 'same-origin'
+        }).then(async (response) => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || 'Request failed.');
+            return data;
+        });
+        applyLocalDelete();
+    } catch (error) {
+        const message = String(error?.message || '');
+        if (message.toLowerCase().includes('ticket not found')) {
+            applyLocalDelete();
+            return;
+        }
+        setLocationStatus(error.message || 'Failed to delete ticket.', true);
+    }
+}
+
+async function cancelTicket(ticketId) {
+    const safeTicketId = String(ticketId || '');
+    const ticket = (state.tickets || []).find((entry) => String(entry.id) === safeTicketId);
+    if (!ticket || ticket.status === 'cancelled') return;
+
+    const applyLocalCancel = () => {
+        state.tickets = state.tickets.map((entry) => {
+            if (String(entry.id) !== safeTicketId) return entry;
+            return {
+                ...entry,
+                status: 'cancelled',
+                cancelledAt: new Date().toISOString()
+            };
+        });
+        persistTickets();
+        renderTicketList();
+        if (currentBookingEventId && String(ticket.event?.id || '') === String(currentBookingEventId)) {
+            openBookingModal(currentBookingEventId);
+        }
+        setLocationStatus('Ticket cancelled. You can join this party again now.');
+    };
+
+    const numericTicketId = Number(safeTicketId);
+    if (!Number.isFinite(numericTicketId) || numericTicketId <= 0) {
+        applyLocalCancel();
+        return;
+    }
+
+    try {
+        const data = await postJson(`/api/tickets/${numericTicketId}/cancel`, {});
+        const nextTicket = normalizeStoredTicket(data.ticket);
+        state.tickets = state.tickets.map((entry) => String(entry.id) === safeTicketId ? nextTicket : entry);
+        persistTickets();
+        renderTicketList();
+        if (currentBookingEventId && String(ticket.event?.id || '') === String(currentBookingEventId)) {
+            openBookingModal(currentBookingEventId);
+        }
+        setLocationStatus('Ticket cancelled. You can join this party again now.');
+    } catch (error) {
+        const message = String(error?.message || '');
+        if (message.toLowerCase().includes('ticket not found')) {
+            applyLocalCancel();
+            return;
+        }
+        setLocationStatus(error.message || 'Failed to cancel ticket.', true);
+    }
+}
+
+function getSocialFeedUserIds() {
+    const ids = new Set();
+    const currentUserId = Number(state.currentUser.id || 0);
+    if (currentUserId > 0) ids.add(currentUserId);
+    (state.followingUserIds || []).forEach((userId) => {
+        const safeUserId = Number(userId || 0);
+        if (safeUserId > 0) ids.add(safeUserId);
+    });
+    return ids;
+}
+
+function isSocialFeedPost(post) {
+    if (!post) return false;
+    const socialIds = getSocialFeedUserIds();
+    const postUserId = Number(post.userId || 0);
+    if (postUserId > 0 && socialIds.has(postUserId)) return true;
+    if (post.username && String(post.username) === String(state.currentUser.username || '')) return true;
+    return false;
+}
+
+function hydrateProfileFeedPosts(profile, eventPosts) {
+    const safeProfile = profile || {};
+    const safeUserId = Number(safeProfile.sql_user_id || 0);
+    const safeUsername = String(safeProfile.username || '').trim();
+    const avatar = safeProfile.profile_picture_url || defaultAvatar;
+    const userPosts = (state.posts || [])
+        .filter((post) => (safeUserId > 0 && Number(post.userId || 0) === safeUserId) || (safeUsername && post.username === safeUsername))
+        .map((post) => ({ ...post, avatar: post.avatar || avatar }));
+    return [...(Array.isArray(eventPosts) ? eventPosts : []), ...userPosts]
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+}
+
+async function refreshFollowingFeed() {
+    if (!state.currentUser.id) return;
+    loadSharedPosts();
+    try {
+        const graph = await getJson('/api/profile/following');
+        const users = Array.isArray(graph?.users) ? graph.users : [];
+        state.followingUserIds = users
+            .map((user) => Number(user.sql_user_id || 0))
+            .filter((userId) => Number.isFinite(userId) && userId > 0);
+
+        const profileResponses = await Promise.all(
+            state.followingUserIds.map(async (userId) => {
+                try {
+                    const data = await getJson(`/api/users/${userId}/profile`);
+                    return data?.profile || null;
+                } catch (_error) {
+                    return null;
+                }
+            })
+        );
+
+        state.followingEventPosts = profileResponses.flatMap((profile) => {
+            if (!profile) return [];
+            const avatar = profile.profile_picture_url || defaultAvatar;
+            const eventPosts = Array.isArray(profile.hosted_events)
+                ? profile.hosted_events.map((event) => serverEventToPost({ ...event, hostAvatarUrl: avatar }))
+                : [];
+            state.publicProfileEventPosts[profile.sql_user_id] = hydrateProfileFeedPosts(profile, eventPosts);
+            return eventPosts;
+        });
+    } catch (_error) {
+        state.followingUserIds = [];
+        state.followingEventPosts = [];
+    }
+    renderFeed();
+    renderProfileGrid();
+}
+
+function updateDiscoverSearchClearButton() {
+    const clearBtn = document.getElementById('discover-search-clear');
+    if (!clearBtn) return;
+    const hasQuery = !!String(state.discoverQuery || '').trim();
+    clearBtn.classList.toggle('hidden', !hasQuery);
+    clearBtn.classList.toggle('inline-flex', hasQuery);
+}
+
+function setDiscoverSearchValue(value, options = {}) {
+    const nextValue = String(value || '');
+    state.discoverQuery = nextValue;
+    const input = document.getElementById('discover-search-input');
+    if (input && input.value !== nextValue) {
+        input.value = nextValue;
+    }
+    updateDiscoverSearchClearButton();
+    if (options.render !== false) {
+        renderExplore();
+    }
+}
+
+function clearDiscoverSearch() {
+    if (state.discoverSearchTimer) {
+        clearTimeout(state.discoverSearchTimer);
+    }
+    state.discoverLoading = false;
+    state.discoverResults = [];
+    setDiscoverSearchValue('');
 }
 
 function setStoredTheme(value) {
@@ -122,6 +603,15 @@ function applyTheme(theme, options = {}) {
     if (options.persist) {
         setStoredTheme(nextTheme);
     }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function getCsrfToken() {
@@ -258,31 +748,557 @@ function finishUploadActivity(id, success = true) {
 }
 
 function getHostedEvents() {
-    return getAllPosts().filter((post) => post.isEvent && post.username === state.currentUser.username);
+    return state.hostedEventPosts;
+}
+
+function parseEventDate(value) {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+    }
+    const normalized = String(value).trim().replace(' ', 'T');
+    const retry = new Date(normalized);
+    return Number.isNaN(retry.getTime()) ? null : retry;
+}
+
+function getEventStartDate(eventDetails) {
+    return parseEventDate(eventDetails?.startLabel) || parseEventDate(eventDetails?.date) || parseEventDate(eventDetails?.startAt);
+}
+
+function getEventEndDate(eventDetails) {
+    return parseEventDate(eventDetails?.endLabel) || parseEventDate(eventDetails?.endAt);
+}
+
+function isEventEndedFromDetails(eventDetails) {
+    if (!eventDetails) return false;
+    if (eventDetails.isEnded === true) return true;
+    const endDate = getEventEndDate(eventDetails);
+    return !!(endDate && endDate.getTime() <= Date.now());
+}
+
+function isEventLiveNow(eventDetails) {
+    if (!eventDetails || isEventEndedFromDetails(eventDetails)) return false;
+    const now = Date.now();
+    const startDate = getEventStartDate(eventDetails);
+    const endDate = getEventEndDate(eventDetails);
+    if (startDate && endDate) {
+        return startDate.getTime() <= now && endDate.getTime() > now;
+    }
+    if (startDate) {
+        const today = new Date(now);
+        return startDate.toDateString() === today.toDateString() && startDate.getTime() <= now;
+    }
+    return false;
+}
+
+function getLiveNowEvents() {
+    const seen = new Set();
+    const primary = Array.isArray(state.liveNowPosts) && state.liveNowPosts.length > 0
+        ? state.liveNowPosts
+        : [
+            ...(state.hostedEventPosts || []),
+            ...(state.nearbyEventPosts || []),
+            ...(state.followingEventPosts || [])
+        ];
+    return primary.filter((post) => {
+        if (!post?.isEvent || !isEventLiveNow(post.eventDetails)) return false;
+        const key = String(post.id || '');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).sort((left, right) => {
+        const leftStart = getEventStartDate(left?.eventDetails)?.getTime() || 0;
+        const rightStart = getEventStartDate(right?.eventDetails)?.getTime() || 0;
+        return leftStart - rightStart;
+    });
+}
+
+function getEventMonthDay(eventDetails) {
+    const startDate = getEventStartDate(eventDetails);
+    if (!startDate) {
+        return { month: 'TBD', day: '--' };
+    }
+    return {
+        month: startDate.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+        day: String(startDate.getDate()).padStart(2, '0')
+    };
+}
+
+function updateNotificationBadges() {
+    const dots = [document.getElementById('mobile-notification-dot'), document.getElementById('desktop-notification-dot')];
+    const count = Number(state.unreadNotificationsCount || 0);
+    dots.forEach((dot) => {
+        if (!dot) return;
+        const show = count > 0;
+        dot.classList.toggle('hidden', !show);
+        dot.classList.toggle('inline-flex', show);
+        dot.textContent = count > 9 ? '9+' : String(count || '');
+    });
+}
+
+function formatNotificationTime(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Just now';
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.max(0, Math.round(diffMs / 60000));
+    if (diffMin < 1) return 'Just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.round(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return date.toLocaleDateString();
+}
+
+function renderNotificationsList() {
+    const listEl = document.getElementById('notifications-list');
+    if (!listEl) return;
+    if (state.notificationsLoading) {
+        listEl.innerHTML = '<div class="py-12 text-center text-sm text-gray-400">Loading notifications...</div>';
+        return;
+    }
+    const items = Array.isArray(state.notifications) ? state.notifications : [];
+    if (items.length === 0) {
+        listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">No notifications yet.</div>';
+        return;
+    }
+    listEl.innerHTML = items.map((item) => {
+        const actorName = escapeHtml(item.actor_full_name || item.actor_username || 'Someone');
+        const actorHandle = escapeHtml(item.actor_username ? `@${item.actor_username}` : '');
+        const avatar = escapeHtml(item.actor_profile_picture_url || defaultAvatar);
+        const title = escapeHtml(item.title || 'Activity');
+        const body = escapeHtml(item.body || '');
+        return `
+            <article class="rounded-2xl border ${item.is_read ? 'border-white/10 bg-white/[0.03]' : 'border-fuchsia-400/20 bg-fuchsia-500/[0.08]'} px-4 py-4 shadow-lg shadow-black/10 ${item.actor_sql_user_id ? 'cursor-pointer' : ''}" ${item.actor_sql_user_id ? `data-action="open-discover-profile" data-user-id="${item.actor_sql_user_id}"` : ''}>
+                <div class="flex items-start gap-3">
+                    <img src="${avatar}" alt="${actorName}" class="h-12 w-12 rounded-2xl object-cover bg-slate-800">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <div class="text-sm font-bold text-white">${title}</div>
+                                <div class="text-xs text-gray-500">${actorHandle}</div>
+                            </div>
+                            <div class="text-[11px] text-gray-500">${formatNotificationTime(item.created_at)}</div>
+                        </div>
+                        <p class="mt-2 text-sm leading-6 text-gray-300">${body}</p>
+                    </div>
+                </div>
+            </article>`;
+    }).join('');
+}
+
+function renderSettingsPrivacyState() {
+    const toggleEl = document.getElementById('settings-privacy-toggle');
+    const copyEl = document.getElementById('settings-privacy-copy');
+    if (!toggleEl || !copyEl) return;
+    const isPrivate = !!state.currentUser.isPrivate;
+    toggleEl.textContent = state.settings.savingPrivacy ? 'Saving' : (isPrivate ? 'Private' : 'Public');
+    toggleEl.className = `inline-flex min-w-[118px] items-center justify-center rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] transition-colors ${isPrivate ? 'border-amber-400/30 bg-amber-500/15 text-amber-200' : 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'}`;
+    if (state.settings.savingPrivacy) {
+        toggleEl.classList.add('opacity-70', 'pointer-events-none');
+    }
+    copyEl.textContent = isPrivate
+        ? 'Only approved followers can view your posts and events. New followers must send a request.'
+        : 'Anyone can follow you instantly and view your posts and events.';
+}
+
+function renderSettingsFollowRequests() {
+    const countEl = document.getElementById('settings-follow-requests-count');
+    const listEl = document.getElementById('settings-follow-requests-list');
+    if (!countEl || !listEl) return;
+    const requests = Array.isArray(state.settings.followRequests) ? state.settings.followRequests : [];
+    countEl.textContent = String(requests.length);
+    if (!state.currentUser.isPrivate) {
+        listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">Turn on Private Account to review follow requests here.</div>';
+        return;
+    }
+    if (state.settings.loading) {
+        listEl.innerHTML = '<div class="py-10 text-center text-sm text-gray-400">Loading follow requests...</div>';
+        return;
+    }
+    if (requests.length === 0) {
+        listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">No pending follow requests.</div>';
+        return;
+    }
+    listEl.innerHTML = requests.map((user) => {
+        const isBusy = Number(state.settings.processingRequestId || 0) === Number(user.sql_user_id || 0);
+        return `
+            <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10">
+                <div class="flex items-center gap-3">
+                    <img src="${escapeHtml(user.profile_picture_url || defaultAvatar)}" alt="${escapeHtml(user.full_name || user.username || 'User')}" class="h-14 w-14 rounded-2xl object-cover bg-slate-800">
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-bold text-white">${escapeHtml(user.full_name || user.username || 'Unknown user')}</div>
+                        <div class="truncate text-sm text-gray-400">${escapeHtml(user.username ? `@${user.username}` : '')}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" data-action="handle-follow-request" data-requester-id="${user.sql_user_id}" data-request-action="approve" class="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 ${isBusy ? 'pointer-events-none opacity-60' : ''}">Accept</button>
+                        <button type="button" data-action="handle-follow-request" data-requester-id="${user.sql_user_id}" data-request-action="deny" class="rounded-xl border border-rose-400/30 bg-rose-500/15 px-3 py-2 text-xs font-bold text-rose-200 ${isBusy ? 'pointer-events-none opacity-60' : ''}">Decline</button>
+                    </div>
+                </div>
+            </article>`;
+    }).join('');
+}
+
+function renderNotificationFollowRequests() {
+    const countEl = document.getElementById('notifications-follow-requests-count');
+    const listEl = document.getElementById('notifications-follow-requests-list');
+    if (!countEl || !listEl) return;
+    const requests = Array.isArray(state.settings.followRequests) ? state.settings.followRequests : [];
+    countEl.textContent = String(requests.length);
+    if (!state.currentUser.isPrivate) {
+        listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">Switch to a private account if you want follow requests to appear here.</div>';
+        return;
+    }
+    if (state.settings.loading) {
+        listEl.innerHTML = '<div class="py-10 text-center text-sm text-gray-400">Loading follow requests...</div>';
+        return;
+    }
+    if (requests.length === 0) {
+        listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">No pending follow requests.</div>';
+        return;
+    }
+    listEl.innerHTML = requests.map((user) => {
+        const isBusy = Number(state.settings.processingRequestId || 0) === Number(user.sql_user_id || 0);
+        return `
+            <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10">
+                <div class="flex items-center gap-3">
+                    <img src="${escapeHtml(user.profile_picture_url || defaultAvatar)}" alt="${escapeHtml(user.full_name || user.username || 'User')}" class="h-14 w-14 rounded-2xl object-cover bg-slate-800">
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-bold text-white">${escapeHtml(user.full_name || user.username || 'Unknown user')}</div>
+                        <div class="truncate text-sm text-gray-400">${escapeHtml(user.username ? `@${user.username}` : '')}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" data-action="handle-follow-request" data-requester-id="${user.sql_user_id}" data-request-action="approve" class="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 ${isBusy ? 'pointer-events-none opacity-60' : ''}">Accept</button>
+                        <button type="button" data-action="handle-follow-request" data-requester-id="${user.sql_user_id}" data-request-action="deny" class="rounded-xl border border-rose-400/30 bg-rose-500/15 px-3 py-2 text-xs font-bold text-rose-200 ${isBusy ? 'pointer-events-none opacity-60' : ''}">Decline</button>
+                    </div>
+                </div>
+            </article>`;
+    }).join('');
+}
+
+async function loadFollowRequests(options = {}) {
+    if (!state.currentUser.isPrivate) {
+        state.settings.followRequests = [];
+        state.settings.loading = false;
+        renderSettingsFollowRequests();
+        renderNotificationFollowRequests();
+        return;
+    }
+    if (!options.silent) {
+        state.settings.loading = true;
+        renderSettingsFollowRequests();
+        renderNotificationFollowRequests();
+    }
+    try {
+        const data = await getJson('/api/profile/follow-requests');
+        state.settings.followRequests = Array.isArray(data?.requests) ? data.requests : [];
+    } catch (_error) {
+        state.settings.followRequests = [];
+    } finally {
+        state.settings.loading = false;
+        renderSettingsFollowRequests();
+    renderNotificationFollowRequests();
+    }
+}
+
+async function updatePrivateAccountSetting(nextValue) {
+    state.settings.savingPrivacy = true;
+    renderSettingsPrivacyState();
+    try {
+        const data = await postJson('/api/profile/privacy', { isPrivate: !!nextValue });
+        state.currentUser.isPrivate = !!data?.isPrivate;
+        renderSettingsPrivacyState();
+        await loadCurrentUserProfile();
+        await loadFollowRequests();
+        await refreshFollowingFeed();
+    } catch (_error) {
+        state.settings.savingPrivacy = false;
+        renderSettingsPrivacyState();
+        return;
+    }
+    state.settings.savingPrivacy = false;
+    renderSettingsPrivacyState();
+}
+
+async function handleFollowRequestAction(requesterUserId, action) {
+    const safeUserId = Number(requesterUserId || 0);
+    if (!Number.isFinite(safeUserId) || safeUserId <= 0) return;
+    state.settings.processingRequestId = safeUserId;
+    renderSettingsFollowRequests();
+    renderNotificationFollowRequests();
+    try {
+        const response = await postJson('/api/profile/follow-requests', { requesterUserId: safeUserId, action });
+        state.settings.followRequests = state.settings.followRequests.filter((user) => Number(user.sql_user_id) !== safeUserId);
+        state.currentUser.pendingFollowRequestsCount = Number(response?.pendingCount || 0);
+        const followersEl = document.getElementById('profile-followers-count');
+        if (followersEl && response?.followersCount !== undefined) followersEl.textContent = String(response.followersCount || 0);
+        renderSettingsFollowRequests();
+        renderNotificationFollowRequests();
+        loadCurrentUserProfile();
+    } catch (_error) {
+        renderSettingsFollowRequests();
+        renderNotificationFollowRequests();
+    } finally {
+        state.settings.processingRequestId = null;
+        renderSettingsFollowRequests();
+        renderNotificationFollowRequests();
+    }
+}
+
+function openSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    const card = document.getElementById('settings-card');
+    if (!modal || !card) return;
+    renderSettingsPrivacyState();
+    renderSettingsFollowRequests();
+    renderNotificationFollowRequests();
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+    loadFollowRequests();
+}
+
+function closeSettingsModal() {
+    const modal = document.getElementById('settings-modal');
+    const card = document.getElementById('settings-card');
+    if (!modal || !card) return;
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+async function runLiveSyncTick(options = {}) {
+    if (state.liveSync.inFlight) return;
+    if (document.hidden && options.force !== true) return;
+    if (!state.currentUser.id) return;
+    state.liveSync.inFlight = true;
+    try {
+        await Promise.all([
+            loadCurrentUserProfile(),
+            loadNotifications({ silent: true }),
+            loadFollowRequests({ silent: true }),
+            refreshFollowingFeed()
+        ]);
+    } catch (_error) {
+        // Ignore background sync failures and keep the current UI state.
+    } finally {
+        state.liveSync.inFlight = false;
+    }
+}
+
+function startLiveSync() {
+    if (state.liveSync.timerId) return;
+    state.liveSync.timerId = window.setInterval(() => {
+        runLiveSyncTick();
+    }, state.liveSync.intervalMs);
+}
+
+function stopLiveSync() {
+    if (!state.liveSync.timerId) return;
+    clearInterval(state.liveSync.timerId);
+    state.liveSync.timerId = null;
+}
+
+async function loadNotifications(options = {}) {
+    if (!options.silent) {
+        state.notificationsLoading = true;
+        renderNotificationsList();
+    }
+    try {
+        const data = await getJson('/api/notifications?limit=50');
+        state.notifications = Array.isArray(data?.notifications) ? data.notifications : [];
+        state.unreadNotificationsCount = Number(data?.unreadCount || 0);
+        updateNotificationBadges();
+        renderNotificationsList();
+        if (options.markAsRead) {
+            await postJson('/api/notifications', {});
+            state.unreadNotificationsCount = 0;
+            state.notifications = state.notifications.map((item) => ({ ...item, is_read: true }));
+            updateNotificationBadges();
+            renderNotificationsList();
+        }
+    } catch (_error) {
+        state.notifications = [];
+        renderNotificationsList();
+    } finally {
+        state.notificationsLoading = false;
+        renderNotificationsList();
+    }
+}
+
+async function openNotifications() {
+    const modal = document.getElementById('notifications-modal');
+    const card = document.getElementById('notifications-card');
+    if (!modal || !card) return;
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+    await Promise.all([loadNotifications({ markAsRead: true }), loadFollowRequests()]);
+}
+
+
+function closeNotifications() {
+    const modal = document.getElementById('notifications-modal');
+    const card = document.getElementById('notifications-card');
+    if (!modal || !card) return;
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+async function logActivity(payload) {
+    try {
+        await postJson('/api/notifications/activity', payload);
+    } catch (_error) {
+        // Ignore notification logging failures in the UI flow.
+    }
+}
+
+function toggleLike(actionEl) {
+    const article = actionEl.closest('[data-post-id]');
+    const postId = article?.dataset?.postId;
+    if (!postId) return;
+    const post = getPostById(postId);
+    if (!post) return;
+    post.likes = Math.max(0, Number(post.likes || 0) + 1);
+    renderFeed();
+    if (post.userId && Number(post.userId) !== Number(state.currentUser.id || 0)) {
+        logActivity({ activityType: 'like', recipientUserId: post.userId, postId: postId });
+    }
 }
 
 async function loadCurrentUserProfile() {
     try {
         const data = await getJson('/api/profile/me');
         const profile = data?.profile || {};
+        state.currentUser.id = profile.sql_user_id || state.currentUser.id;
         state.currentUser.username = profile.username || state.currentUser.username;
         state.currentUser.fullName = profile.full_name || state.currentUser.username;
         state.currentUser.bio = profile.bio || '';
         state.currentUser.avatar = profile.profile_picture_url || state.currentUser.avatar || defaultAvatar;
+        state.currentUser.isPrivate = Boolean(profile.is_private);
+        state.currentUser.govIdVerified = Boolean(profile.gov_id_verified);
+        state.currentUser.pendingFollowRequestsCount = Number(profile.pending_follow_requests_count || 0);
+        state.unreadNotificationsCount = Number(profile.unread_notifications_count || 0);
+        updateNotificationBadges();
+        const followersEl = document.getElementById('profile-followers-count');
+        const followingEl = document.getElementById('profile-following-count');
+        const privacyStatusEl = document.getElementById('profile-privacy-status');
+        if (followersEl) followersEl.textContent = String(profile.followers_count || 0);
+        if (followingEl) followingEl.textContent = String(profile.following_count || 0);
+        if (privacyStatusEl) {
+            privacyStatusEl.textContent = profile.is_private ? 'Private' : 'Public';
+            privacyStatusEl.className = `text-sm font-bold ${profile.is_private ? 'text-amber-200' : 'text-emerald-200'}`;
+        }
     } catch (error) {
         // Keep existing template-backed values if API fails.
     }
     renderCurrentUserProfile();
     renderProfileGrid();
     renderHostedEventList();
+    renderSettingsPrivacyState();
+    renderSettingsFollowRequests();
 }
 
 function getAllPosts() {
-    return [...state.nearbyEventPosts, ...state.posts];
+    const socialFeed = [
+        ...(state.hostedEventPosts || []),
+        ...(state.followingEventPosts || []),
+        ...(state.posts || []).filter((post) => isSocialFeedPost(post))
+    ];
+    const fallbackFeed = socialFeed.length > 0 ? socialFeed : [...(state.hostedEventPosts || []), ...(state.nearbyEventPosts || [])];
+    const seen = new Set();
+    return fallbackFeed
+        .filter((post) => {
+            const key = post?.id || Math.random().toString(36);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
 }
 
 function getPostById(postId) {
     return getAllPosts().find((post) => post.id === postId);
+}
+
+
+function getLinkedEventMeta(post) {
+    if (!post || post.isEvent || !post.linkedEventId) return null;
+    const linkedEvent = getPostById(post.linkedEventId);
+    if (!linkedEvent || !linkedEvent.eventDetails) return null;
+    const phase = isEventEndedFromDetails(linkedEvent.eventDetails) ? 'after' : 'before';
+    return {
+        eventId: linkedEvent.id,
+        title: linkedEvent.eventDetails.title || post.linkedEventTitle || 'Untitled Event',
+        phase,
+        label: phase === 'after' ? 'Post-event highlight' : 'Pre-event highlight'
+    };
+}
+
+function getEventHighlightPosts(eventPostId) {
+    const linkedPosts = state.posts.filter((post) => !post.isEvent && post.linkedEventId === eventPostId);
+    return {
+        before: linkedPosts.filter((post) => getLinkedEventMeta(post)?.phase === 'before'),
+        after: linkedPosts.filter((post) => getLinkedEventMeta(post)?.phase === 'after')
+    };
+}
+
+function getPostPreviewImage(post) {
+    const items = getPostMediaItems(post);
+    const firstImage = items.find((item) => item.type !== 'video');
+    return firstImage?.url || post.image || defaultAvatar;
+}
+
+function renderLinkedPostBadge(post) {
+    const meta = getLinkedEventMeta(post);
+    if (!meta) return '';
+    const palette = meta.phase === 'after'
+        ? 'bg-rose-500/15 text-rose-200 border border-rose-400/30'
+        : 'bg-cyan-500/15 text-cyan-100 border border-cyan-400/30';
+    return `<div class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] ${palette}">${meta.label} - ${meta.title}</div>`;
+}
+
+function renderEventHighlightsSection(title, posts, tone) {
+    const isAfter = tone === 'after';
+    const toneClass = isAfter
+        ? 'border-rose-400/25 bg-rose-500/8 text-rose-100'
+        : 'border-cyan-400/25 bg-cyan-500/8 text-cyan-100';
+    const eyebrow = isAfter ? 'Unlocked after the event wraps.' : 'Live while the event is still running.';
+
+    return `
+        <section class="rounded-3xl border ${toneClass} p-4 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <h4 class="text-sm font-black uppercase tracking-[0.18em]">${title}</h4>
+                    <p class="text-[11px] text-gray-300 mt-1">${eyebrow}</p>
+                </div>
+                <span class="text-xs font-semibold text-white/80">${posts.length}</span>
+            </div>
+            ${posts.length > 0 ? `
+            <div class="space-y-3">
+                ${posts.map((post) => `
+                <article class="rounded-2xl border border-white/10 bg-black/20 p-3 flex gap-3 items-start">
+                    <img src="${getPostPreviewImage(post)}" class="w-16 h-16 rounded-2xl object-cover flex-shrink-0">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-xs font-semibold text-white mb-1">${post.username}</div>
+                        <p class="text-sm text-gray-200 leading-relaxed">${post.caption || 'Highlight added without a caption.'}</p>
+                    </div>
+                </article>
+                `).join('')}
+            </div>
+            ` : `
+            <div class="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-gray-400">
+                No highlights here yet.
+            </div>
+            `}
+        </section>
+    `;
 }
 
 function setLocationStatus(message, isError = false) {
@@ -789,10 +1805,31 @@ function serverEventToPost(eventData) {
     const minTicketPrice = ticketType === 'Paid'
         ? Math.min(...ticketTiers.map((tier) => Number(tier.price) || 0))
         : 0;
+    const details = {
+        title: eventData.title,
+        date: eventData.startLabel || 'Date TBD',
+        startLabel: eventData.startLabel || '',
+        startAt: eventData.startAt || null,
+        endAt: eventData.endAt || null,
+        endLabel: eventData.endLabel || '',
+        location: eventData.locationName,
+        price: minTicketPrice,
+        mapUrl: eventData.mapUrl,
+        distanceKm: eventData.distanceKm,
+        eventType: eventData.eventCategory || 'local event',
+        mediaCount: mediaUrls.length,
+        ticketType,
+        ticketTiers,
+        isEnded: Boolean(eventData.isEnded),
+        canBook: eventData.canBook !== false
+    };
+    details.isEnded = isEventEndedFromDetails(details);
+    details.canBook = !details.isEnded && details.canBook;
     return {
         id: `event-${eventData.id}`,
+        userId: eventData.userId || eventData.hostSqlUserId || null,
         username: eventData.hostUsername || 'host',
-        avatar: defaultAvatar,
+        avatar: eventData.hostAvatarUrl || defaultAvatar,
         image: eventData.imageUrl || primaryUrl || `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`,
         mediaType: primaryIsVideo ? 'video' : 'image',
         mediaUrl: primaryUrl || '',
@@ -801,25 +1838,46 @@ function serverEventToPost(eventData) {
         caption: eventData.description || 'Live event nearby.',
         likes: 0,
         isEvent: true,
-        eventDetails: {
-            title: eventData.title,
-            date: eventData.startLabel || 'Date TBD',
-            location: eventData.locationName,
-            price: minTicketPrice,
-            mapUrl: eventData.mapUrl,
-            distanceKm: eventData.distanceKm,
-            eventType: eventData.eventCategory || 'local event',
-            mediaCount: mediaUrls.length,
-            ticketType,
-            ticketTiers
-        }
+        createdAt: eventData.createdAt || eventData.updatedAt || new Date().toISOString(),
+        eventDetails: details
     };
+}
+
+async function loadLiveNowEvents() {
+    try {
+        const data = await getJson('/api/events/live');
+        state.liveNowPosts = (data.events || []).map(serverEventToPost);
+    } catch (_error) {
+        state.liveNowPosts = [];
+    }
+    renderLiveNow();
+}
+
+
+async function loadHostedEvents() {
+    try {
+        const data = await getJson('/api/events/mine');
+        state.hostedEventPosts = (data.events || []).map((event) => serverEventToPost({
+            ...event,
+            hostAvatarUrl: state.currentUser.avatar || defaultAvatar
+        }));
+    } catch (error) {
+        state.hostedEventPosts = [];
+        setLocationStatus(error.message || 'Failed to load your hosted events.', true);
+    }
+    renderFeed();
+    loadLiveNowEvents();
+    renderHostedEventList();
+    renderProfileGrid();
+    if (typeof renderPostEventLinkOptions === 'function') renderPostEventLinkOptions();
+    if (typeof updatePostLinkHelper === 'function') updatePostLinkHelper();
 }
 
 async function loadNearbyEvents() {
     if (!state.locationEnabled) {
         state.nearbyEventPosts = [];
         renderFeed();
+        loadLiveNowEvents();
         setLocationStatus('Location is OFF. Turn it ON to auto-detect nearby events.');
         return;
     }
@@ -836,6 +1894,7 @@ async function loadNearbyEvents() {
         state.nearbyEventPosts = (data.events || []).map(serverEventToPost);
         setLocationStatus(`Showing ${data.count || 0} nearby event(s) within ${radiusKm} km.`);
         renderFeed();
+        loadLiveNowEvents();
         renderTopLocationUi();
     } catch (error) {
         setLocationStatus(error.message || 'Failed to load nearby events.', true);
@@ -846,6 +1905,7 @@ async function detectUserLocationAndLoad() {
     if (!state.locationEnabled) {
         state.nearbyEventPosts = [];
         renderFeed();
+        loadLiveNowEvents();
         setLocationStatus('Location is OFF. Turn it ON to auto-detect nearby events.');
         return;
     }
@@ -1084,13 +2144,13 @@ function formatInr(amount) {
     }).format(safeValue);
 }
 
-function formatTime12(hour12, minute, period) {
+function legacy_formatTime12(hour12, minute, period) {
     const hh = String(hour12).padStart(2, '0');
     const mm = String(minute).padStart(2, '0');
     return `${hh}:${mm} ${period}`;
 }
 
-function to24HourTime(hour12, minute, period) {
+function legacy_to24HourTime(hour12, minute, period) {
     let hour24 = hour12 % 12;
     if (period === 'PM') {
         hour24 += 12;
@@ -1098,7 +2158,7 @@ function to24HourTime(hour12, minute, period) {
     return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function parse24HourTime(value) {
+function legacy_parse24HourTime(value) {
     const match = /^(\d{2}):(\d{2})$/.exec(String(value || '').trim());
     if (!match) return null;
     const hour24 = Number(match[1]);
@@ -1111,7 +2171,7 @@ function parse24HourTime(value) {
     return { hour12, minute, period };
 }
 
-function isFutureEventDateTime(dateValue, time24Value) {
+function legacy_isFutureEventDateTime(dateValue, time24Value) {
     if (!dateValue || !time24Value) return false;
     const candidate = new Date(`${dateValue}T${time24Value}:00`);
     if (Number.isNaN(candidate.getTime())) return false;
@@ -1120,14 +2180,14 @@ function isFutureEventDateTime(dateValue, time24Value) {
     return candidate.getTime() >= now.getTime();
 }
 
-function stopAnalogLiveTicker() {
+function legacy_stopAnalogLiveTicker() {
     if (analogLiveTickerId) {
         clearInterval(analogLiveTickerId);
         analogLiveTickerId = null;
     }
 }
 
-function startAnalogLiveTicker() {
+function legacy_startAnalogLiveTicker() {
     stopAnalogLiveTicker();
     analogLiveTickerId = setInterval(() => {
         if (!analogClockState.liveMode || !isAnalogModalOpen()) return;
@@ -1141,12 +2201,12 @@ function startAnalogLiveTicker() {
     }, 1000);
 }
 
-function isTodayEventDateSelected() {
+function legacy_isTodayEventDateSelected() {
     const selectedDate = document.getElementById('event-date')?.value || '';
     return selectedDate && selectedDate === getTodayDateKey();
 }
 
-function isAnalogCandidateAllowed(hour12, minute, period) {
+function legacy_isAnalogCandidateAllowed(hour12, minute, period) {
     const candidateTime = to24HourTime(hour12, minute, period);
     if (isTodayEventDateSelected() && !isFutureEventDateTime(getTodayDateKey(), candidateTime)) {
         return false;
@@ -1163,17 +2223,17 @@ function isAnalogCandidateAllowed(hour12, minute, period) {
     return true;
 }
 
-function markManualAnalogSelection() {
+function legacy_markManualAnalogSelection() {
     analogClockState.liveMode = false;
     analogClockState.second = 0;
     stopAnalogLiveTicker();
 }
 
-function getAnalogTargetHiddenInputId() {
+function legacy_getAnalogTargetHiddenInputId() {
     return analogClockState.targetInputId === 'event-end-time-display' ? 'event-end-time' : 'event-time';
 }
 
-function syncEventTimeInputs() {
+function legacy_syncEventTimeInputs() {
     const hiddenTime = document.getElementById(getAnalogTargetHiddenInputId());
     const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
     if (!displayTime) return;
@@ -1184,7 +2244,7 @@ function syncEventTimeInputs() {
     syncEventTimeDependencyUi();
 }
 
-function time24ToMinutes(time24) {
+function legacy_time24ToMinutes(time24) {
     const parsed = parse24HourTime(time24);
     if (!parsed) return null;
     let hour24 = parsed.hour12 % 12;
@@ -1192,7 +2252,7 @@ function time24ToMinutes(time24) {
     return (hour24 * 60) + parsed.minute;
 }
 
-function calculateDurationMinutesFromTimes(startTime24, endTime24) {
+function legacy_calculateDurationMinutesFromTimes(startTime24, endTime24) {
     const startMin = time24ToMinutes(startTime24);
     const endMin = time24ToMinutes(endTime24);
     if (startMin === null || endMin === null) return null;
@@ -1201,7 +2261,7 @@ function calculateDurationMinutesFromTimes(startTime24, endTime24) {
     return delta;
 }
 
-function formatDurationMinutes(minutes) {
+function legacy_formatDurationMinutes(minutes) {
     const safe = Number(minutes);
     if (!Number.isFinite(safe) || safe <= 0) return '';
     const hours = Math.floor(safe / 60);
@@ -1211,7 +2271,7 @@ function formatDurationMinutes(minutes) {
     return `${mins}m`;
 }
 
-function parseDurationDisplayToMinutes(value) {
+function legacy_parseDurationDisplayToMinutes(value) {
     const raw = String(value || '').trim().toLowerCase();
     if (!raw) return 0;
 
@@ -1253,7 +2313,7 @@ function parseDurationDisplayToMinutes(value) {
     return 0;
 }
 
-function syncDurationHiddenFromDisplay() {
+function legacy_syncDurationHiddenFromDisplay() {
     const durationDisplay = document.getElementById('event-duration-display');
     const durationHidden = document.getElementById('event-duration-minutes');
     if (!durationDisplay || !durationHidden) return;
@@ -1264,7 +2324,7 @@ function syncDurationHiddenFromDisplay() {
     syncEventTimeDependencyUi();
 }
 
-function updateDurationClearButtonVisibility() {
+function legacy_updateDurationClearButtonVisibility() {
     const durationDisplay = document.getElementById('event-duration-display');
     const clearBtn = document.getElementById('event-duration-clear-btn');
     if (!durationDisplay || !clearBtn) return;
@@ -1272,7 +2332,7 @@ function updateDurationClearButtonVisibility() {
     clearBtn.classList.toggle('hidden', !show);
 }
 
-function clearDurationSelection() {
+function legacy_clearDurationSelection() {
     const isConfirmed = window.confirm("Are you sure you want to remove the duration?");
     if (!isConfirmed) {
         return; 
@@ -1288,7 +2348,7 @@ function clearDurationSelection() {
     syncEventTimeDependencyUi();
 }
 
-function recalculateEventDurationFromTimes() {
+function legacy_recalculateEventDurationFromTimes() {
     const startTime = document.getElementById('event-time')?.value || '';
     const endTime = document.getElementById('event-end-time')?.value || '';
     const durationHidden = document.getElementById('event-duration-minutes');
@@ -1312,7 +2372,7 @@ function recalculateEventDurationFromTimes() {
     durationDisplay.readOnly = true;
 }
 
-function syncEventTimeDependencyUi() {
+function legacy_syncEventTimeDependencyUi() {
     const dateHidden = document.getElementById('event-date');
     const startDisplay = document.getElementById('event-time-display');
     const startHidden = document.getElementById('event-time');
@@ -1375,13 +2435,13 @@ function syncEventTimeDependencyUi() {
     updateDurationClearButtonVisibility();
 }
 
-function setAnalogMode(mode) {
+function legacy_setAnalogMode(mode) {
     analogClockState.mode = mode === 'minute' ? 'minute' : 'hour';
     analogClockState.focus = analogClockState.mode;
     renderAnalogClockDial();
 }
 
-function setAnalogPeriod(period) {
+function legacy_setAnalogPeriod(period) {
     if (!isAnalogCandidateAllowed(analogClockState.hour, analogClockState.minute, period === 'AM' ? 'AM' : 'PM')) {
         return;
     }
@@ -1391,11 +2451,11 @@ function setAnalogPeriod(period) {
     renderAnalogClockDial();
 }
 
-function toggleAnalogPeriod() {
+function legacy_toggleAnalogPeriod() {
     setAnalogPeriod(analogClockState.period === 'AM' ? 'PM' : 'AM');
 }
 
-function getAnalogDialIndexFromPoint(clientX, clientY) {
+function legacy_getAnalogDialIndexFromPoint(clientX, clientY) {
     const dial = document.getElementById('analog-clock-dial');
     if (!dial) return 0;
     const rect = dial.getBoundingClientRect();
@@ -1405,7 +2465,7 @@ function getAnalogDialIndexFromPoint(clientX, clientY) {
     return Math.round(angleDeg / 30) % 12;
 }
 
-function setAnalogValueFromDialIndex(index) {
+function legacy_setAnalogValueFromDialIndex(index) {
     if (analogClockState.mode === 'hour') {
         const nextHour = analogHourDialOrder[index];
         if (!isAnalogCandidateAllowed(nextHour, analogClockState.minute, analogClockState.period)) return;
@@ -1419,7 +2479,7 @@ function setAnalogValueFromDialIndex(index) {
     }
 }
 
-function adjustAnalogSelection(step) {
+function legacy_adjustAnalogSelection(step) {
     if (analogClockState.focus === 'period') {
         const nextPeriod = analogClockState.period === 'AM' ? 'PM' : 'AM';
         if (!isAnalogCandidateAllowed(analogClockState.hour, analogClockState.minute, nextPeriod)) return;
@@ -1452,7 +2512,7 @@ function adjustAnalogSelection(step) {
     }
 }
 
-function moveAnalogFocus(step) {
+function legacy_moveAnalogFocus(step) {
     const order = ['hour', 'minute', 'period'];
     const currentIndex = order.indexOf(analogClockState.focus);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -1463,12 +2523,12 @@ function moveAnalogFocus(step) {
     }
 }
 
-function isAnalogModalOpen() {
+function legacy_isAnalogModalOpen() {
     const modal = document.getElementById('analog-time-modal');
     return !!modal && !modal.classList.contains('hidden');
 }
 
-function initAnalogClockInteractions() {
+function legacy_initAnalogClockInteractions() {
     const dial = document.getElementById('analog-clock-dial');
     if (!dial) return;
 
@@ -1519,7 +2579,7 @@ function initAnalogClockInteractions() {
     });
 }
 
-function renderAnalogClockDial() {
+function legacy_renderAnalogClockDial() {
     const dial = document.getElementById('analog-clock-dial');
     const hand = document.getElementById('analog-clock-hand');
     const secondHand = document.getElementById('analog-clock-second-hand');
@@ -1591,7 +2651,7 @@ function renderAnalogClockDial() {
     digitalPeriod.classList.toggle('is-active', analogClockState.focus === 'period');
 }
 
-function openAnalogTimeModal(inputId) {
+function legacy_openAnalogTimeModal(inputId) {
     analogClockState.targetInputId = inputId || 'event-time-display';
     const dateValue = document.getElementById('event-date')?.value || '';
     const startTimeValue = document.getElementById('event-time')?.value || '';
@@ -1649,7 +2709,7 @@ function openAnalogTimeModal(inputId) {
     });
 }
 
-function closeAnalogTimeModal() {
+function legacy_closeAnalogTimeModal() {
     const modal = document.getElementById('analog-time-modal');
     const card = document.getElementById('analog-time-modal-card');
     if (!modal || !card) return;
@@ -1661,7 +2721,7 @@ function closeAnalogTimeModal() {
     setTimeout(() => modal.classList.add('hidden'), 220);
 }
 
-function clearAnalogTimeSelection() {
+function legacy_clearAnalogTimeSelection() {
     const targetHiddenId = getAnalogTargetHiddenInputId();
     const hiddenTime = document.getElementById(targetHiddenId);
     const displayTime = document.getElementById(analogClockState.targetInputId || 'event-time-display');
@@ -1681,7 +2741,7 @@ function clearAnalogTimeSelection() {
     closeAnalogTimeModal();
 }
 
-function parseDateParts(dateValue) {
+function legacy_parseDateParts(dateValue) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateValue || '').trim());
     if (!match) return null;
     return {
@@ -1691,7 +2751,7 @@ function parseDateParts(dateValue) {
     };
 }
 
-function formatDateDisplay(dateValue) {
+function legacy_formatDateDisplay(dateValue) {
     const parts = parseDateParts(dateValue);
     if (!parts) return '';
     const localDate = new Date(parts.year, parts.month - 1, parts.day);
@@ -1703,43 +2763,43 @@ function formatDateDisplay(dateValue) {
     });
 }
 
-function toDateKey(year, month, day) {
+function legacy_toDateKey(year, month, day) {
     return `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function getTodayDateKey() {
+function legacy_getTodayDateKey() {
     const now = new Date();
     return toDateKey(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-function dateKeyToLocalDate(dateKey) {
+function legacy_dateKeyToLocalDate(dateKey) {
     const parts = parseDateParts(dateKey);
     if (!parts) return null;
     return new Date(parts.year, parts.month - 1, parts.day);
 }
 
-function localDateToDateKey(localDate) {
+function legacy_localDateToDateKey(localDate) {
     if (!(localDate instanceof Date) || Number.isNaN(localDate.getTime())) return '';
     return toDateKey(localDate.getFullYear(), localDate.getMonth(), localDate.getDate());
 }
 
-function getSafeSelectedOrTodayDateKey() {
+function legacy_getSafeSelectedOrTodayDateKey() {
     const todayKey = getTodayDateKey();
     if (!eventCalendarState.selectedDate) return todayKey;
     return eventCalendarState.selectedDate < todayKey ? todayKey : eventCalendarState.selectedDate;
 }
 
-function isEventDateModalOpen() {
+function legacy_isEventDateModalOpen() {
     const modal = document.getElementById('event-date-modal');
     return !!modal && !modal.classList.contains('hidden');
 }
 
-function isEventMonthYearPickerOpen() {
+function legacy_isEventMonthYearPickerOpen() {
     const picker = document.getElementById('event-month-year-picker');
     return !!picker && !picker.classList.contains('hidden');
 }
 
-function clampEventCalendarToCurrentMonth() {
+function legacy_clampEventCalendarToCurrentMonth() {
     const today = new Date();
     if (
         eventCalendarState.viewYear < today.getFullYear() ||
@@ -1750,7 +2810,7 @@ function clampEventCalendarToCurrentMonth() {
     }
 }
 
-function renderEventMonthYearPicker() {
+function legacy_renderEventMonthYearPicker() {
     const yearLabel = document.getElementById('event-calendar-year-label');
     const monthGrid = document.getElementById('event-month-grid');
     if (!yearLabel || !monthGrid) return;
@@ -1775,7 +2835,7 @@ function renderEventMonthYearPicker() {
     });
 }
 
-function toggleEventMonthYearPicker() {
+function legacy_toggleEventMonthYearPicker() {
     const picker = document.getElementById('event-month-year-picker');
     if (!picker) return;
     picker.classList.toggle('hidden');
@@ -1784,13 +2844,13 @@ function toggleEventMonthYearPicker() {
     }
 }
 
-function closeEventMonthYearPicker() {
+function legacy_closeEventMonthYearPicker() {
     const picker = document.getElementById('event-month-year-picker');
     if (!picker) return;
     picker.classList.add('hidden');
 }
 
-function changeEventCalendarYear(step) {
+function legacy_changeEventCalendarYear(step) {
     const today = new Date();
     const nextYear = eventCalendarState.viewYear + step;
     eventCalendarState.viewYear = Math.max(today.getFullYear(), nextYear);
@@ -1798,14 +2858,14 @@ function changeEventCalendarYear(step) {
     renderEventCalendar();
 }
 
-function setCalendarViewToSelectedDate(dateKey) {
+function legacy_setCalendarViewToSelectedDate(dateKey) {
     const parsed = parseDateParts(dateKey);
     if (!parsed) return;
     eventCalendarState.viewYear = parsed.year;
     eventCalendarState.viewMonth = parsed.month - 1;
 }
 
-function moveEventDateSelectionByDays(daysDelta) {
+function legacy_moveEventDateSelectionByDays(daysDelta) {
     const todayKey = getTodayDateKey();
     const baseKey = getSafeSelectedOrTodayDateKey();
     const baseDate = dateKeyToLocalDate(baseKey);
@@ -1822,7 +2882,7 @@ function moveEventDateSelectionByDays(daysDelta) {
     renderEventCalendar();
 }
 
-function moveEventCalendarMonthByKeyboard(monthDelta) {
+function legacy_moveEventCalendarMonthByKeyboard(monthDelta) {
     const nextMonth = eventCalendarState.viewMonth + monthDelta;
     const yearDelta = Math.floor(nextMonth / 12);
     eventCalendarState.viewYear += yearDelta;
@@ -1831,7 +2891,7 @@ function moveEventCalendarMonthByKeyboard(monthDelta) {
     renderEventCalendar();
 }
 
-function handleEventCalendarKeyboard(event) {
+function legacy_handleEventCalendarKeyboard(event) {
     if (!isEventDateModalOpen()) return;
 
     if (isEventMonthYearPickerOpen()) {
@@ -1888,7 +2948,7 @@ function handleEventCalendarKeyboard(event) {
     }
 }
 
-function renderEventCalendar() {
+function legacy_renderEventCalendar() {
     const monthLabel = document.getElementById('event-calendar-month-label');
     const grid = document.getElementById('event-calendar-grid');
     const preview = document.getElementById('event-date-preview');
@@ -1928,7 +2988,7 @@ function renderEventCalendar() {
     renderEventMonthYearPicker();
 }
 
-function openEventDateModal(inputId) {
+function legacy_openEventDateModal(inputId) {
     eventCalendarState.targetInputId = inputId || 'event-date-display';
     const modal = document.getElementById('event-date-modal');
     const card = document.getElementById('event-date-modal-card');
@@ -1952,7 +3012,7 @@ function openEventDateModal(inputId) {
     });
 }
 
-function closeEventDateModal() {
+function legacy_closeEventDateModal() {
     const modal = document.getElementById('event-date-modal');
     const card = document.getElementById('event-date-modal-card');
     if (!modal || !card) return;
@@ -1962,7 +3022,7 @@ function closeEventDateModal() {
     setTimeout(() => modal.classList.add('hidden'), 220);
 }
 
-function changeEventCalendarMonth(step) {
+function legacy_changeEventCalendarMonth(step) {
     const nextMonth = eventCalendarState.viewMonth + step;
     const yearDelta = Math.floor(nextMonth / 12);
     eventCalendarState.viewYear += yearDelta;
@@ -1972,7 +3032,7 @@ function changeEventCalendarMonth(step) {
     renderEventCalendar();
 }
 
-function saveEventDateSelection() {
+function legacy_saveEventDateSelection() {
     const dateValue = eventCalendarState.selectedDate || '';
     if (!dateValue) {
         setLocationStatus('Please select a date.', true);
@@ -2010,7 +3070,7 @@ function saveEventDateSelection() {
     closeEventDateModal();
 }
 
-function clearEventDateSelection() {
+function legacy_clearEventDateSelection() {
     const hiddenDate = document.getElementById('event-date');
     const displayInput = document.getElementById(eventCalendarState.targetInputId || 'event-date-display');
     if (hiddenDate) hiddenDate.value = '';
@@ -2037,7 +3097,7 @@ function clearEventDateSelection() {
     closeEventDateModal();
 }
 
-function saveAnalogTimeSelection() {
+function legacy_saveAnalogTimeSelection() {
     const dateInput = document.getElementById('event-date');
     const dateValue = dateInput?.value || '';
     const time24 = to24HourTime(analogClockState.hour, analogClockState.minute, analogClockState.period);
@@ -2051,7 +3111,7 @@ function saveAnalogTimeSelection() {
     closeAnalogTimeModal();
 }
 
-function initEventDateTimePicker() {
+function legacy_initEventDateTimePicker() {
     const dateInput = document.getElementById('event-date');
     const dateDisplayInput = document.getElementById('event-date-display');
     if (!dateInput || !dateDisplayInput) return;
@@ -2073,14 +3133,17 @@ function initEventDateTimePicker() {
     syncEventTimeDependencyUi();
 }
 
-function initEventCalendarKeyboardNavigation() {
+function legacy_initEventCalendarKeyboardNavigation() {
     document.addEventListener('keydown', handleEventCalendarKeyboard);
 }
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
-    bindHomePageActions();
-    state.customLocationName = localStorage.getItem('happnix_custom_location_name') || '';
+    try {
+        bindHomePageActions();
+        syncDiscoverHistory(getStoredDiscoverHistory());
+        loadStoredTickets();
+        state.customLocationName = localStorage.getItem('happnix_custom_location_name') || '';
     state.detectedLocationName = localStorage.getItem('happnix_detected_location_name') || '';
     const locationInput = document.getElementById('location-modal-input');
     if (locationInput) {
@@ -2117,6 +3180,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    const discoverProfileModal = document.getElementById('discover-profile-modal');
+    if (discoverProfileModal) {
+        discoverProfileModal.addEventListener('click', (event) => {
+            if (event.target === discoverProfileModal) {
+                closeDiscoverProfile();
+            }
+        });
+    }
+    const followGraphModal = document.getElementById('follow-graph-modal');
+    if (followGraphModal) {
+        followGraphModal.addEventListener('click', (event) => {
+            if (event.target === followGraphModal) {
+                closeFollowGraph();
+            }
+        });
+    }
+    const settingsModal = document.getElementById('settings-modal');
+    if (settingsModal) {
+        settingsModal.addEventListener('click', (event) => {
+            if (event.target === settingsModal) {
+                closeSettingsModal();
+            }
+        });
+    }
+    const notificationsModal = document.getElementById('notifications-modal');
+    if (notificationsModal) {
+        notificationsModal.addEventListener('click', (event) => {
+            if (event.target === notificationsModal) {
+                closeNotifications();
+            }
+        });
+    }
     document.addEventListener('click', (event) => {
         const target = event.target;
         if (target instanceof Element && target.closest('#event-type-picker')) {
@@ -2144,30 +3239,65 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTopLocationUi();
     renderFeed();
     renderUploadActivity();
-    renderStories();
+    renderLiveNow();
+    loadLiveNowEvents();
     renderExplore();
+    const discoverInput = document.getElementById('discover-search-input');
+    if (discoverInput) {
+        discoverInput.addEventListener('input', () => {
+            const nextValue = discoverInput.value || '';
+            setDiscoverSearchValue(nextValue, { render: false });
+            if (state.discoverSearchTimer) {
+                clearTimeout(state.discoverSearchTimer);
+            }
+            state.discoverSearchTimer = window.setTimeout(() => {
+                runDiscoverSearch(nextValue);
+            }, 220);
+            if (!nextValue.trim()) {
+                state.discoverResults = [];
+                state.discoverLoading = false;
+                renderExplore();
+            }
+        });
+    }
     renderCurrentUserProfile();
     renderProfileGrid();
     renderTicketList();
     renderHostedEventList();
+    loadHostedEvents();
     switchMyEventsTab('tickets');
     const eventMediaInput = document.getElementById('event-media-input');
-    if (eventMediaInput) {
+    if (eventMediaInput && typeof handleEventMediaInputChange === 'function') {
         eventMediaInput.addEventListener('change', handleEventMediaInputChange);
     }
     const createPostForm = document.getElementById('create-post-form');
-    if (createPostForm) {
+    if (createPostForm && typeof handlePostSubmit === 'function') {
         createPostForm.addEventListener('submit', handlePostSubmit);
+    }
+    if (typeof bindCreatePostActions === 'function') {
+        bindCreatePostActions();
+    }
+    if (typeof bindCreatePostInputs === 'function') {
+        bindCreatePostInputs();
     }
     renderEventCategoriesFromManifest();
     renderSelectedEventMedia();
     if (typeof initEventBuilder === 'function') {
         initEventBuilder();
     }
-    loadCurrentUserProfile();
+    if (typeof initPostSwipePanel === 'function') {
+        initPostSwipePanel();
+    }
+    loadCurrentUserProfile().finally(() => {
+        refreshFollowingFeed();
+        startLiveSync();
+        runLiveSyncTick({ force: true });
+    });
     switchTab(getInitialTabFromUrl());
     initPullToRefresh();
-    lucide.createIcons();
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
     if (!state.locationEnabled) {
         setLocationStatus('Location is OFF. Nearby detection stopped.');
     } else if (window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
@@ -2175,25 +3305,78 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         setLocationStatus('Location auto-detect disabled on insecure origin. Use localhost/HTTPS.');
     }
+    } catch (error) {
+        console.error('Home page initialization failed:', error);
+        showStartupDebug(error?.stack || error?.message || error);
+    } finally {
+        // Fallback so the app does not stay trapped behind the loader if a late asset stalls.
+        hideLoaderWhenReady();
+    }
 });
 
 window.addEventListener("load", hideLoaderWhenReady);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        runLiveSyncTick({ force: true });
+    }
+});
+window.addEventListener('focus', () => {
+    runLiveSyncTick({ force: true });
+});
+window.addEventListener('beforeunload', () => {
+    stopLiveSync();
+});
+window.addEventListener('error', (event) => {
+    showStartupDebug(event?.error?.stack || event?.message || 'Window error');
+    hideLoaderWhenReady();
+});
+window.addEventListener('unhandledrejection', (event) => {
+    showStartupDebug(event?.reason?.stack || event?.reason?.message || event?.reason || 'Unhandled promise rejection');
+    hideLoaderWhenReady();
+});
+window.setTimeout(hideLoaderWhenReady, 2500);
 
 // --- Render Functions ---
 
-function renderStories() {
-    const container = document.getElementById('stories-container');
-    const storiesHTML = Array(5).fill(0).map((_, i) => `
-        <div class="flex flex-col items-center gap-1 min-w-[68px]">
-            <div class="w-[68px] h-[68px] rounded-full p-[2px] bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-yellow-400 hover:scale-105 transition-transform cursor-pointer">
-                <div class="w-full h-full rounded-full border-[3px] border-slate-900 overflow-hidden">
-                    <img src="https://images.unsplash.com/photo-${1500000000000 + i * 1000}?w=100&h=100&fit=crop" class="w-full h-full object-cover">
-                </div>
+function renderLiveNow() {
+    const container = document.getElementById('live-now-container');
+    if (!container) return;
+    const liveEvents = getLiveNowEvents();
+    if (!liveEvents.length) {
+        container.innerHTML = `
+            <div class="w-full rounded-3xl border border-white/10 bg-white/5 px-4 py-5 text-sm text-gray-400">
+                No live events right now. When an event is actively running, it will show here.
             </div>
-            <span class="text-xs font-medium text-gray-300 truncate w-full text-center">User_${i+1}</span>
-        </div>
-    `).join('');
-    container.innerHTML = storiesHTML;
+        `;
+        return;
+    }
+    container.innerHTML = liveEvents.map((post) => {
+        const media = getPostPreviewImage(post);
+        const dateBits = getEventMonthDay(post.eventDetails);
+        const priceLabel = Number(post.eventDetails?.price) > 0 ? formatInr(post.eventDetails.price) : 'Free';
+        const distanceLabel = post.eventDetails?.distanceKm !== undefined ? `${post.eventDetails.distanceKm} km away` : 'Live event';
+        return `
+            <button type="button" class="group relative min-w-[220px] max-w-[220px] overflow-hidden rounded-3xl border border-emerald-400/20 bg-slate-950 text-left shadow-[0_12px_40px_rgba(16,185,129,0.16)]" data-action="open-booking-modal" data-post-id="${post.id}">
+                <div class="absolute inset-0 bg-gradient-to-b from-emerald-400/10 via-transparent to-slate-950/90"></div>
+                <img src="${media}" class="h-28 w-full object-cover opacity-80 transition-transform duration-500 group-hover:scale-105">
+                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300">
+                    <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>Live
+                </div>
+                <div class="absolute right-3 top-3 rounded-2xl border border-white/10 bg-black/50 px-2 py-1 text-center text-white">
+                    <div class="text-[9px] tracking-[0.22em] text-gray-400">${dateBits.month}</div>
+                    <div class="text-sm font-black leading-none">${dateBits.day}</div>
+                </div>
+                <div class="relative p-4">
+                    <h3 class="line-clamp-1 text-sm font-black text-white">${escapeHtml(post.eventDetails?.title || 'Live Event')}</h3>
+                    <p class="mt-1 line-clamp-1 text-xs text-gray-300">${escapeHtml(post.eventDetails?.location || distanceLabel)}</p>
+                    <div class="mt-3 flex items-center justify-between gap-2 text-xs">
+                        <span class="rounded-full bg-white/10 px-2.5 py-1 font-bold text-emerald-200">${escapeHtml(distanceLabel)}</span>
+                        <span class="font-bold text-fuchsia-300">${escapeHtml(priceLabel)}</span>
+                    </div>
+                </div>
+            </button>
+        `;
+    }).join('');
 }
 
 function getPostMediaItems(post) {
@@ -2329,8 +3512,19 @@ async function validateIncomingMedia(files) {
 
 function renderFeed() {
     const container = document.getElementById('feed-container');
-    container.innerHTML = getAllPosts().map(post => `
-        <article class="relative mb-6 bg-slate-800/20 md:bg-transparent md:rounded-2xl md:overflow-hidden md:border md:border-white/5">
+    if (!container) return;
+    const feedPosts = getAllPosts();
+    if (feedPosts.length === 0) {
+        container.innerHTML = `
+            <article class="rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-gray-400">
+                Follow people to fill your feed with their posts and events, or publish your first post.
+            </article>`;
+        return;
+    }
+    container.innerHTML = feedPosts.map(post => {
+        const joined = post.isEvent && hasActiveTicketForEvent(post.id);
+        return `
+        <article class="relative mb-6 bg-slate-800/20 md:bg-transparent md:rounded-2xl md:overflow-hidden md:border md:border-white/5" data-post-id="${post.id}">
             <div class="px-4 py-3 flex items-center justify-between bg-slate-900/50 md:bg-transparent">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full ring-2 ring-white/10 overflow-hidden cursor-pointer">
@@ -2361,82 +3555,502 @@ function renderFeed() {
                 </div>
 
                 <div class="absolute bottom-0 left-0 right-0 p-5 pr-20 pointer-events-auto">
+                    ${!post.isEvent ? `<div class="mb-3">${renderLinkedPostBadge(post)}</div>` : ''}
                     <p class="text-sm text-gray-200 mb-3 line-clamp-2"><span class="font-bold text-white mr-2">${post.username}</span>${post.caption}</p>
                     ${post.isEvent ? `
                     <div class="mt-3 bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-3 flex items-center justify-between group/event hover:bg-white/15 transition-colors cursor-pointer" data-action="open-booking-modal" data-post-id="${post.id}">
                         <div class="flex gap-3 items-center">
                             <div class="bg-fuchsia-600/20 w-10 h-10 rounded-lg flex flex-col items-center justify-center text-fuchsia-400 border border-fuchsia-500/30">
-                                <span class="text-[10px] font-bold uppercase leading-none">Oct</span><span class="text-lg font-bold leading-none">24</span>
+                                <span class="text-[10px] font-bold uppercase leading-none">${getEventMonthDay(post.eventDetails).month}</span><span class="text-lg font-bold leading-none">${getEventMonthDay(post.eventDetails).day}</span>
                             </div>
                             <div>
-                                <h3 class="font-bold text-sm text-white group-hover/event:text-fuchsia-300 transition-colors">${post.eventDetails.title}</h3>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-bold text-sm text-white group-hover/event:text-fuchsia-300 transition-colors">${post.eventDetails.title}</h3>
+                                    ${isEventEndedFromDetails(post.eventDetails) ? '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ''}${joined ? '<span class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ''}
+                                </div>
                                 <p class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${post.eventDetails.location}${post.eventDetails.distanceKm !== undefined ? ` (${post.eventDetails.distanceKm} km)` : ''}</p>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
                             ${post.eventDetails.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" data-action="stop-prop" class="px-3 py-2 bg-cyan-600/20 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-500/30 hover:bg-cyan-600/30">Map</a>` : ''}
-                            <button class="px-3 py-2 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg shadow-lg shadow-fuchsia-500/20">${Number(post.eventDetails.price) > 0 ? `Book ${formatInr(post.eventDetails.price)}` : 'Join Free'}</button>
+                            <button class="px-3 py-2 text-xs font-bold rounded-lg shadow-lg ${(isEventEndedFromDetails(post.eventDetails) || joined) ? 'bg-white/10 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-fuchsia-500/20'}" ${(isEventEndedFromDetails(post.eventDetails) || joined) ? 'disabled' : ''}>${isEventEndedFromDetails(post.eventDetails) ? 'Event Ended' : (joined ? 'Joined' : (Number(post.eventDetails.price) > 0 ? `Book ${formatInr(post.eventDetails.price)}` : 'Join Free'))}</button>
                         </div>
                     </div>` : ''}
                 </div>
             </div>
         </article>
-    `).join('');
-    lucide.createIcons();
+    `;
+    }).join('');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+function getFollowButtonClasses(user) {
+    if (user?.is_following) {
+        return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25';
+    }
+    if (user?.follow_request_pending) {
+        return 'border-amber-400/30 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25';
+    }
+    return 'border-fuchsia-400/30 bg-fuchsia-500/15 text-fuchsia-300 hover:bg-fuchsia-500/25';
+}
+
+function getUserFollowState(userId) {
+    const safeUserId = Number(userId);
+    const discoverUser = (state.discoverResults || []).find((user) => Number(user.sql_user_id) === safeUserId);
+    if (discoverUser) return discoverUser;
+    const graphUser = (state.followGraph.users || []).find((user) => Number(user.sql_user_id) === safeUserId);
+    if (graphUser) return graphUser;
+    if (state.activeDiscoverProfile && Number(state.activeDiscoverProfile.sql_user_id) === safeUserId) {
+        return state.activeDiscoverProfile;
+    }
+    return null;
+}
+
+function isUserCurrentlyFollowing(userId) {
+    return !!getUserFollowState(userId)?.is_following;
+}
+
+function renderDiscoverProfileEvents(events) {
+    if (!Array.isArray(events) || events.length === 0) {
+        return `
+            <div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">
+                No events or public posts yet.
+            </div>`;
+    }
+    return events.map((post) => {
+        const joined = post.isEvent && hasActiveTicketForEvent(post.id);
+        if (!post.isEvent) {
+            return `
+                <article class="rounded-3xl border border-white/10 bg-white/[0.03] overflow-hidden shadow-lg shadow-black/10">
+                    <div class="aspect-[16/9] bg-slate-800 overflow-hidden">
+                        <img src="${escapeHtml(getPostPreviewImage(post) || defaultAvatar)}" alt="${escapeHtml(post.username || 'Post')}" class="h-full w-full object-cover">
+                    </div>
+                    <div class="p-4 space-y-3">
+                        <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300">Post</div>
+                        <p class="text-sm leading-6 text-gray-300">${escapeHtml(post.caption || 'Shared a new moment.')}</p>
+                        <div class="text-xs text-gray-500">${escapeHtml(post.username ? `@${post.username}` : '')}</div>
+                    </div>
+                </article>`;
+        }
+        return `
+            <article class="rounded-3xl border border-white/10 bg-white/[0.03] overflow-hidden shadow-lg shadow-black/10">
+                <div class="aspect-[16/9] bg-slate-800 overflow-hidden">
+                    <img src="${escapeHtml(post.image || defaultAvatar)}" alt="${escapeHtml(post.eventDetails?.title || 'Event')}" class="h-full w-full object-cover">
+                </div>
+                <div class="p-4 space-y-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h4 class="text-lg font-black text-white">${escapeHtml(post.eventDetails?.title || 'Untitled event')}</h4>
+                            ${isEventEndedFromDetails(post.eventDetails) ? '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ''}
+                        </div>
+                        <p class="mt-1 text-sm text-fuchsia-300">${escapeHtml(post.eventDetails?.date || 'Date TBD')}</p>
+                        <p class="mt-1 text-sm text-gray-400">${escapeHtml(post.eventDetails?.location || '')}</p>
+                        <p class="mt-2 text-sm leading-6 text-gray-300">${escapeHtml(post.caption || 'Join the vibe.')}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        ${post.eventDetails?.mapUrl ? `<a href="${post.eventDetails.mapUrl}" target="_blank" rel="noopener" class="rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20">Map</a>` : ''}
+                        <button type="button" data-action="open-public-profile-booking" data-post-id="${post.id}"
+                            class="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold ${(isEventEndedFromDetails(post.eventDetails) || joined) ? 'bg-white/10 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/20'}"
+                            ${(isEventEndedFromDetails(post.eventDetails) || joined) ? 'disabled' : ''}>
+                            ${isEventEndedFromDetails(post.eventDetails) ? 'Event Ended' : (joined ? 'Joined' : (Number(post.eventDetails?.price) > 0 ? `Book ${formatInr(post.eventDetails.price)}` : 'Join Free'))}
+                        </button>
+                    </div>
+                </div>
+            </article>`;
+    }).join('');
+}
+
+function renderDiscoverProfileMediaGrid(events) {
+    if (!Array.isArray(events) || events.length === 0) return '';
+    return `
+        <div>
+            <div class="mb-3 text-sm font-semibold uppercase tracking-[0.24em] text-gray-500">Moments</div>
+            <div class="grid grid-cols-3 gap-2">${events.slice(0, 6).map((post) => `
+                <div class="aspect-square overflow-hidden rounded-2xl bg-slate-800 border border-white/10">
+                    <img src="${escapeHtml(post.image || defaultAvatar)}" alt="${escapeHtml(post.eventDetails?.title || 'Event')}" class="h-full w-full object-cover">
+                </div>`).join('')}</div>
+        </div>`;
+}
+
+function renderDiscoverProfileModal(profile) {
+    const contentEl = document.getElementById('discover-profile-content');
+    if (!contentEl) return;
+    if (!profile) {
+        contentEl.innerHTML = `
+            <div class="py-12 text-center text-sm text-gray-400">Unable to load profile.</div>`;
+        return;
+    }
+    const avatar = escapeHtml(profile.profile_picture_url || defaultAvatar);
+    const fullName = escapeHtml(profile.full_name || profile.username || 'Unknown user');
+    const handle = escapeHtml(profile.username ? `@${profile.username}` : '');
+    const bio = escapeHtml(profile.bio || 'No bio added yet.');
+    const buttonLabel = getDiscoverFollowButtonLabel(profile);
+    const verifiedBadge = profile.gov_id_verified
+        ? '<span class="inline-flex items-center gap-1 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-300"><i data-lucide="badge-check" class="w-3.5 h-3.5"></i> Verified</span>'
+        : '';
+    const privacyBadge = profile.is_private
+        ? '<span class="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-200"><i data-lucide="lock" class="w-3.5 h-3.5"></i> Private</span>'
+        : '';
+    const eventPosts = (state.publicProfileEventPosts && state.publicProfileEventPosts[profile.sql_user_id]) || [];
+    const canViewContent = profile.can_view_content !== false;
+    contentEl.innerHTML = `
+        <div class="space-y-6">
+            <div class="flex items-start gap-4 pr-10">
+                <img src="${avatar}" alt="${fullName}" class="h-24 w-24 rounded-3xl object-cover bg-slate-800 border border-white/10">
+                <div class="min-w-0 flex-1 pt-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="text-2xl font-black text-white">${fullName}</h3>
+                        ${verifiedBadge}${privacyBadge}
+                    </div>
+                    <p class="mt-1 text-sm text-gray-400">${handle}</p>
+                    <p class="mt-3 text-sm leading-6 text-gray-300">${bio}</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
+                    <div class="text-lg font-black text-white">${Number(profile.hosted_events_count || 0)}</div>
+                    <div class="mt-1 text-[11px] uppercase tracking-[0.24em] text-gray-500">Vibes</div>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
+                    <div class="text-lg font-black text-white">${Number(profile.followers_count || 0)}</div>
+                    <div class="mt-1 text-[11px] uppercase tracking-[0.24em] text-gray-500">Fans</div>
+                </div>
+                <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
+                    <div class="text-lg font-black text-white">${Number(profile.following_count || 0)}</div>
+                    <div class="mt-1 text-[11px] uppercase tracking-[0.24em] text-gray-500">Following</div>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button type="button" data-action="follow-user" data-user-id="${profile.sql_user_id}"
+                    class="flex-1 rounded-2xl border px-4 py-3 text-sm font-bold transition-colors ${getFollowButtonClasses(profile)}">${buttonLabel}</button>
+                <button type="button" data-action="close-discover-profile"
+                    class="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-gray-300 hover:bg-white/[0.06]">Close</button>
+            </div>
+            ${canViewContent ? renderDiscoverProfileMediaGrid(eventPosts) : ''}
+            <div>
+                <div class="mb-3 text-sm font-semibold uppercase tracking-[0.24em] text-gray-500">Events And Posts</div>
+                <div class="space-y-4">${canViewContent ? renderDiscoverProfileEvents(eventPosts) : `<div class="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-5 py-6 text-sm text-amber-100">${escapeHtml(profile.private_content_message || 'This account is private. Follow to see posts and events.')}</div>`}</div>
+            </div>
+        </div>`;
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+async function openDiscoverProfile(userId) {
+    const safeUserId = Number(userId);
+    if (!Number.isFinite(safeUserId) || safeUserId <= 0) return;
+    const modal = document.getElementById('discover-profile-modal');
+    const card = document.getElementById('discover-profile-card');
+    const contentEl = document.getElementById('discover-profile-content');
+    if (!modal || !card || !contentEl) return;
+
+    modal.classList.remove('hidden');
+    contentEl.innerHTML = '<div class="py-12 text-center text-sm text-gray-400">Loading profile...</div>';
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+
+    try {
+        const data = await getJson(`/api/users/${safeUserId}/profile`);
+        state.activeDiscoverProfile = data?.profile || null;
+        const avatar = state.activeDiscoverProfile?.profile_picture_url || defaultAvatar;
+        const eventPosts = Array.isArray(state.activeDiscoverProfile?.hosted_events)
+            ? state.activeDiscoverProfile.hosted_events.map((event) => serverEventToPost({ ...event, hostAvatarUrl: avatar }))
+            : [];
+        state.publicProfileEventPosts[safeUserId] = hydrateProfileFeedPosts(state.activeDiscoverProfile, eventPosts);
+        renderDiscoverProfileModal(state.activeDiscoverProfile);
+    } catch (error) {
+        state.activeDiscoverProfile = null;
+        contentEl.innerHTML = `<div class="py-12 text-center text-sm text-rose-300">${escapeHtml(error.message || 'Unable to load profile.')}</div>`;
+    }
+}
+
+function closeDiscoverProfile() {
+    const modal = document.getElementById('discover-profile-modal');
+    const card = document.getElementById('discover-profile-card');
+    if (!modal || !card) return;
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+function renderFollowGraphList() {
+    const listEl = document.getElementById('follow-graph-list');
+    const titleEl = document.getElementById('follow-graph-title');
+    if (!listEl || !titleEl) return;
+
+    const graphType = state.followGraph.type === 'following' ? 'following' : 'followers';
+    titleEl.textContent = graphType === 'followers' ? 'Fans' : 'Following';
+
+    if (state.followGraph.loading) {
+        listEl.innerHTML = '<div class="py-12 text-center text-sm text-gray-400">Loading accounts...</div>';
+        return;
+    }
+
+    const users = Array.isArray(state.followGraph.users) ? state.followGraph.users : [];
+    if (users.length === 0) {
+        listEl.innerHTML = `<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">No ${graphType === 'followers' ? 'fans' : 'following accounts'} yet.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = users.map((user) => {
+        const fullName = escapeHtml(user.full_name || user.username || 'Unknown user');
+        const handle = escapeHtml(user.username ? `@${user.username}` : '');
+        const avatar = escapeHtml(user.profile_picture_url || defaultAvatar);
+        const subtitle = escapeHtml(user.is_following ? 'Following' : (user.follow_request_pending ? 'Request pending' : (user.is_private ? 'Private account' : (user.follows_you ? 'Follows you' : 'Suggested account'))));
+        const buttonLabel = getDiscoverFollowButtonLabel(user);
+        return `
+            <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10 cursor-pointer" data-action="open-discover-profile" data-user-id="${user.sql_user_id}">
+                <div class="flex items-center gap-3">
+                    <img src="${avatar}" alt="${fullName}" class="h-14 w-14 rounded-2xl object-cover bg-slate-800">
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-bold text-white">${fullName}</div>
+                        <div class="truncate text-sm text-gray-400">${handle}</div>
+                        <div class="mt-1 text-xs text-gray-500">${subtitle}</div>
+                    </div>
+                    <button type="button" data-action="follow-user" data-user-id="${user.sql_user_id}"
+                        class="rounded-xl border px-4 py-2 text-xs font-bold transition-colors ${getFollowButtonClasses(user)}">${buttonLabel}</button>
+                </div>
+            </article>`;
+    }).join('');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+async function openFollowGraph(graphType) {
+    const safeType = graphType === 'following' ? 'following' : 'followers';
+    const modal = document.getElementById('follow-graph-modal');
+    const card = document.getElementById('follow-graph-card');
+    if (!modal || !card) return;
+
+    state.followGraph.type = safeType;
+    state.followGraph.loading = true;
+    state.followGraph.users = [];
+    renderFollowGraphList();
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+    });
+
+    try {
+        const data = await getJson(`/api/profile/${safeType}`);
+        state.followGraph.users = Array.isArray(data?.users) ? data.users : [];
+    } catch (_error) {
+        state.followGraph.users = [];
+    } finally {
+        state.followGraph.loading = false;
+        renderFollowGraphList();
+    }
+}
+
+function closeFollowGraph() {
+    const modal = document.getElementById('follow-graph-modal');
+    const card = document.getElementById('follow-graph-card');
+    if (!modal || !card) return;
+    modal.classList.add('opacity-0');
+    card.classList.add('scale-95');
+    setTimeout(() => modal.classList.add('hidden'), 220);
+}
+
+function updateFollowGraphUser(targetUserId, payload) {
+    const safeUserId = Number(targetUserId);
+    state.followGraph.users = (state.followGraph.users || []).map((user) => {
+        if (Number(user.sql_user_id) !== safeUserId) return user;
+        return { ...user, ...payload };
+    });
+    renderFollowGraphList();
+}
+
+function getDiscoverFollowButtonLabel(user) {
+    if (user?.is_following) return 'Following';
+    if (user?.follow_request_pending) return 'Requested';
+    if (user?.follows_you) return 'Follow back';
+    return user?.is_private ? 'Request' : 'Follow';
 }
 
 function renderExplore() {
-    const grid = document.getElementById('explore-grid');
-    let html = `
-        <div class="col-span-2 row-span-2 relative overflow-hidden rounded-xl h-[280px] md:h-[400px] group cursor-pointer">
-            <img src="https://images.unsplash.com/photo-1533174072545-e8d4aa97edf9?w=600&h=600&fit=crop" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
-            <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-4"><span class="font-black text-white text-lg">Trending</span></div>
-        </div>
-    `;
-    for(let i=0; i<8; i++) {
-        html += `<div class="bg-slate-800 rounded-xl overflow-hidden h-[140px] md:h-[195px] relative group cursor-pointer">
-            <img src="https://images.unsplash.com/photo-${1520000000000 + i * 1234}?w=300&h=300&fit=crop" class="w-full h-full object-cover opacity-80 transition-all duration-300 group-hover:opacity-100 group-hover:scale-105">
-            <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
-        </div>`;
+    const resultsEl = document.getElementById('discover-search-results');
+    const statusEl = document.getElementById('discover-search-status');
+    if (!resultsEl || !statusEl) return;
+
+    updateDiscoverSearchClearButton();
+    const query = state.discoverQuery.trim();
+    if (!query) {
+        if (state.discoverHistory.length > 0) {
+            statusEl.textContent = 'Recent searches';
+            resultsEl.innerHTML = `
+                <div class="space-y-2">${state.discoverHistory.map((item) => `
+                    <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 shadow-lg shadow-black/10 cursor-pointer flex items-center gap-3" data-action="run-discover-history" data-query="${escapeHtml(item)}">
+                        <div class="h-10 w-10 rounded-2xl bg-white/[0.04] text-gray-400 flex items-center justify-center"><i data-lucide="history" class="w-4 h-4"></i></div>
+                        <div class="min-w-0 flex-1">
+                            <div class="truncate text-sm font-semibold text-white">${escapeHtml(item)}</div>
+                            <div class="text-xs text-gray-500">Tap to search again</div>
+                        </div>
+                        <button type="button" data-action="remove-discover-history" data-query="${escapeHtml(item)}" class="h-9 w-9 rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>`).join('')}</div>`;
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+            return;
+        }
+        statusEl.textContent = 'Find people to follow';
+        resultsEl.innerHTML = `
+            <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-6 text-sm text-gray-400">
+                Search by full name or username to discover people and follow them back.
+            </div>`;
+        return;
     }
-    grid.innerHTML = html;
+
+    if (state.discoverLoading) {
+        statusEl.textContent = 'Searching...';
+        resultsEl.innerHTML = `
+            <div class="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-6 text-sm text-gray-400">
+                Looking for matches...
+            </div>`;
+        return;
+    }
+
+    const users = Array.isArray(state.discoverResults) ? state.discoverResults : [];
+    statusEl.textContent = users.length > 0 ? `${users.length} result${users.length === 1 ? '' : 's'}` : 'No matches';
+    if (users.length === 0) {
+        resultsEl.innerHTML = `
+            <div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">
+                No users found for "${escapeHtml(query)}".
+            </div>`;
+        return;
+    }
+
+    resultsEl.innerHTML = users.map((user) => {
+        const avatar = user.profile_picture_url || defaultAvatar;
+        const fullName = escapeHtml(user.full_name || user.username || 'Unknown user');
+        const handle = escapeHtml(user.username ? `@${user.username}` : '');
+        const subtitle = escapeHtml(user.is_following ? 'You are following this user' : (user.follow_request_pending ? 'Follow request pending' : (user.is_private ? 'Private account' : (user.follows_you ? 'Follows you' : 'Suggested match'))));
+        const buttonLabel = getDiscoverFollowButtonLabel(user);
+        return `
+            <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10 backdrop-blur-sm cursor-pointer" data-action="open-discover-profile" data-user-id="${user.sql_user_id}">
+                <div class="flex items-center gap-3">
+                    <img src="${avatar}" alt="${fullName}" class="h-14 w-14 rounded-2xl object-cover bg-slate-800">
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-bold text-white">${fullName}</div>
+                        <div class="truncate text-sm text-gray-400">${handle}</div>
+                        <div class="mt-1 text-xs text-gray-500">${subtitle}</div>
+                    </div>
+                    <button type="button" data-action="follow-user" data-user-id="${user.sql_user_id}"
+                        class="rounded-xl border px-4 py-2 text-xs font-bold transition-colors ${getFollowButtonClasses(user)}">
+                        ${buttonLabel}
+                    </button>
+                </div>
+            </article>`;
+    }).join('');
+}
+
+async function runDiscoverSearch(query) {
+    const trimmedQuery = String(query || '').trim();
+    state.discoverQuery = trimmedQuery;
+    if (!trimmedQuery) {
+        state.discoverLoading = false;
+        state.discoverResults = [];
+        renderExplore();
+        return;
+    }
+
+    state.discoverLoading = true;
+    renderExplore();
+    try {
+        const data = await getJson(`/api/users/search?q=${encodeURIComponent(trimmedQuery)}&limit=20`);
+        state.discoverResults = Array.isArray(data?.users) ? data.users : [];
+        addDiscoverHistoryItem(trimmedQuery);
+    } catch (error) {
+        state.discoverResults = [];
+        const statusEl = document.getElementById('discover-search-status');
+        if (statusEl) statusEl.textContent = error.message || 'Search failed';
+    } finally {
+        state.discoverLoading = false;
+        renderExplore();
+    }
+}
+
+async function followDiscoverUser(targetUserId) {
+    const safeUserId = Number(targetUserId);
+    if (!Number.isFinite(safeUserId) || safeUserId <= 0) return;
+    const relation = getUserFollowState(safeUserId);
+    const nextAction = relation?.follow_request_pending ? 'cancel_request' : (relation?.is_following ? 'unfollow' : 'follow');
+    try {
+        const response = await postJson('/api/users/follow', { targetUserId: safeUserId, action: nextAction });
+        state.discoverResults = state.discoverResults.map((user) => {
+            if (Number(user.sql_user_id) !== safeUserId) return user;
+            return { ...user, ...(response?.follow || {}) };
+        });
+        if (state.activeDiscoverProfile && Number(state.activeDiscoverProfile.sql_user_id) === safeUserId) {
+            state.activeDiscoverProfile = { ...state.activeDiscoverProfile, ...(response?.follow || {}) };
+            renderDiscoverProfileModal(state.activeDiscoverProfile);
+        }
+        updateFollowGraphUser(safeUserId, { ...(response?.follow || {}) });
+        renderExplore();
+        loadCurrentUserProfile();
+        refreshFollowingFeed();
+    } catch (error) {
+        const statusEl = document.getElementById('discover-search-status');
+        if (statusEl) statusEl.textContent = error.message || 'Follow update failed';
+    }
 }
 
 function renderProfileGrid() {
     const grid = document.getElementById('profile-grid');
-    const myPosts = getAllPosts().filter(p => p.username === state.currentUser.username);
-    document.getElementById('profile-posts-count').innerText = myPosts.length;
-    
-    let html = '';
-    myPosts.forEach(post => {
-            html += `<div class="aspect-square bg-slate-800 relative group overflow-hidden md:rounded-lg cursor-pointer">
-            <img src="${post.image}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+    const countEl = document.getElementById('profile-posts-count');
+    if (!grid || !countEl) return;
+    const myPosts = getAllPosts().filter((post) => post.username === state.currentUser.username);
+    countEl.innerText = myPosts.length;
+
+    if (!myPosts.length) {
+        grid.innerHTML = `
+            <div class="col-span-3 rounded-3xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center md:col-span-3">
+                <div class="text-base font-bold text-white">No posts or events yet</div>
+                <p class="mt-2 text-sm text-gray-400">New accounts start clean here. Your uploads and hosted events will appear once you share something.</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = myPosts.map((post) => `
+        <div class="aspect-square bg-slate-800 relative group overflow-hidden md:rounded-lg cursor-pointer">
+            <img src="${getPostPreviewImage(post)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
             <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white font-bold">
                 <span class="flex items-center gap-1"><i data-lucide="heart" class="w-4 h-4 fill-white"></i> ${post.likes}</span>
             </div>
-            </div>`;
-    });
-    for(let i=0; i<4; i++) {
-        html += `<div class="aspect-square bg-slate-800 md:rounded-lg overflow-hidden group">
-            <img src="https://images.unsplash.com/photo-${1510000000000 + i * 500}?w=300&h=300&fit=crop" class="w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500 cursor-pointer">
-        </div>`;
-    }
-    grid.innerHTML = html;
+        </div>
+    `).join('');
 }
 
 function renderTicketList() {
     const container = document.getElementById('tickets-list');
     const emptyState = document.getElementById('empty-tickets');
-    
+    if (!container || !emptyState) return;
+
     if (state.tickets.length === 0) {
         emptyState.classList.remove('hidden');
         container.innerHTML = '';
         return;
     }
-    
+
     emptyState.classList.add('hidden');
-    container.innerHTML = state.tickets.map(ticket => `
-        <div class="relative group hover:scale-[1.02] transition-transform duration-300 cursor-pointer">
+    container.innerHTML = state.tickets.map((ticket) => {
+        const isEnded = isEventEndedFromDetails(ticket.event.eventDetails);
+        const expired = isTicketExpired(ticket);
+        const isCancelled = ticket.status === 'cancelled';
+        const statusLabel = isCancelled ? 'Cancelled' : (expired ? 'Expired' : 'Confirmed');
+        const statusClass = isCancelled ? 'text-amber-200' : (expired ? 'text-rose-300' : 'text-cyan-400');
+        const deleteVisible = state.ticketDeleteRevealId === String(ticket.id);
+        return `
+        <div class="relative group hover:scale-[1.02] transition-transform duration-300 ${isCancelled ? 'opacity-75' : ''}" data-action="ticket-card" data-ticket-id="${ticket.id}">
             <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
             <div class="relative bg-slate-900 rounded-2xl overflow-hidden">
                 <div class="h-24 w-full relative">
@@ -2447,17 +4061,170 @@ function renderTicketList() {
                 <div class="p-5 grid grid-cols-3 gap-4">
                     <div class="col-span-2 space-y-3">
                         <div><div class="text-[10px] uppercase text-gray-400 tracking-wider">Date</div><div class="font-bold text-white">${ticket.event.eventDetails.date}</div></div>
-                        <div class="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs text-cyan-400"><i data-lucide="check" class="w-3 h-3"></i> Confirmed</div>
+                        <div class="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs ${statusClass}"><i data-lucide="check" class="w-3 h-3"></i> ${statusLabel}</div>
+                        ${isCancelled ? `<div class="flex flex-wrap items-center gap-2"><div class="text-xs text-gray-500">Cancelled ${formatNotificationTime(ticket.cancelledAt)}</div>${deleteVisible ? `<button type="button" data-action="delete-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 transition-colors">Delete</button>` : `<span class="text-[11px] text-gray-500">Long press card to show delete</span>`}</div>` : (expired ? `<div class="flex flex-wrap items-center gap-2"><button type="button" data-action="archive-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/20 transition-colors">Archive</button><button type="button" data-action="delete-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 transition-colors">Delete</button></div>` : `<button type="button" data-action="cancel-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20 transition-colors">Cancel Ticket</button>`)}
                     </div>
                     <div class="col-span-1 flex flex-col items-center justify-center border-l border-white/10 pl-4">
                         <i data-lucide="qr-code" class="w-16 h-16 text-white mb-2"></i>
-                        <span class="font-mono text-[10px] text-gray-500">#${ticket.id.substr(0,4)}</span>
+                        <span class="font-mono text-[10px] text-gray-500">#${String(ticket.id).substr(0,4)}</span>
                     </div>
                 </div>
             </div>
         </div>
-    `).join('');
-    lucide.createIcons();
+    `;
+    }).join('');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+let currentBookingEventId = null;
+
+function openBookingModal(postId) {
+    const event = getPostById(postId);
+    if (!event || !event.eventDetails) return;
+    currentBookingEventId = postId;
+
+    const modal = document.getElementById('booking-modal');
+    const content = document.getElementById('modal-content');
+    const details = document.getElementById('modal-event-details');
+    const fallbackPrice = Number(event.eventDetails.price) || 0;
+    const rawTicketType = event.eventDetails.ticketType || '';
+    const ticketType = rawTicketType || (fallbackPrice > 0 ? 'Paid' : 'Free');
+    let ticketTiers = Array.isArray(event.eventDetails.ticketTiers) ? event.eventDetails.ticketTiers : [];
+    if (ticketType === 'Paid' && ticketTiers.length === 0) {
+        ticketTiers = [{ name: 'General', price: fallbackPrice }];
+    }
+    const baseFee = ticketType === 'Paid' ? 4 : 0;
+    const isEnded = isEventEndedFromDetails(event.eventDetails);
+    const existingTicket = getActiveTicketForEvent(postId);
+    const isAlreadyJoined = Boolean(existingTicket);
+    const highlights = getEventHighlightPosts(postId);
+
+    details.innerHTML = `
+        <div class="flex gap-5 mb-8">
+            <img src="${event.image}" class="w-24 h-32 rounded-2xl object-cover shadow-2xl">
+            <div class="pt-2">
+                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 class="font-black text-2xl leading-tight text-white">${event.eventDetails.title}</h3>
+                    ${isEnded ? '<span class="px-2 py-1 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ''}
+                    ${isAlreadyJoined ? '<span class="px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ''}
+                </div>
+                <p class="text-fuchsia-400 font-medium mb-1">${event.eventDetails.date}</p>
+                <p class="text-gray-400 text-sm">${event.eventDetails.location}</p>
+                ${event.eventDetails.endLabel ? `<p class="text-xs text-gray-500 mt-1">Ends: ${event.eventDetails.endLabel}</p>` : ''}
+                ${event.eventDetails.mapUrl ? `<a href="${event.eventDetails.mapUrl}" target="_blank" rel="noopener" class="inline-block mt-2 text-xs text-cyan-300 hover:text-cyan-200">Open in Maps</a>` : ''}
+            </div>
+        </div>
+        <div class="space-y-6">
+            ${renderEventHighlightsSection('Pre-event Highlights', highlights.before, 'before')}
+            ${renderEventHighlightsSection('Post-event Highlights', highlights.after, 'after')}
+            ${isAlreadyJoined ? `
+            <div class="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4 text-sm text-cyan-100">
+                You already joined this party. Cancel your ticket from the Tickets tab if you want to join again.
+            </div>
+            ` : (ticketType === 'Free' ? `
+            <div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
+                <span class="font-bold text-gray-300">Free Entry</span>
+                <span class="text-sm font-semibold text-emerald-300">No charge</span>
+            </div>
+            ` : `
+            <div class="space-y-3">
+                <div class="text-sm font-semibold text-gray-300">Choose Ticket</div>
+                <div class="space-y-2">
+                    ${ticketTiers.map((tier, index) => `
+                    <label class="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 ${isEnded ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-fuchsia-500/40'} transition-colors">
+                        <div class="flex items-center gap-3">
+                            <input type="radio" name="booking-tier" value="${index}" ${index === 0 ? 'checked' : ''} class="accent-fuchsia-500" ${isEnded ? 'disabled' : ''}>
+                            <div>
+                                <div class="font-semibold text-white">${tier.name || 'General'}</div>
+                                ${tier.services ? `<div class="text-xs text-gray-400">${tier.services}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="text-fuchsia-400 font-bold">${formatInr(Number(tier.price) || 0)}</div>
+                    </label>
+                    `).join('')}
+                </div>
+            </div>
+            `)}
+            <div class="border-t border-white/10 pt-4 flex justify-between items-center">
+                <span class="text-xl font-bold text-white">Total</span>
+                <span id="booking-total-amount" class="text-2xl font-black ${(isEnded || isAlreadyJoined) ? 'text-rose-300' : 'text-fuchsia-400'}">${isEnded ? 'Closed' : (isAlreadyJoined ? 'Joined' : (ticketType === 'Free' ? 'Free' : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)))}</span>
+            </div>
+            <button id="booking-action-btn" data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg ${(isEnded || isAlreadyJoined) ? 'bg-white/10 text-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30'}" ${(isEnded || isAlreadyJoined) ? 'disabled' : ''}>${isEnded ? 'Event Ended' : (isAlreadyJoined ? 'Already Joined' : (ticketType === 'Free' ? 'Join Event' : 'Pay & Join'))}</button>
+            <button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
+        </div>
+    `;
+
+    if (!isEnded && !isAlreadyJoined && ticketType === 'Paid') {
+        const totalEl = document.getElementById('booking-total-amount');
+        details.querySelectorAll('input[name="booking-tier"]').forEach((input) => {
+            input.addEventListener('change', () => {
+                const idx = Number(input.value);
+                const nextPrice = Number(ticketTiers[idx]?.price) || 0;
+                if (totalEl) totalEl.textContent = formatInr(nextPrice + baseFee);
+            });
+        });
+    }
+
+    modal.classList.remove('hidden');
+    modal.scrollTop = 0;
+    if (content) {
+        content.scrollTop = 0;
+    }
+    setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        if (window.innerWidth >= 768) {
+            content.classList.remove('translate-y-10');
+        } else {
+            content.classList.remove('translate-y-full');
+        }
+    }, 10);
+}
+
+function closeBookingModal() {
+    const modal = document.getElementById('booking-modal');
+    const content = document.getElementById('modal-content');
+    if (!modal || !content) return;
+
+    modal.classList.add('opacity-0');
+    if (window.innerWidth >= 768) {
+        content.classList.add('translate-y-10');
+    } else {
+        content.classList.add('translate-y-full');
+    }
+
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
+}
+
+async function confirmBooking() {
+    const event = getPostById(currentBookingEventId);
+    if (!event || isEventEndedFromDetails(event.eventDetails)) {
+        setLocationStatus('This event has already ended, so booking is closed.', true);
+        closeBookingModal();
+        return;
+    }
+    if (hasActiveTicketForEvent(event.id)) {
+        setLocationStatus('You already joined this party. Cancel the existing ticket to join again.', true);
+        closeBookingModal();
+        return;
+    }
+    try {
+        const data = await postJson('/api/tickets/book', { eventId: Number(String(event.id || '').replace('event-', '')) });
+        const nextTicket = normalizeStoredTicket(data.ticket);
+        state.tickets = [nextTicket, ...state.tickets.filter((entry) => String(entry.id) !== String(nextTicket.id))];
+        persistTickets();
+        renderTicketList();
+        if (event.userId && Number(event.userId) !== Number(state.currentUser.id || 0)) {
+            logActivity({ activityType: 'ticket_purchase', recipientUserId: event.userId, eventId: event.id, eventTitle: event.eventDetails?.title || 'your event' });
+        }
+        closeBookingModal();
+        setTimeout(() => switchTab('tickets'), 300);
+    } catch (error) {
+        setLocationStatus(error.message || 'Failed to join this party.', true);
+    }
 }
 
 function startHostedEventPress(event, postId) {
@@ -2474,6 +4241,34 @@ function cancelHostedEventPress() {
     clearTimeout(state.hostedPressTimerId);
 }
 
+function startCancelledTicketDeletePress(event, ticketId) {
+    clearTimeout(state.ticketPressTimerId);
+    state.ticketPressTimerId = setTimeout(() => {
+        state.ticketDeleteRevealId = String(ticketId || '');
+        renderTicketList();
+    }, 700);
+}
+
+function stopCancelledTicketDeletePress() {
+    clearTimeout(state.ticketPressTimerId);
+}
+
+function handleTicketCardClick(ticketId) {
+    const safeTicketId = String(ticketId || '');
+    const ticket = (state.tickets || []).find((entry) => String(entry.id) === safeTicketId);
+    if (!ticket) return;
+    if (ticket.status === 'cancelled') {
+        if (state.ticketDeleteRevealId === safeTicketId) {
+            state.ticketDeleteRevealId = null;
+            renderTicketList();
+        }
+        return;
+    }
+    if (ticket.event?.id) {
+        openBookingModal(ticket.event.id);
+    }
+}
+
 function handleHostedEventCardClick(postId) {
     if (state.hostedSuppressClickPostId === postId) {
         state.hostedSuppressClickPostId = null;
@@ -2484,6 +4279,13 @@ function handleHostedEventCardClick(postId) {
         renderHostedEventList();
     }
     openBookingModal(postId);
+}
+
+function closeHostedEventCard(postId) {
+    if (state.hostedMenuEventPostId !== postId) return;
+    state.hostedMenuEventPostId = null;
+    state.hostedSuppressClickPostId = null;
+    renderHostedEventList();
 }
 
 async function deleteHostedEvent(postId) {
@@ -2498,10 +4300,15 @@ async function deleteHostedEvent(postId) {
     try {
         await deleteJson(`/api/events/${eventId}`);
         state.nearbyEventPosts = state.nearbyEventPosts.filter((item) => item.id !== postId);
-        state.posts = state.posts.filter((item) => item.id !== postId);
+        state.hostedEventPosts = state.hostedEventPosts.filter((item) => item.id !== postId);
+        state.posts = state.posts
+            .filter((item) => item.id !== postId)
+            .map((item) => item.linkedEventId === postId ? { ...item, linkedEventId: null, linkedEventTitle: '' } : item);
         state.tickets = state.tickets.filter((ticket) => ticket?.event?.id !== postId);
+        persistTickets();
         state.hostedMenuEventPostId = null;
         renderFeed();
+        loadLiveNowEvents();
         renderHostedEventList();
         renderTicketList();
         renderProfileGrid();
@@ -2531,6 +4338,11 @@ function renderHostedEventList() {
                 data-action="hosted-event-card" data-post-id="${eventPost.id}">
                 <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 rounded-2xl opacity-75 blur group-hover:opacity-100 transition-opacity"></div>
                 <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10">
+                    ${menuVisible ? `
+                    <button type="button" data-action="close-hosted-event-card" data-post-id="${eventPost.id}" aria-label="Minimize event card"
+                        class="absolute top-3 right-3 z-10 h-9 w-9 rounded-full border border-white/20 bg-slate-950/75 text-white flex items-center justify-center shadow-lg shadow-black/30 backdrop-blur hover:bg-slate-900/90">
+                        <i data-lucide="x" class="w-4 h-4 pointer-events-none"></i>
+                    </button>` : ''}
                     <div class="h-28 w-full relative">
                         <img src="${eventPost.image}" class="w-full h-full object-cover opacity-60">
                         <div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
@@ -2545,8 +4357,8 @@ function renderHostedEventList() {
                             <div class="font-bold text-white text-sm">${eventPost.eventDetails.date}</div>
                         </div>
                         <div class="text-right">
-                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Price</div>
-                            <div class="font-black text-fuchsia-400">${formatInr(eventPost.eventDetails.price)}</div>
+                            <div class="text-[10px] uppercase text-gray-400 tracking-wider">Status</div>
+                            <div class="font-black ${isEventEndedFromDetails(eventPost.eventDetails) ? 'text-rose-300' : 'text-emerald-300'}">${isEventEndedFromDetails(eventPost.eventDetails) ? 'Ended' : 'Live'}</div>
                         </div>
                     </div>
                 </div>
@@ -2613,6 +4425,20 @@ function bindHomePageActions() {
                     handleLogout();
                 }
                 break;
+            case 'open-settings':
+                openSettingsModal();
+                break;
+            case 'close-settings':
+                closeSettingsModal();
+                break;
+            case 'toggle-private-account':
+                updatePrivateAccountSetting(!state.currentUser.isPrivate);
+                break;
+            case 'handle-follow-request':
+                if (actionEl.dataset.requesterId && actionEl.dataset.requestAction) {
+                    handleFollowRequestAction(actionEl.dataset.requesterId, actionEl.dataset.requestAction);
+                }
+                break;
             case 'location-toggle':
                 if (actionEl.dataset.buttonId) {
                     handleLocationToggleTap(event, actionEl.dataset.buttonId);
@@ -2625,6 +4451,27 @@ function bindHomePageActions() {
                 break;
             case 'close-booking-modal':
                 closeBookingModal();
+                break;
+            case 'confirm-booking':
+                confirmBooking();
+                break;
+            case 'cancel-ticket':
+                event.stopPropagation();
+                if (actionEl.dataset.ticketId) {
+                    cancelTicket(actionEl.dataset.ticketId);
+                }
+                break;
+            case 'archive-ticket':
+                event.stopPropagation();
+                if (actionEl.dataset.ticketId) {
+                    archiveTicket(actionEl.dataset.ticketId);
+                }
+                break;
+            case 'delete-ticket':
+                event.stopPropagation();
+                if (actionEl.dataset.ticketId) {
+                    deleteTicket(actionEl.dataset.ticketId);
+                }
                 break;
             case 'close-location-modal':
                 closeLocationModal();
@@ -2662,6 +4509,64 @@ function bindHomePageActions() {
                     deleteHostedEvent(actionEl.dataset.postId);
                 }
                 break;
+            case 'close-hosted-event-card':
+                event.stopPropagation();
+                if (actionEl.dataset.postId) {
+                    closeHostedEventCard(actionEl.dataset.postId);
+                }
+                break;
+            case 'follow-user':
+                event.stopPropagation();
+                if (actionEl.dataset.userId) {
+                    followDiscoverUser(actionEl.dataset.userId);
+                }
+                break;
+            case 'open-discover-profile':
+                if (actionEl.dataset.userId) {
+                    openDiscoverProfile(actionEl.dataset.userId);
+                }
+                break;
+            case 'open-public-profile-booking':
+                event.stopPropagation();
+                closeDiscoverProfile();
+                if (actionEl.dataset.postId) {
+                    openBookingModal(actionEl.dataset.postId);
+                }
+                break;
+            case 'close-discover-profile':
+                closeDiscoverProfile();
+                break;
+            case 'open-follow-graph':
+                if (actionEl.dataset.graph) {
+                    openFollowGraph(actionEl.dataset.graph);
+                }
+                break;
+            case 'close-follow-graph':
+                closeFollowGraph();
+                break;
+            case 'open-notifications':
+                openNotifications();
+                break;
+            case 'close-notifications':
+                closeNotifications();
+                break;
+            case 'clear-discover-search':
+                event.stopPropagation();
+                clearDiscoverSearch();
+                break;
+            case 'run-discover-history':
+                if (actionEl.dataset.query) {
+                    setDiscoverSearchValue(actionEl.dataset.query, { render: false });
+                    runDiscoverSearch(actionEl.dataset.query);
+                }
+                break;
+            case 'remove-discover-history':
+                event.stopPropagation();
+                if (actionEl.dataset.query) {
+                    removeDiscoverHistoryItem(actionEl.dataset.query);
+                    renderExplore();
+                }
+                break;
             default:
                 break;
         }
@@ -2686,30 +4591,44 @@ function bindHomePageActions() {
     });
 
     document.addEventListener('pointerdown', (event) => {
+        const cancelledTicketCard = event.target.closest('[data-action="ticket-card"]');
+        if (cancelledTicketCard?.dataset.ticketId) {
+            const ticket = (state.tickets || []).find((entry) => String(entry.id) === String(cancelledTicketCard.dataset.ticketId));
+            if (ticket?.status === 'cancelled') {
+                startCancelledTicketDeletePress(event, cancelledTicketCard.dataset.ticketId);
+            }
+        }
         const card = event.target.closest('[data-action="hosted-event-card"]');
         if (!card) return;
         startHostedEventPress(event, card.dataset.postId);
     });
 
     document.addEventListener('pointerup', (event) => {
+        stopCancelledTicketDeletePress();
         const card = event.target.closest('[data-action="hosted-event-card"]');
         if (!card) return;
         cancelHostedEventPress();
     });
 
     document.addEventListener('pointerout', (event) => {
+        stopCancelledTicketDeletePress();
         const card = event.target.closest('[data-action="hosted-event-card"]');
         if (!card) return;
         cancelHostedEventPress();
     });
 
     document.addEventListener('pointercancel', (event) => {
+        stopCancelledTicketDeletePress();
         const card = event.target.closest('[data-action="hosted-event-card"]');
         if (!card) return;
         cancelHostedEventPress();
     });
 
     document.addEventListener('click', (event) => {
+        const ticketCard = event.target.closest('[data-action="ticket-card"]');
+        if (ticketCard && !event.target.closest('[data-action="cancel-ticket"]') && !event.target.closest('[data-action="delete-ticket"]') && !event.target.closest('[data-action="archive-ticket"]')) {
+            handleTicketCardClick(ticketCard.dataset.ticketId);
+        }
         const card = event.target.closest('[data-action="hosted-event-card"]');
         if (!card) return;
         handleHostedEventCardClick(card.dataset.postId);

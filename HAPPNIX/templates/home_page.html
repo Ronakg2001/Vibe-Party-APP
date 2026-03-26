@@ -6,8 +6,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Happnix | Home</title>
-    <link rel="icon" href="{% static 'img/Logo_H_withoutdots.PNG' %}" type="image/png" class="h-auto w-auto">
-    <link rel="apple-touch-icon" href="{% static 'img/logo_poster.PNG' %}" class="h-auto w-auto">
+    <link rel="icon" href="{% static 'img/HX_Logo.PNG' %}" type="image/png" class="h-auto w-auto">
+    <link rel="apple-touch-icon" href="{% static 'img/HX_Logo.PNG' %}" class="h-auto w-auto">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -15,16 +15,16 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Custom Config for Party Theme -->
-    <script src="{% static 'js/home_page_tailwind.js' %}"></script>
-    <script src="{% static 'js/mobile_navigation_tailwind.js' %}"></script>
+    <script src="{% static 'js/home_page_tailwind.js' %}?v=20260320c"></script>
+    <script src="{% static 'js/mobile_navigation_tailwind.js' %}?v=20260320c"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/home_page.css' %}">
-    <link rel="stylesheet" href="{% static 'css/mobile_navigation.css' %}">
+    <link rel="stylesheet" href="{% static 'css/home_page.css' %}?v=20260320c">
+    <link rel="stylesheet" href="{% static 'css/mobile_navigation.css' %}?v=20260320c">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
@@ -54,12 +54,15 @@
         <button onclick="document.getElementById('verification-modal').style.display='none'" style="margin-top: 15px; width: 100%; background: none; border: 1px solid red; color: red; padding: 8px;">Cancel</button>
     </div>
     <script>
-        document.getElementById('verification-banner').addEventListener('click', function() {
-            const modal = document.getElementById('verification-modal');
-            modal.classList.remove('hidden');
-            // Thoda delay deke opacity badhate hain taaki fade-in animation chale
-            setTimeout(() => modal.classList.remove('opacity-0'), 10);
-        });
+        const verificationBanner = document.getElementById('verification-banner');
+        if (verificationBanner) {
+            verificationBanner.addEventListener('click', function() {
+                const modal = document.getElementById('verification-modal');
+                if (!modal) return;
+                modal.classList.remove('hidden');
+                setTimeout(() => modal.classList.remove('opacity-0'), 10);
+            });
+        }
     </script>
     {% endif %}
 
@@ -100,7 +103,7 @@
             class="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-white/5 bg-slate-900/50 backdrop-blur-xl z-50 p-6">
             <h1 data-action="go-home" role="button" tabindex="0"
                 class="flex items-center gap-1 mb-10 cursor-pointer">
-                <img src="{% static 'img/Happnix-logo.PNG' %}" alt="Happnix" class="h-50 w-auto select-none">
+                <img src="{% static 'img/HX_Logo.PNG' %}" alt="Happnix" class="h-24 w-auto select-none">
             </h1>
 
             <nav class="flex flex-col gap-4 flex-1">
@@ -119,8 +122,7 @@
                 <button type="button" data-action="switch-tab" data-tab="add"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
                     data-target="add">
-                    <img src="{% static 'img/Logo_H_withoutdots.PNG' %}" class="w-auto h-6 transition-colors group-hover:text-fuchsia-400">
-                    <img src="{% static 'img/logo_happnix.PNG' %}" alt="Happnix" class="w-auto h-6 transition-colors group-hover:text-white transition-colors">
+                    <img src="{% static 'img/Happnix.PNG' %}" class="w-auto h-8 transition-colors group-hover:text-fuchsia-400">
                 </button>
                 <button type="button" data-action="switch-tab" data-tab="tickets"
                     class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
@@ -137,7 +139,7 @@
             </nav>
 
             <div class="mt-auto pt-6 border-t border-white/5 space-y-2">
-                <button type="button"
+                <button type="button" data-action="open-settings"
                     class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 w-full text-left text-gray-400 text-sm">
                     <i data-lucide="settings" class="w-5 h-5"></i>
                     Settings
@@ -156,11 +158,10 @@
 
             <!-- MOBILE HEADER (Hidden on md+) -->
             <header id="main-header"
-                class="md:hidden fixed top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
+                class="md:hidden stickey top-0 w-full z-40 px-5 py-4 flex justify-between items-center glass border-b-0 border-white/5 transition-all duration-300">
                 <button type="button" data-action="go-home" role="button" tabindex="0"
                     class="flex items-center">
-                    <img src="{% static 'img/Logo_H.PNG' %}" alt="Happnix" class="h-10 w-auto select-none">
-                    <img src="{% static 'img/logo_happnix.PNG' %}" alt="Happnix" class="h-10 w-auto select-none">
+                    <img src="{% static 'img/Happnix.PNG' %}" alt="Happnix" class="h-auto w-32 select-none">
                 </button>
                 <div class="flex gap-4 items-center">
                     <button id="mobile-location-btn" type="button" data-action="location-toggle" data-button-id="mobile-location-btn"
@@ -175,11 +176,14 @@
                         data-theme-toggle>
                         <i data-lucide="sun" class="w-5 h-5"></i>
                     </button>
-                    <div class="relative">
+                    <button type="button" data-action="open-notifications" class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
-                        <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
-                    </div>
-                    <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                        <span id="mobile-notification-dot" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"></span>
+                    </button>
+                    <button type="button" data-action="open-messages" class="relative text-white" aria-label="Open messages">
+                        <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                        <span id="mobile-message-badge" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"></span>
+                    </button>
                 </div>
             </header>
 
@@ -202,11 +206,14 @@
                         data-theme-toggle>
                         <i data-lucide="sun" class="w-5 h-5"></i>
                     </button>
-                    <div class="relative">
+                    <button type="button" data-action="open-notifications" class="relative">
                         <i data-lucide="heart" class="w-6 h-6 text-white"></i>
-                        <span class="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full animate-pulse"></span>
-                    </div>
-                    <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                        <span id="desktop-notification-dot" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"></span>
+                    </button>
+                    <button type="button" data-action="open-messages" class="relative text-white" aria-label="Open messages">
+                        <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+                        <span id="desktop-message-badge" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"></span>
+                    </button>
                 </div>
             </header>
 
@@ -229,19 +236,17 @@
 
                 <!-- HOME VIEW -->
                 <div id="view-home" class="view-section active">
-                    <!-- Stories -->
-                    <div
-                        class="flex gap-4 p-4 overflow-x-auto scrollbar-hide border-b border-white/5 md:border-none mb-4">
-                        <div class="flex flex-col items-center gap-1 min-w-[68px]">
-                            <div
-                                class="w-[68px] h-[68px] rounded-full p-[2px] border-2 border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:border-fuchsia-500 transition-colors">
-                                <i data-lucide="plus" class="w-6 h-6 text-white/50"></i>
+                    <!-- Live Now -->
+                    <section class="px-4 mb-4 md:max-w-[470px] md:mx-auto">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <p class="text-[11px] uppercase tracking-[0.28em] text-emerald-300/80 font-bold">Live Now</p>
+                                <h2 class="text-lg font-black text-white">Events happening right now</h2>
                             </div>
-                            <span class="text-xs text-white/50">Add Story</span>
+                            <span class="text-xs text-gray-400">Join before they end</span>
                         </div>
-                        <!-- Mock Stories -->
-                        <div id="stories-container" class="flex gap-4"></div>
-	                    </div>
+                        <div id="live-now-container" class="flex gap-3 overflow-x-auto scrollbar-hide pb-1"></div>
+                    </section>
 	                    <div id="upload-activity" class="hidden px-4 mb-4 md:max-w-[470px] md:mx-auto"></div>
 
 	                    <!-- Feed -->
@@ -254,11 +259,19 @@
                         <div
                             class="glass-panel rounded-xl flex items-center px-4 py-3 gap-3 border border-white/5 shadow-lg">
                             <i data-lucide="search" class="w-5 h-5 text-gray-400"></i>
-                            <input type="text" placeholder="Search for parties, DJs..."
-                                class="bg-transparent outline-none text-sm w-full text-white placeholder:text-gray-500">
+                            <input id="discover-search-input" type="text" placeholder="Search people by name or username"
+                                class="bg-transparent outline-none text-sm w-full text-white placeholder:text-gray-500" autocomplete="off">
+                            <button id="discover-search-clear" type="button" data-action="clear-discover-search"
+                                class="hidden h-8 w-8 items-center justify-center rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
+                                aria-label="Clear search">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-1 px-2 md:px-4" id="explore-grid"></div>
+                    <div class="px-2 md:px-4">
+                        <div id="discover-search-status" class="px-2 pb-3 text-xs uppercase tracking-[0.24em] text-gray-500">Find people to follow</div>
+                        <div id="discover-search-results" class="space-y-3 pb-28 md:pb-8"></div>
+                    </div>
                 </div>
 
                 <!-- ADD VIEW -->
@@ -316,6 +329,8 @@
                                     <button
                                         class="px-4 py-2 bg-white/10 rounded-lg text-xs md:text-sm font-bold border border-white/5 hover:bg-white/20 transition-colors">Edit
                                         Profile</button>
+                                    <button type="button" data-action="open-settings"
+                                        class="px-4 py-2 bg-white/10 rounded-lg text-xs md:text-sm font-bold border border-white/5 hover:bg-white/20 transition-colors">Settings</button>
                                 </div>
                             </div>
                             <div class="mb-6">
@@ -345,16 +360,29 @@
                                     <div class="font-bold text-lg text-white" id="profile-posts-count">0</div>
                                     <div class="text-xs text-gray-500 uppercase">Vibes</div>
                                 </div>
-                                <div
-                                    class="text-center md:text-left border-x border-white/5 md:border-none px-4 md:px-0 min-w-[80px]">
-                                    <div class="font-bold text-lg text-white">12.5k</div>
+                                <button type="button" data-action="open-follow-graph" data-graph="followers"
+                                    class="text-center md:text-left border-x border-white/5 md:border-none px-4 md:px-0 min-w-[80px] transition-opacity hover:opacity-100 opacity-95">
+                                    <div class="font-bold text-lg text-white" id="profile-followers-count">0</div>
                                     <div class="text-xs text-gray-500 uppercase">Fans</div>
-                                </div>
-                                <div class="text-center md:text-left min-w-[80px]">
-                                    <div class="font-bold text-lg text-white">450</div>
+                                </button>
+                                <button type="button" data-action="open-follow-graph" data-graph="following" class="text-center md:text-left min-w-[80px] transition-opacity hover:opacity-100 opacity-95">
+                                    <div class="font-bold text-lg text-white" id="profile-following-count">0</div>
                                     <div class="text-xs text-gray-500 uppercase">Following</div>
-                                </div>
+                                </button>
                             </div>
+                            <button type="button" data-action="open-settings"
+                                class="mb-6 w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-left hover:bg-white/[0.06] transition-colors">
+                                <div class="flex items-center justify-between gap-4">
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-black uppercase tracking-[0.18em] text-white">Privacy & Requests</div>
+                                        <p class="mt-1 text-sm text-gray-400">Manage private account mode and follow requests.</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div id="profile-privacy-status" class="text-sm font-bold text-amber-200">Public</div>
+                                        <div class="text-xs text-gray-500">Open</div>
+                                    </div>
+                                </div>
+                            </button>
                             <button type="button" data-action="logout"
                                 class="md:hidden mb-6 w-full py-3 rounded-xl font-semibold text-red-300 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                                 Logout
@@ -408,10 +436,96 @@
         <!-- MOBILE NAVIGATION DOCK (Hidden on md+) -->
         {% include 'mobile_navigation.html' %}
 
+
+        <div id="settings-modal"
+            class="fixed inset-0 z-[78] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
+            <div id="settings-card"
+                class="absolute left-1/2 top-1/2 w-[94%] max-w-[560px] max-h-[90vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-white/10 bg-slate-900 p-6 md:p-8 shadow-2xl transform scale-95 transition-transform duration-300">
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <h3 class="text-xl font-black text-white">Settings</h3>
+                        <p class="text-xs uppercase tracking-[0.24em] text-gray-500">Privacy and requests</p>
+                    </div>
+                    <button type="button" data-action="close-settings" class="text-gray-400 hover:text-white">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div class="space-y-6">
+                    <section class="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <div class="text-sm font-black uppercase tracking-[0.18em] text-white">Private Account</div>
+                                <p id="settings-privacy-copy" class="mt-2 text-sm leading-6 text-gray-400">Approve followers before they can view your posts and events.</p>
+                            </div>
+                            <button type="button" data-action="toggle-private-account" id="settings-privacy-toggle"
+                                class="inline-flex min-w-[118px] items-center justify-center rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] transition-colors">
+                                Loading
+                            </button>
+                        </div>
+                    </section>
+                    <section class="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                        <div class="flex items-center justify-between gap-4 mb-4">
+                            <div>
+                                <div class="text-sm font-black uppercase tracking-[0.18em] text-white">Follow Requests</div>
+                                <p class="mt-2 text-sm leading-6 text-gray-400">Only shown when your account is private. Approving a request lets that user see your posts and events.</p>
+                            </div>
+                            <div id="settings-follow-requests-count" class="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-white">0</div>
+                        </div>
+                        <div id="settings-follow-requests-list" class="space-y-3"></div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <div id="notifications-modal"
+            class="fixed inset-0 z-[77] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
+            <div id="notifications-card"
+                class="absolute left-1/2 top-1/2 w-[94%] max-w-[560px] max-h-[88vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-white/10 bg-slate-900 p-6 md:p-8 shadow-2xl transform scale-95 transition-transform duration-300">
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <h3 class="text-xl font-black text-white">Notifications</h3>
+                        <p class="text-xs uppercase tracking-[0.24em] text-gray-500">Account activity</p>
+                    </div>
+                    <button type="button" data-action="close-notifications" class="text-gray-400 hover:text-white">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <section class="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                        <div class="flex items-center justify-between gap-4 mb-4">
+                            <div>
+                                <div class="text-sm font-black uppercase tracking-[0.18em] text-white">Follow Requests</div>
+                                <p class="mt-2 text-sm leading-6 text-gray-400">Approve private-account follow requests directly from notifications.</p>
+                            </div>
+                            <div id="notifications-follow-requests-count" class="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-white">0</div>
+                        </div>
+                        <div id="notifications-follow-requests-list" class="space-y-3"></div>
+                    </section>
+                    <div id="notifications-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+        {% include 'messages_modal.html' %}
+
+        <div id="follow-graph-modal"
+            class="fixed inset-0 z-[76] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
+            <div id="follow-graph-card"
+                class="absolute left-1/2 top-1/2 w-[94%] max-w-[520px] max-h-[88vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-white/10 bg-slate-900 p-6 md:p-8 shadow-2xl transform scale-95 transition-transform duration-300">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 id="follow-graph-title" class="text-xl font-black text-white">Fans</h3>
+                    <button type="button" data-action="close-follow-graph" class="text-gray-400 hover:text-white">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div id="follow-graph-list" class="space-y-3"></div>
+            </div>
+        </div>
+
         <!-- Booking Modal -->
         <div id="booking-modal"
-            class="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
-            <div class="bg-slate-900 border-t md:border border-white/10 w-full max-w-[480px] rounded-t-[2.5rem] md:rounded-[2rem] p-8 pb-10 shadow-2xl transform translate-y-full md:translate-y-10 transition-transform duration-300"
+            class="fixed inset-0 z-[60] flex items-end md:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300 md:p-6">
+            <div class="relative bg-slate-900 border-t md:border border-white/10 w-full max-w-[480px] max-h-[92vh] overflow-y-auto rounded-t-[2.5rem] md:rounded-[2rem] p-8 pb-10 shadow-2xl transform translate-y-full md:translate-y-10 transition-transform duration-300 overscroll-contain"
                 id="modal-content">
                 <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-8 md:hidden"></div>
                 <!-- Close button for desktop -->
@@ -420,6 +534,18 @@
                         class="w-6 h-6"></i></button>
 
                 <div id="modal-event-details"></div> <!-- Dynamic Content -->
+            </div>
+        </div>
+
+        <div id="discover-profile-modal"
+            class="fixed inset-0 z-[75] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
+            <div id="discover-profile-card"
+                class="absolute left-1/2 top-1/2 w-[94%] max-w-[520px] max-h-[92vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-white/10 bg-slate-900 p-6 md:p-8 shadow-2xl transform scale-95 transition-transform duration-300">
+                <button type="button" data-action="close-discover-profile"
+                    class="absolute right-5 top-5 text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+                <div id="discover-profile-content"></div>
             </div>
         </div>
 
@@ -519,8 +645,11 @@
     <!-- Application Logic -->
     <script id="home-page-boot-config"
         type="application/json">{"csrfToken":"{{ csrf_token|escapejs }}","currentAvatarUrl":"{{ current_avatar_url|default:''|escapejs }}","currentUsername":"{{ current_username|default:'party_alex'|escapejs }}","manifestData":{{ manifest_data_json|safe }}}</script>
-    <script src="{% static 'js/mobile_navigation.js' %}"></script>
-    <script src="{% static 'js/home_page.js' %}"></script>
+    <script src="{% static 'js/mobile_navigation.js' %}?v=20260320c"></script>
+    <script src="{% static 'js/home_page.js' %}?v=20260320c"></script>
+    <script src="{% static 'js/messages.js' %}?v=20260325a"></script>
 </body>
 
 </html>
+
+

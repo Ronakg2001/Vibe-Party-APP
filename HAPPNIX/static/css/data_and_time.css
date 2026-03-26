@@ -256,6 +256,7 @@
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0.35rem;
+    touch-action: none;
 }
 
 .event-calendar-cell {
@@ -266,6 +267,8 @@
     color: rgba(248, 249, 255, 0.92);
     font-size: 0.8rem;
     font-weight: 600;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .event-calendar-cell.is-empty {
@@ -285,6 +288,7 @@
 }
 
 #event-time-display:disabled,
+#event-end-date-display:disabled,
 #event-end-time-display:disabled,
 #event-duration-display:disabled {
     opacity: 0.45;

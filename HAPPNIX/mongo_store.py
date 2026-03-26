@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 
-from .models import Event, UserProfile
+from .models import ActivityNotification, Event, Follow, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ def _get_db():
             db.events.create_index([("host_sql_user_id", ASCENDING), ("created_at", ASCENDING)])
             db.events.create_index([("status", ASCENDING), ("event_category", ASCENDING)])
             db.events.create_index([("location", GEOSPHERE)])
+            db.notifications.create_index([("recipient_sql_user_id", ASCENDING), ("created_at", ASCENDING)])
+            db.notifications.create_index([("recipient_sql_user_id", ASCENDING), ("is_read", ASCENDING), ("created_at", ASCENDING)])
             _index_initialized = True
         except PyMongoError:
             logger.exception("Failed to initialize MongoDB indexes.")
@@ -80,6 +82,7 @@ def is_enabled():
 def _build_profile_doc(user, profile):
     full_name = (user.first_name or "").strip()
     hosted_events_count = Event.objects.filter(host_id=user.id).count()
+    pending_follow_requests_count = Follow.objects.filter(following=user, status=Follow.Status.PENDING).count()
     return {
         "sql_user_id": user.id,
         "username": user.username,
@@ -91,7 +94,9 @@ def _build_profile_doc(user, profile):
         "bio": profile.bio or "",
         "profile_picture_url": profile.profile_picture_url or "",
         "gov_id_verified": bool(profile.gov_id_verified),
+        "is_private": bool(profile.is_private),
         "hosted_events_count": hosted_events_count,
+        "pending_follow_requests_count": pending_follow_requests_count,
         "search_text": " ".join(
             part for part in [user.username, user.email, full_name, profile.mobile] if part
         ).lower(),
@@ -140,7 +145,7 @@ def search_profiles(query, limit=20):
     limit = max(1, min(int(limit or 20), 100))
     docs = db.user_profiles.find(
         {"search_text": {"$regex": search}},
-        {"_id": 0, "sql_user_id": 1, "username": 1, "full_name": 1, "profile_picture_url": 1},
+        {"_id": 0, "sql_user_id": 1, "username": 1, "full_name": 1, "profile_picture_url": 1, "is_private": 1},
     ).limit(limit)
     return list(docs)
 
@@ -168,6 +173,8 @@ def _serialize_event_doc(event):
         "description": event.description or "",
         "start_label": event.start_label or "",
         "end_label": event.end_label or "",
+        "start_at": event.start_at or None,
+        "end_at": event.end_at or None,
         "event_category": event.event_category or "party",
         "location_name": event.location_name,
         "location": {"type": "Point", "coordinates": [lon, lat]},
@@ -202,5 +209,99 @@ def sync_event(event_id):
         {"sql_event_id": event.id},
         {"$set": doc},
         upsert=True,
+    )
+    return True
+
+
+def log_notification(recipient_user_id, activity_type, actor_user=None, title="", body="", payload=None):
+    db = _get_db()
+
+    actor_profile = profile_for_user(actor_user.id) if actor_user is not None else None
+    actor_username = getattr(actor_user, "username", "") if actor_user is not None else ""
+    actor_full_name = ((actor_profile or {}).get("full_name") or getattr(actor_user, "first_name", "") or actor_username).strip()
+    actor_avatar = ((actor_profile or {}).get("profile_picture_url") or "") if actor_user is not None else ""
+    safe_payload = payload or {}
+    safe_activity_type = str(activity_type or "activity").strip().lower() or "activity"
+    safe_title = str(title or "Activity").strip() or "Activity"
+    safe_body = str(body or "").strip()
+
+    if db is None:
+        ActivityNotification.objects.create(
+            recipient_id=int(recipient_user_id),
+            actor_id=getattr(actor_user, "id", None),
+            activity_type=safe_activity_type,
+            title=safe_title,
+            body=safe_body,
+            payload={
+                **safe_payload,
+                "actor_username": actor_username,
+                "actor_full_name": actor_full_name,
+                "actor_profile_picture_url": actor_avatar,
+            },
+        )
+        return True
+
+    doc = {
+        "recipient_sql_user_id": int(recipient_user_id),
+        "activity_type": safe_activity_type,
+        "title": safe_title,
+        "body": safe_body,
+        "actor_sql_user_id": getattr(actor_user, "id", None),
+        "actor_username": actor_username,
+        "actor_full_name": actor_full_name,
+        "actor_profile_picture_url": actor_avatar,
+        "payload": safe_payload,
+        "is_read": False,
+        "created_at": _utc_now(),
+    }
+    db.notifications.insert_one(doc)
+    return True
+
+
+def notifications_for_user(user_id, limit=50):
+    db = _get_db()
+    safe_limit = max(1, min(int(limit or 50), 100))
+    if db is None:
+        rows = ActivityNotification.objects.filter(recipient_id=int(user_id)).select_related("actor")[:safe_limit]
+        docs = []
+        for row in rows:
+            payload = row.payload or {}
+            docs.append({
+                "recipient_sql_user_id": int(user_id),
+                "activity_type": row.activity_type,
+                "title": row.title,
+                "body": row.body,
+                "actor_sql_user_id": row.actor_id,
+                "actor_username": payload.get("actor_username") or getattr(row.actor, "username", ""),
+                "actor_full_name": payload.get("actor_full_name") or getattr(row.actor, "first_name", "") or getattr(row.actor, "username", ""),
+                "actor_profile_picture_url": payload.get("actor_profile_picture_url", ""),
+                "payload": {k: v for k, v in payload.items() if k not in {"actor_username", "actor_full_name", "actor_profile_picture_url"}},
+                "is_read": bool(row.is_read),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            })
+        return docs
+
+    docs = db.notifications.find(
+        {"recipient_sql_user_id": int(user_id)},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(safe_limit)
+    return list(docs)
+
+
+def unread_notification_count(user_id):
+    db = _get_db()
+    if db is None:
+        return int(ActivityNotification.objects.filter(recipient_id=int(user_id), is_read=False).count())
+    return int(db.notifications.count_documents({"recipient_sql_user_id": int(user_id), "is_read": False}))
+
+
+def mark_notifications_read(user_id):
+    db = _get_db()
+    if db is None:
+        ActivityNotification.objects.filter(recipient_id=int(user_id), is_read=False).update(is_read=True, read_at=_utc_now())
+        return True
+    db.notifications.update_many(
+        {"recipient_sql_user_id": int(user_id), "is_read": False},
+        {"$set": {"is_read": True, "read_at": _utc_now()}},
     )
     return True

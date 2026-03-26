@@ -1,3 +1,5 @@
+let isPublishingCreatePost = false;
+
 function togglePostType(isEvent) {
         state.isEventMode = isEvent;
         const btnPost = document.getElementById('btn-type-post');
@@ -5,6 +7,7 @@ function togglePostType(isEvent) {
         const eventFields = document.getElementById('event-fields');
         const postMediaWrap = document.getElementById('post-media-wrap');
         const postCaptionWrap = document.getElementById('post-caption-wrap');
+        const postLinkWrap = document.getElementById('post-link-wrap');
         const postSubmitWrap = document.getElementById('post-submit-wrap');
 
         if (isEvent) {
@@ -14,6 +17,7 @@ function togglePostType(isEvent) {
             eventFields.classList.add('flex');
             if (postMediaWrap) postMediaWrap.classList.add('hidden');
             if (postCaptionWrap) postCaptionWrap.classList.add('hidden');
+            if (postLinkWrap) postLinkWrap.classList.add('hidden');
             if (postSubmitWrap) postSubmitWrap.classList.add('hidden');
             if (typeof setStep === 'function') setStep(1);
         } else {
@@ -23,7 +27,10 @@ function togglePostType(isEvent) {
             eventFields.classList.remove('flex');
             if (postMediaWrap) postMediaWrap.classList.remove('hidden');
             if (postCaptionWrap) postCaptionWrap.classList.remove('hidden');
+            if (postLinkWrap) postLinkWrap.classList.remove('hidden');
             if (postSubmitWrap) postSubmitWrap.classList.remove('hidden');
+            if (typeof renderPostEventLinkOptions === 'function') renderPostEventLinkOptions();
+            if (typeof updatePostLinkHelper === 'function') updatePostLinkHelper();
         }
     }
 
@@ -75,6 +82,138 @@ function togglePostType(isEvent) {
         counter.textContent = `${state.pendingMediaIndex + 1} / ${slideCount}`;
     }
 
+
+    function getHostedEventsForPostLinking() {
+        if (typeof getHostedEvents === 'function') {
+            return getHostedEvents() || [];
+        }
+        return Array.isArray(state.hostedEventPosts) ? state.hostedEventPosts : [];
+    }
+
+    function getSelectedLinkedEventPost() {
+        const select = document.getElementById('post-linked-event-id');
+        const selectedId = select?.value || '';
+        if (!selectedId) return null;
+        const hostedEvents = getHostedEventsForPostLinking();
+        return hostedEvents.find((eventPost) => eventPost.id === selectedId) || (typeof getPostById === 'function' ? getPostById(selectedId) : null);
+    }
+
+    function renderPostEventLinkOptions() {
+        const select = document.getElementById('post-linked-event-id');
+        if (!select) return;
+        const hostedEvents = getHostedEventsForPostLinking();
+        const currentValue = select.value;
+        select.innerHTML = '';
+
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = hostedEvents.length > 0 ? 'Just a normal post' : 'No hosted events yet';
+        select.appendChild(defaultOption);
+
+        hostedEvents.forEach((eventPost) => {
+            const option = document.createElement('option');
+            option.value = eventPost.id;
+            const status = typeof isEventEndedFromDetails === 'function' && isEventEndedFromDetails(eventPost.eventDetails) ? 'Ended' : 'Running';
+            option.textContent = `${eventPost.eventDetails?.title || 'Untitled Event'} - ${status}`;
+            select.appendChild(option);
+        });
+
+        if (currentValue && hostedEvents.some((eventPost) => eventPost.id === currentValue)) {
+            select.value = currentValue;
+        }
+        updatePostLinkHelper();
+    }
+
+    function updatePostLinkHelper() {
+        const helper = document.getElementById('post-link-helper');
+        if (!helper) return;
+        const hostedEvents = getHostedEventsForPostLinking();
+        const linkedEvent = getSelectedLinkedEventPost();
+
+        if (!linkedEvent) {
+            if (hostedEvents.length === 0) {
+                helper.textContent = 'Publish an event first if you want this post to show up as a highlight.';
+                helper.className = 'text-xs text-amber-300';
+                isPublishingCreatePost = false;
+                return;
+            }
+            helper.textContent = 'Choose one of your hosted events to turn this into a pre-event or post-event highlight.';
+            helper.className = 'text-xs text-gray-400';
+            return;
+        }
+
+        const isEnded = typeof isEventEndedFromDetails === 'function' && isEventEndedFromDetails(linkedEvent.eventDetails);
+        helper.textContent = isEnded
+            ? `This post will appear under Post-event Highlights for ${linkedEvent.eventDetails?.title || 'your event'}.`
+            : `This post will appear under Pre-event Highlights for ${linkedEvent.eventDetails?.title || 'your event'}.`;
+        helper.className = `text-xs ${isEnded ? 'text-rose-300' : 'text-cyan-300'}`;
+    }
+
+    function buildLocalPostMediaPayload(files) {
+        const fallbackImage = `https://images.unsplash.com/photo-1545128485-c400e7702796?w=600&h=600&fit=crop&q=${Math.random()}`;
+        const normalizedFiles = Array.isArray(files) ? files : [];
+        const mediaUrls = [];
+        const mediaTypes = [];
+        let preferredImage = '';
+
+        normalizedFiles.forEach((file) => {
+            const url = URL.createObjectURL(file);
+            const type = (file.type || '').toLowerCase().startsWith('video/') ? 'video' : 'image';
+            mediaUrls.push(url);
+            mediaTypes.push(type);
+            if (!preferredImage && type === 'image') {
+                preferredImage = url;
+            }
+        });
+
+        return {
+            image: preferredImage || fallbackImage,
+            mediaUrl: mediaUrls[0] || fallbackImage,
+            mediaType: mediaTypes[0] || 'image',
+            mediaUrls: mediaUrls.length > 0 ? mediaUrls : [fallbackImage],
+            mediaTypes: mediaTypes.length > 0 ? mediaTypes : ['image']
+        };
+    }
+
+
+    function calculateDurationMinutesForSubmission(startDate, startTime, endDate, endTime) {
+        if (!startDate || !startTime || !endTime) return null;
+        const startAt = new Date(`${startDate}T${startTime}:00`);
+        if (Number.isNaN(startAt.getTime())) return null;
+        const baseEndDate = endDate || startDate;
+        const endAt = new Date(`${baseEndDate}T${endTime}:00`);
+        if (Number.isNaN(endAt.getTime())) return null;
+        if (!endDate && endAt.getTime() <= startAt.getTime()) {
+            endAt.setDate(endAt.getDate() + 1);
+        }
+        const diffMinutes = Math.round((endAt.getTime() - startAt.getTime()) / 60000);
+        return diffMinutes > 0 ? diffMinutes : null;
+    }
+
+    function resetPostCreation() {
+        const caption = document.getElementById('post-caption');
+        const linkedEventSelect = document.getElementById('post-linked-event-id');
+        const mediaInput = document.getElementById('event-media-input');
+
+        if (caption) caption.value = '';
+        if (linkedEventSelect) linkedEventSelect.value = '';
+        if (mediaInput) mediaInput.value = '';
+
+        state.pendingEventMedia = [];
+        if (state.pendingEventMediaPreviewUrls) {
+            state.pendingEventMediaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+            state.pendingEventMediaPreviewUrls = [];
+        }
+        state.pendingMediaIndex = 0;
+        renderSelectedEventMedia();
+        updatePostLinkHelper();
+        if (typeof setLocationStatus === 'function') setLocationStatus('', false);
+    }
+
+    function confirmAbortPostCreation() {
+        return window.confirm('Discard this post? Your caption, media, and event link will be lost.');
+    }
+
     async function handleEventMediaInputChange(event) {
         const files = Array.from(event.target.files || []);
         if (files.length === 0) return;
@@ -111,6 +250,8 @@ function togglePostType(isEvent) {
     async function handlePostSubmit(e) {
         // Stop the form from refreshing the page!
         e.preventDefault();
+        if (isPublishingCreatePost) return;
+        isPublishingCreatePost = true;
 
         let activityId = null;
         const eventBioValue = document.getElementById('event-bio')?.value;
@@ -134,20 +275,24 @@ function togglePostType(isEvent) {
 
             if (!document.getElementById('event-title')?.value?.trim()) {
                 setLocationStatus('Please enter event title.', true);
+                isPublishingCreatePost = false;
                 return;
             }
             if (!eventLocationInputValue) {
                 setLocationStatus('Please select event location.', true);
+                isPublishingCreatePost = false;
                 return;
             }
             if (!finalPoint) {
                 setLocationStatus('Please detect location or pick location from map.', true);
+                isPublishingCreatePost = false;
                 return;
             }
 
             // --- NEW: Cover Image Validation ---
             if (!vibeCover) {
                 setLocationStatus('Please upload a cover image for your vibe.', true);
+                isPublishingCreatePost = false;
                 return;
             }
 
@@ -156,11 +301,13 @@ function togglePostType(isEvent) {
             if (ticketType === 'Paid') {
                 if (!ticketTiers || ticketTiers.length === 0) {
                     setLocationStatus('Please add at least one ticket tier for a paid event.', true);
+                    isPublishingCreatePost = false;
                     return;
                 }
                 for (const tier of ticketTiers) {
                     if (!tier.name || tier.price === '') {
                         setLocationStatus('Please fill out all ticket tier names and prices.', true);
+                        isPublishingCreatePost = false;
                         return;
                     }
                 }
@@ -168,9 +315,12 @@ function togglePostType(isEvent) {
 
             const selectedDate = document.getElementById('event-date').value;
             const selectedTime = document.getElementById('event-time').value;
+            const effectiveStartTime = selectedTime || '00:00';
             const selectedEventType = (document.getElementById('event-type')?.value || '').trim();
             const customEventType = (document.getElementById('event-type-other')?.value || '').trim();
+            const selectedEndDate = document.getElementById('event-end-date')?.value || '';
             const selectedEndTime = document.getElementById('event-end-time')?.value || '';
+            const effectiveEndTime = selectedEndTime || (selectedEndDate ? '23:59' : '');
             const durationInputEl = document.getElementById('event-duration-minutes');
             const durationDisplayEl = document.getElementById('event-duration-display');
             
@@ -180,46 +330,57 @@ function togglePostType(isEvent) {
             
             let durationMinutes = Number(durationInputEl?.value || 0);
             
-            if (!selectedDate || !selectedTime) {
-                setLocationStatus('Please select event date and time.', true);
+            if (!selectedDate) {
+                setLocationStatus('Please select event date.', true);
+                isPublishingCreatePost = false;
                 return;
             }
-            if (typeof isFutureEventDateTime === 'function' && !isFutureEventDateTime(selectedDate, selectedTime)) {
+            if (typeof isFutureEventDateTime === 'function' && !isFutureEventDateTime(selectedDate, effectiveStartTime)) {
                 setLocationStatus('Event date/time must be in the future.', true);
+                isPublishingCreatePost = false;
                 return;
             }
             if (!selectedEventType) {
                 setLocationStatus('Please select event type.', true);
+                isPublishingCreatePost = false;
                 return;
             }
             if (selectedEventType === 'Other' && !customEventType) {
                 setLocationStatus('Please enter custom event type.', true);
+                isPublishingCreatePost = false;
                 return;
             }
-            if (selectedEndTime && durationDisplayEl?.value?.trim() && !durationDisplayEl.readOnly) {
-                setLocationStatus('Choose either End Time or Duration.', true);
+            if ((selectedEndDate || effectiveEndTime) && durationDisplayEl?.value?.trim() && !durationDisplayEl.readOnly) {
+                setLocationStatus('Choose either End Date/Time or Duration.', true);
+                isPublishingCreatePost = false;
                 return;
             }
-            if (selectedEndTime) {
-                if (typeof isFutureEventDateTime === 'function' && !isFutureEventDateTime(selectedDate, selectedEndTime)) {
-                    setLocationStatus('End time must not be in the past.', true);
+            if (effectiveEndTime) {
+                const effectiveEndDate = selectedEndDate || selectedDate;
+                if (selectedEndDate && selectedEndDate < selectedDate) {
+                    setLocationStatus('End date cannot be before the start date.', true);
+                    isPublishingCreatePost = false;
+                    return;
+                }
+                if (typeof isFutureEventDateTime === 'function' && !isFutureEventDateTime(effectiveEndDate, effectiveEndTime)) {
+                    setLocationStatus('End date/time must not be in the past.', true);
+                    isPublishingCreatePost = false;
                     return;
                 }
                 if (typeof calculateDurationMinutesFromTimes === 'function') {
-                    const computedDuration = calculateDurationMinutesFromTimes(selectedTime, selectedEndTime);
-                    if (computedDuration !== null) {
-                        if (computedDuration < 30 || computedDuration > 24 * 60) {
-                            setLocationStatus('Event duration must be between 30 min and 24 hr.', true);
-                            return;
+                    const computedDuration = calculateDurationMinutesForSubmission(selectedDate, effectiveStartTime, selectedEndDate, effectiveEndTime);
+                    if (computedDuration === null || computedDuration < 30 || computedDuration > 24 * 60) {
+                        setLocationStatus('Event duration must be between 30 min and 24 hr.', true);
+                        isPublishingCreatePost = false;
+                        return;
+                    }
+                    durationMinutes = computedDuration;
+                    if (durationInputEl) durationInputEl.value = String(computedDuration);
+                    if (durationDisplayEl) {
+                        if (typeof formatDurationMinutes === 'function') {
+                            durationDisplayEl.value = formatDurationMinutes(computedDuration);
                         }
-                        durationMinutes = computedDuration;
-                        if (durationInputEl) durationInputEl.value = String(computedDuration);
-                        if (durationDisplayEl) {
-                            if (typeof formatDurationMinutes === 'function') {
-                                durationDisplayEl.value = formatDurationMinutes(computedDuration);
-                            }
-                            durationDisplayEl.readOnly = true;
-                        }
+                        durationDisplayEl.readOnly = true;
                     }
                 }
             } else {
@@ -227,14 +388,17 @@ function togglePostType(isEvent) {
                     const parsedManualDuration = parseDurationDisplayToMinutes(durationDisplayEl.value);
                     if (parsedManualDuration <= 0) {
                         setLocationStatus('Invalid duration format. Use 90, 1h 30m, 2h, or 45m.', true);
+                        isPublishingCreatePost = false;
                         return;
                     }
                     if (parsedManualDuration < 30) {
                         setLocationStatus('Duration must be at least 30 minutes.', true);
+                        isPublishingCreatePost = false;
                         return;
                     }
                     if (parsedManualDuration > 24 * 60) {
                         setLocationStatus('Duration cannot be more than 24 hours.', true);
+                        isPublishingCreatePost = false;
                         return;
                     }
                     durationMinutes = parsedManualDuration;
@@ -247,19 +411,21 @@ function togglePostType(isEvent) {
                 }
             }
             
-            const startLabel = [selectedDate, selectedTime].filter(Boolean).join(' ');
+            const startLabel = [selectedDate, effectiveStartTime].filter(Boolean).join(' ');
             if (typeof startUploadActivity === 'function') {
                 activityId = startUploadActivity('Uploading event...');
             }
-            if (typeof switchTab === 'function') switchTab('home');
 
             try {
                 const formData = new FormData();
                 formData.append('title', document.getElementById('event-title').value.trim());
                 formData.append('description', captionValue.trim());
                 formData.append('startLabel', startLabel);
-                if (selectedEndTime) {
-                    formData.append('endTime', selectedEndTime);
+                if (effectiveEndTime) {
+                    formData.append('endTime', effectiveEndTime);
+                    if (selectedEndDate) {
+                        formData.append('endLabel', `${selectedEndDate} ${effectiveEndTime}`);
+                    }
                 }
                 if (durationMinutes > 0) {
                     formData.append('durationMinutes', String(durationMinutes));
@@ -292,42 +458,91 @@ function togglePostType(isEvent) {
                     if (result?.event) {
                         result.event.ticketType = ticketType;
                         result.event.ticketTiers = ticketType === 'Paid' ? ticketTiers : [];
-                        if (typeof serverEventToPost === 'function' && state.nearbyEventPosts) {
-                            state.nearbyEventPosts.unshift(serverEventToPost(result.event));
+                        if (typeof serverEventToPost === 'function') {
+                            const createdEventPost = serverEventToPost(result.event);
+                            if (Array.isArray(state.hostedEventPosts)) {
+                                state.hostedEventPosts = [createdEventPost, ...state.hostedEventPosts.filter((item) => item.id !== createdEventPost.id)];
+                            }
+                            if (Array.isArray(state.nearbyEventPosts)) {
+                                state.nearbyEventPosts = [createdEventPost, ...state.nearbyEventPosts.filter((item) => item.id !== createdEventPost.id)];
+                            }
                         }
+                        if (typeof switchTab === 'function') switchTab('home');
                         if (typeof renderFeed === 'function') renderFeed();
+                        if (typeof renderLiveNow === 'function') renderLiveNow();
                         if (typeof renderProfileGrid === 'function') renderProfileGrid();
                         if (typeof renderHostedEventList === 'function') renderHostedEventList();
-                        
+                        if (typeof renderTicketList === 'function') renderTicketList();
+                        if (typeof loadHostedEvents === 'function') {
+                            loadHostedEvents();
+                        }
+
                         resetEventCreation();
-                        
+
                         if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, true);
+                        isPublishingCreatePost = false;
                         return;
                     }
                 }
                 if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, false);
+                throw new Error('Event upload did not complete. Please try again.');
             } catch (error) {
                 if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, false);
                 if (typeof setLocationStatus === 'function') {
                     setLocationStatus(error.message || 'Failed to create event.', true);
                 }
+                isPublishingCreatePost = false;
                 return;
             }
         }
 
         // POST MODE
+        const linkedEvent = getSelectedLinkedEventPost();
+        const postMedia = buildLocalPostMediaPayload(state.pendingEventMedia);
+        const trimmedCaption = (captionValue || '').trim();
+
+        if (!trimmedCaption && state.pendingEventMedia.length === 0) {
+            if (typeof setLocationStatus === 'function') {
+                setLocationStatus('Add a caption or at least one photo/video before publishing.', true);
+            }
+            isPublishingCreatePost = false;
+            return;
+        }
+
+        if (linkedEvent?.eventDetails) {
+            newPost.linkedEventId = linkedEvent.id;
+            newPost.linkedEventTitle = linkedEvent.eventDetails.title || 'Untitled Event';
+        }
+        newPost.caption = trimmedCaption;
+        newPost.image = postMedia.image;
+        newPost.mediaUrl = postMedia.mediaUrl;
+        newPost.mediaType = postMedia.mediaType;
+        newPost.mediaUrls = postMedia.mediaUrls;
+        newPost.mediaTypes = postMedia.mediaTypes;
+        newPost.createdAt = new Date().toISOString();
+
         if (typeof startUploadActivity === 'function') activityId = startUploadActivity('Uploading post...');
         if (typeof switchTab === 'function') switchTab('home');
         
         await new Promise((resolve) => setTimeout(resolve, 900));
         
-        if (state.posts) state.posts.unshift(newPost);
+        newPost.userId = state.currentUser?.id || null;
+        newPost.avatar = state.currentUser?.avatar || newPost.avatar;
+        if (typeof persistSharedPost === 'function') {
+            persistSharedPost(newPost);
+        } else if (state.posts) {
+            state.posts.unshift(newPost);
+        }
+        if (typeof refreshFollowingFeed === 'function') {
+            refreshFollowingFeed();
+        }
         if (typeof renderFeed === 'function') renderFeed();
         if (typeof renderProfileGrid === 'function') renderProfileGrid();
         if (typeof renderHostedEventList === 'function') renderHostedEventList();
         
-        e.target.reset(); // clear form
+        resetPostCreation();
         if (activityId && typeof finishUploadActivity === 'function') finishUploadActivity(activityId, true);
+        isPublishingCreatePost = false;
     }
 
     function confirmAbortEventCreation() {
@@ -465,218 +680,6 @@ function togglePostType(isEvent) {
         document.querySelectorAll('input[name=\"ticket_type\"]').forEach((input) => {
             input.addEventListener('change', toggleTicketTypes);
         });
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        bindCreatePostActions();
-        bindCreatePostInputs();
-        const createPostForm = document.getElementById('create-post-form');
-    
-        if (createPostForm) {
-        createPostForm.addEventListener('submit', async function(e) {
-            e.preventDefault(); // Prevent default page reload
-            
-            // Grab the submit button to disable it during upload (prevents double-taps)
-            const submitBtn = this.querySelector('button[type="submit"]');
-            const originalBtnText = submitBtn.innerHTML;
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
-            lucide.createIcons();
-
-            try {
-                // 1. Initialize FormData
-                const formData = new FormData();
-
-                // 2. Append Core Text Fields (Matching your views.py payload keys exactly)
-                formData.append('title', document.getElementById('event-title').value);
-                formData.append('description', document.getElementById('post-caption').value);
-                
-                // For category, check if they selected 'other' or a dropdown preset
-                const eventCategory = document.getElementById('event-type-other').value || document.getElementById('event-type').value;
-                formData.append('eventCategory', eventCategory);
-
-                // Logistics & Time
-                const dateVal = document.getElementById('event-date').value;
-                const timeVal = document.getElementById('event-time').value;
-                formData.append('startLabel', `${dateVal} ${timeVal}`.trim());
-                
-                const endTimeVal = document.getElementById('event-end-time').value;
-                if (endTimeVal) {
-                    formData.append('endLabel', `${dateVal} ${endTimeVal}`.trim());
-                }
-
-                // Location - Assuming your location modal saves lat/lng to hidden inputs or a global variable
-                formData.append('locationName', document.getElementById('event-location').value);
-                // Replace these with however you are storing the selected coordinates from Leaflet
-                formData.append('latitude', window.selectedLat || 0.0); 
-                formData.append('longitude', window.selectedLng || 0.0);
-
-                // Ticketing
-                formData.append('price', document.getElementById('event-price').value || 0);
-                formData.append('currency', 'INR'); // Defaulted in your view, but good to pass
-                // If you add a capacity input later, grab it here:
-                // formData.append('maxAttendees', document.getElementById('event-capacity').value || 0);
-
-                // 3. Append Media Files (Handling the FileList array)
-                const mediaInput = document.getElementById('event-media-input');
-                if (mediaInput.files.length > 0) {
-                    // Your views.py looks for "eventMedia"
-                    Array.from(mediaInput.files).forEach(file => {
-                        formData.append('eventMedia', file); 
-                    });
-                }
-
-                // 4. Send the Request to your Django API
-                // Make sure to include the CSRF token from your boot config!
-                const csrfToken = window.bootConfig ? window.bootConfig.csrfToken : '';
-
-                const response = await fetch('/api/events/create/', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': csrfToken // Required by Django for POST requests
-                    },
-                    body: formData // DO NOT set Content-Type header manually when sending FormData
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to create event');
-                }
-
-                // Success! Reset form and show a success state
-                this.reset();
-                alert('Vibe dropped successfully! ??');
-                
-                // Optional: Automatically switch back to the 'Home' tab to see the new event
-                if(typeof switchTab === 'function') switchTab('home');
-
-            } catch (error) {
-                console.error('Submission Error:', error);
-                alert(`Error: ${error.message}`);
-            } finally {
-                // Restore button state
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalBtnText;
-            }
-        });
-        }
-    });
-    
-    let currentBookingEventId = null;
-    function openBookingModal(postId) {
-        const event = getPostById(postId);
-        if (!event || !event.eventDetails) return;
-        currentBookingEventId = postId;
-        
-        const modal = document.getElementById('booking-modal');
-        const content = document.getElementById('modal-content');
-        const details = document.getElementById('modal-event-details');
-        const fallbackPrice = Number(event.eventDetails.price) || 0;
-        const rawTicketType = event.eventDetails.ticketType || '';
-        const ticketType = rawTicketType || (fallbackPrice > 0 ? 'Paid' : 'Free');
-        let ticketTiers = Array.isArray(event.eventDetails.ticketTiers) ? event.eventDetails.ticketTiers : [];
-        if (ticketType === 'Paid' && ticketTiers.length === 0) {
-            ticketTiers = [{ name: 'General', price: fallbackPrice }];
-        }
-        const baseFee = ticketType === 'Paid' ? 4 : 0;
-        
-        details.innerHTML = `
-            <div class="flex gap-5 mb-8">
-                <img src="${event.image}" class="w-24 h-32 rounded-2xl object-cover shadow-2xl">
-                <div class="pt-2">
-                    <h3 class="font-black text-2xl leading-tight text-white mb-2">${event.eventDetails.title}</h3>
-                    <p class="text-fuchsia-400 font-medium mb-1">${event.eventDetails.date}</p>
-                    <p class="text-gray-400 text-sm">${event.eventDetails.location}</p>
-                    ${event.eventDetails.mapUrl ? `<a href="${event.eventDetails.mapUrl}" target="_blank" rel="noopener" class="inline-block mt-2 text-xs text-cyan-300 hover:text-cyan-200">Open in Maps</a>` : ''}
-                </div>
-            </div>
-            <div class="space-y-6">
-                ${ticketType === 'Free' ? `
-                <div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <span class="font-bold text-gray-300">Free Entry</span>
-                    <span class="text-sm font-semibold text-emerald-300">No charge</span>
-                </div>
-                ` : `
-                <div class="space-y-3">
-                    <div class="text-sm font-semibold text-gray-300">Choose Ticket</div>
-                    <div class="space-y-2">
-                        ${ticketTiers.map((tier, index) => `
-                        <label class="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 cursor-pointer hover:border-fuchsia-500/40 transition-colors">
-                            <div class="flex items-center gap-3">
-                                <input type="radio" name="booking-tier" value="${index}" ${index === 0 ? 'checked' : ''} class="accent-fuchsia-500">
-                                <div>
-                                    <div class="font-semibold text-white">${tier.name || 'General'}</div>
-                                    ${tier.services ? `<div class="text-xs text-gray-400">${tier.services}</div>` : ''}
-                                </div>
-                            </div>
-                            <div class="text-fuchsia-400 font-bold">${formatInr(Number(tier.price) || 0)}</div>
-                        </label>
-                        `).join('')}
-                    </div>
-                </div>
-                `}
-                <div class="border-t border-white/10 pt-4 flex justify-between items-center">
-                    <span class="text-xl font-bold text-white">Total</span>
-                    <span id="booking-total-amount" class="text-2xl font-black text-fuchsia-400">${ticketType === 'Free' ? 'Free' : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)}</span>
-                </div>
-                <button id="booking-action-btn" data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30">${ticketType === 'Free' ? 'Join Event' : 'Pay & Join'}</button>
-                <button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
-            </div>
-        `;
-
-        if (ticketType === 'Paid') {
-            const totalEl = document.getElementById('booking-total-amount');
-            details.querySelectorAll('input[name="booking-tier"]').forEach((input) => {
-                input.addEventListener('change', () => {
-                    const idx = Number(input.value);
-                    const nextPrice = Number(ticketTiers[idx]?.price) || 0;
-                    if (totalEl) totalEl.textContent = formatInr(nextPrice + baseFee);
-                });
-            });
-        }
-
-        modal.classList.remove('hidden');
-        // Small timeout to allow display:block to apply before opacity transition
-        setTimeout(() => {
-            modal.classList.remove('opacity-0');
-            // Check if we are on desktop for different animation
-            if (window.innerWidth >= 768) {
-                content.classList.remove('translate-y-10');
-            } else {
-                content.classList.remove('translate-y-full');
-            }
-        }, 10);
-    }
-
-    function closeBookingModal() {
-        const modal = document.getElementById('booking-modal');
-        const content = document.getElementById('modal-content');
-        
-        modal.classList.add('opacity-0');
-        
-        if (window.innerWidth >= 768) {
-            content.classList.add('translate-y-10');
-        } else {
-            content.classList.add('translate-y-full');
-        }
-        
-        setTimeout(() => {
-            modal.classList.add('hidden');
-        }, 300);
-    }
-
-    function confirmBooking() {
-        const event = getPostById(currentBookingEventId);
-        if (!event) return;
-        state.tickets.unshift({
-            id: Math.random().toString(36).substr(2, 9),
-            event: event,
-            qty: 1
-        });
-        renderTicketList();
-        closeBookingModal();
-        setTimeout(() => switchTab('tickets'), 300);
     }
 
     function toggleLike(btn) {
@@ -898,6 +901,168 @@ function togglePostType(isEvent) {
         resetSwipeSlider();
     }
 
+
+    let postSwipeReady = false;
+    let postSwipeDragging = false;
+    let postSwipeStartX = 0;
+    let postSwipeCurrentX = 0;
+    let postSwipeMaxDrag = 120;
+    let postSwipeThreshold = 100;
+
+    function resetPostSwipeVisuals() {
+        const thumb = document.getElementById('postSwipeThumb');
+        const bg = document.getElementById('postSwipeBg');
+        const icon = document.getElementById('postSwipeIcon');
+        const left = document.getElementById('postSwipeTextLeft');
+        const right = document.getElementById('postSwipeTextRight');
+        if (!thumb || !bg || !icon) return;
+
+        bg.style.opacity = 0;
+        bg.style.boxShadow = 'none';
+        icon.style.transform = 'rotate(0deg)';
+        icon.style.stroke = '#141414';
+        if (left) left.style.opacity = 1;
+        if (right) right.style.opacity = 1;
+        thumb.style.transform = 'translateX(0px) scale(1)';
+        postSwipeCurrentX = 0;
+    }
+
+    function resetPostSwipeSlider() {
+        const thumb = document.getElementById('postSwipeThumb');
+        const bg = document.getElementById('postSwipeBg');
+        if (thumb) thumb.classList.add('event-swipe-snap');
+        if (bg) bg.classList.add('event-swipe-snap-bg');
+        resetPostSwipeVisuals();
+    }
+
+    function postSwipeActionPublish() {
+        const form = document.getElementById('create-post-form');
+        if (form && typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return;
+        }
+        document.getElementById('post-submit-btn')?.click();
+    }
+
+    function postSwipeActionCancel() {
+        if (confirmAbortPostCreation()) {
+            resetPostCreation();
+        }
+    }
+
+    function initPostSwipePanel() {
+        const panel = document.getElementById('postSwipePanel');
+        const thumb = document.getElementById('postSwipeThumb');
+        const bg = document.getElementById('postSwipeBg');
+        const icon = document.getElementById('postSwipeIcon');
+        const left = document.getElementById('postSwipeTextLeft');
+        const right = document.getElementById('postSwipeTextRight');
+
+        if (!panel || !thumb || !bg || !icon || !left || !right || postSwipeReady) return;
+        postSwipeReady = true;
+
+        const colorRight = '#0D3A63';
+        const glowRight = '#00d2ff';
+        const colorLeft = '#C84C49';
+        const glowLeft = '#ff4d4d';
+
+        const dragStart = (e) => {
+            postSwipeDragging = true;
+            postSwipeStartX = e.clientX;
+
+            const cWidth = panel.offsetWidth || 340;
+            const tWidth = thumb.offsetWidth || 50;
+            const padding = 22;
+            postSwipeMaxDrag = (cWidth / 2) - (tWidth / 2) - padding;
+            postSwipeThreshold = postSwipeMaxDrag * 0.85;
+
+            thumb.classList.remove('event-swipe-snap');
+            bg.classList.remove('event-swipe-snap-bg');
+            bg.classList.remove('event-swipe-energetic');
+            thumb.setPointerCapture(e.pointerId);
+        };
+
+        const dragMove = (e) => {
+            if (!postSwipeDragging) return;
+
+            let deltaX = e.clientX - postSwipeStartX;
+            if (deltaX > postSwipeMaxDrag) deltaX = postSwipeMaxDrag;
+            if (deltaX < -postSwipeMaxDrag) deltaX = -postSwipeMaxDrag;
+
+            postSwipeCurrentX = deltaX;
+            const dragPercent = Math.abs(deltaX) / postSwipeMaxDrag;
+
+            if (deltaX > 0) {
+                bg.style.backgroundColor = colorRight;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercent}px ${colorRight}, 0 0 ${20 * dragPercent}px ${glowRight}`;
+                bg.style.opacity = dragPercent + 0.2;
+                icon.style.transform = `rotate(${-90 * dragPercent}deg)`;
+
+                if (deltaX >= postSwipeThreshold) {
+                    bg.classList.add('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`;
+                    icon.style.stroke = glowRight;
+                } else {
+                    bg.classList.remove('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    icon.style.stroke = '#141414';
+                }
+
+                right.style.opacity = 1 - dragPercent;
+                left.style.opacity = 1;
+            } else if (deltaX < 0) {
+                bg.style.backgroundColor = colorLeft;
+                bg.style.boxShadow = `inset 0 0 ${40 * dragPercent}px ${colorLeft}, 0 0 ${20 * dragPercent}px ${glowLeft}`;
+                bg.style.opacity = dragPercent + 0.2;
+                icon.style.transform = `rotate(${90 * dragPercent}deg)`;
+
+                if (deltaX <= -postSwipeThreshold) {
+                    bg.classList.add('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1.1)`;
+                    icon.style.stroke = glowLeft;
+                } else {
+                    bg.classList.remove('event-swipe-energetic');
+                    thumb.style.transform = `translateX(${deltaX}px) scale(1)`;
+                    icon.style.stroke = '#141414';
+                }
+
+                left.style.opacity = 1 - dragPercent;
+                right.style.opacity = 1;
+            } else {
+                resetPostSwipeVisuals();
+            }
+        };
+
+        const dragEnd = (e) => {
+            if (!postSwipeDragging) return;
+            postSwipeDragging = false;
+            thumb.releasePointerCapture(e.pointerId);
+
+            thumb.classList.add('event-swipe-snap');
+            bg.classList.add('event-swipe-snap-bg');
+            bg.classList.remove('event-swipe-energetic');
+
+            if (postSwipeCurrentX >= postSwipeThreshold) {
+                thumb.style.transform = `translateX(${postSwipeMaxDrag}px) scale(1)`;
+                postSwipeActionPublish();
+                setTimeout(resetPostSwipeSlider, 350);
+                return;
+            }
+            if (postSwipeCurrentX <= -postSwipeThreshold) {
+                thumb.style.transform = `translateX(${-postSwipeMaxDrag}px) scale(1)`;
+                postSwipeActionCancel();
+                setTimeout(resetPostSwipeSlider, 350);
+                return;
+            }
+            resetPostSwipeSlider();
+        };
+
+        thumb.addEventListener('pointerdown', dragStart);
+        window.addEventListener('pointermove', dragMove);
+        window.addEventListener('pointerup', dragEnd);
+        resetPostSwipeSlider();
+    }
+
     function resetEventCreation() {
         const form = document.getElementById('create-post-form');
         if (form) {
@@ -928,7 +1093,7 @@ function togglePostType(isEvent) {
         const locationInput = document.getElementById('event-location');
         if (locationInput) locationInput.value = '';
 
-        ['event-date-display', 'event-date', 'event-time-display', 'event-time', 'event-end-time-display', 'event-end-time', 'event-duration-minutes'].forEach(id => {
+        ['event-date-display', 'event-date', 'event-date-multi', 'event-time-display', 'event-time', 'event-end-date-display', 'event-end-date', 'event-end-time-display', 'event-end-time', 'event-duration-minutes'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
@@ -956,7 +1121,15 @@ function togglePostType(isEvent) {
         renderTiers();
         toggleTicketTypes();
         updateRemainingSeatsUI();
-        if (typeof syncEventTimeDependencyUi === 'function') syncEventTimeDependencyUi();
+        const advancedRow = document.getElementById('event-advanced-time-row');
+        if (advancedRow) advancedRow.classList.add('hidden');
+        const startDisplay = document.getElementById('event-time-display');
+        const endDateDisplay = document.getElementById('event-end-date-display');
+        const endTimeDisplay = document.getElementById('event-end-time-display');
+        if (startDisplay) startDisplay.disabled = true;
+        if (endDateDisplay) endDateDisplay.disabled = true;
+        if (endTimeDisplay) endTimeDisplay.disabled = true;
+        if (durationDisplay) durationDisplay.disabled = true;
         if (typeof setLocationStatus === 'function') setLocationStatus('', false);
     }
 
@@ -970,6 +1143,9 @@ function togglePostType(isEvent) {
 
         setStep(1);
         initSwipePanel();
+        initPostSwipePanel();
+        renderPostEventLinkOptions();
+        updatePostLinkHelper();
         renderCarousel();
         bindCarouselDrag();
         toggleTicketTypes();
