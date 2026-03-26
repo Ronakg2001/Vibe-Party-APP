@@ -134,6 +134,13 @@ def _serialize_message(message, viewer):
     is_unsent = bool(message.unsent_at)
     attachments = [] if is_unsent else [_serialize_attachment(item) for item in message.attachments.all()]
     body = "This message was unsent." if is_unsent else str(message.body or "")
+    replied_to_data = None
+    if not is_unsent and getattr(message, "replied_to", None):
+        replied_to_data = {
+            "id": message.replied_to.id,
+            "body": str(message.replied_to.body or ""),
+            "senderUsername": message.replied_to.sender.username,
+        }
     return {
         "id": message.id,
         "conversationId": message.conversation_id,
@@ -145,6 +152,7 @@ def _serialize_message(message, viewer):
         "isUnsent": is_unsent,
         "isForwarded": bool(message.forwarded_from_id),
         "forwardedFrom": None if is_unsent else _serialize_forwarded_from(message),
+        "repliedTo": replied_to_data,
         "hasAttachments": bool(attachments),
         "attachments": attachments,
         "createdAt": message.created_at.isoformat() if message.created_at else None,
@@ -156,6 +164,8 @@ def _serialize_message(message, viewer):
         "canDelete": True,
         "canUnsend": bool(is_own and not is_unsent),
         "canForward": not is_unsent,
+        "repliedTo": replied_to_data,
+        "canReply": not is_unsent,
     }
 
 
@@ -460,7 +470,19 @@ def conversation_messages_api(request, conversation_id):
     uploads = request.FILES.getlist("attachments") if is_multipart else []
     body = str(payload.get("body", "")).strip()
     attachment_meta = _parse_attachment_meta(payload.get("attachmentMeta")) if is_multipart else []
+    replied_to_id = request.POST.get("repliedToId") or payload.get("repliedToId")
+    replied_to_msg = None
+    if replied_to_id:
+        try:
+            replied_to_msg = DirectMessage.objects.get(id=int(replied_to_id), conversation=conversation)
+        except (ValueError, TypeError, DirectMessage.DoesNotExist):
+            pass
 
+    if not body and not uploads:
+        return _error("Message body or attachment is required.")
+    if len(body) > 2000:
+        return _error("Message body must be 2000 characters or fewer.")
+    
     if not body and not uploads:
         return _error("Message body or attachment is required.")
     if len(body) > 2000:
@@ -470,6 +492,7 @@ def conversation_messages_api(request, conversation_id):
         conversation=conversation,
         sender=request.user,
         body=body,
+        replied_to=replied_to_msg
     )
     try:
         _save_message_attachments(message, uploads, attachment_meta)

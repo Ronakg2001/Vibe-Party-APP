@@ -174,6 +174,13 @@ class DirectMessage(models.Model):
         on_delete=models.SET_NULL,
         related_name="forwarded_copies",
     )
+    replied_to = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replies",
+    )
     body = models.TextField(blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
     edited_at = models.DateTimeField(null=True, blank=True)
