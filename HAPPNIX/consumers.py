@@ -35,6 +35,24 @@ class MessageConsumer(AsyncWebsocketConsumer):
                 if user and user.is_authenticated:
                     await self.update_last_active(user)
                 await self.send_json({"type": "pong"})
+            elif payload.get("type") == "typing":
+                user = self.scope.get("user")
+                target_user_id = payload.get("targetUserId")
+                conversation_id = payload.get("conversationId")
+                is_typing = payload.get("isTyping", False)
+                if user and user.is_authenticated and target_user_id and conversation_id:
+                    await self.channel_layer.group_send(
+                        f"dm_user_{target_user_id}",
+                        {
+                            "type": "message.event",
+                            "payload": {
+                                "type": "user.typing",
+                                "conversationId": conversation_id,
+                                "userId": user.id,
+                                "isTyping": is_typing
+                            }
+                        }
+                    )
 
     async def message_event(self, event):
         await self.send_json(event["payload"])
