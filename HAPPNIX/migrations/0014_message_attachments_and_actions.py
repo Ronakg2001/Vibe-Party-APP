@@ -6,7 +6,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('VIBE', '0013_direct_messages'),
+        ('HAPPNIX', '0013_direct_messages'),
     ]
 
     operations = [
@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
                 ('file_size', models.PositiveIntegerField(default=0)),
                 ('duration_seconds', models.PositiveIntegerField(blank=True, null=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('message', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='attachments', to='VIBE.directmessage')),
+                ('message', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='attachments', to='HAPPNIX.directmessage')),
             ],
             options={
                 'ordering': ['id'],
@@ -47,7 +47,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('deleted_at', models.DateTimeField(auto_now_add=True)),
-                ('message', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='deletions', to='VIBE.directmessage')),
+                ('message', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='deletions', to='HAPPNIX.directmessage')),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='deleted_direct_messages', to=settings.AUTH_USER_MODEL)),
             ],
             options={

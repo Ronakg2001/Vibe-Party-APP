@@ -5,7 +5,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0004_event_detail_fields"),
+        ("HAPPNIX", "0004_event_detail_fields"),
     ]
 
     operations = [
@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
                 ("file_url", models.URLField()),
                 ("sort_order", models.PositiveSmallIntegerField(default=0)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
-                ("event", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="media_items", to="VIBE.event")),
+                ("event", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="media_items", to="HAPPNIX.event")),
             ],
             options={
                 "ordering": ["sort_order", "id"],

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0015_directmessage_forwarded_from"),
+        ("HAPPNIX", "0015_directmessage_forwarded_from"),
     ]
 
     operations = [
@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
                 related_name="replies",
-                to="VIBE.directmessage",
+                to="HAPPNIX.directmessage",
             ),
         ),
         migrations.AlterField(

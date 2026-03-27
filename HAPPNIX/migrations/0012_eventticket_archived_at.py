@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('VIBE', '0011_eventticket'),
+        ('HAPPNIX', '0011_eventticket'),
     ]
 
     operations = [

@@ -53,6 +53,27 @@ class MessageConsumer(AsyncWebsocketConsumer):
                             }
                         }
                     )
+            elif payload.get("type") == "messages.read":
+                user = self.scope.get("user")
+                conversation_id = payload.get("conversationId")
+                target_user_id = payload.get("targetUserId")
+
+                if user and user.is_authenticated and conversation_id and target_user_id:
+                    # 1. Update the database instantly
+                    await self.mark_messages_read(user.id, conversation_id)
+                    
+                    # 2. Notify the sender so their screen updates to "Read"
+                    await self.channel_layer.group_send(
+                        f"dm_user_{target_user_id}",
+                        {
+                            "type": "message.event",
+                            "payload": {
+                                "type": "messages.read.receipt",
+                                "conversationId": conversation_id,
+                                "readAt": timezone.now().isoformat()
+                            }
+                        }
+                    )
 
     async def message_event(self, event):
         await self.send_json(event["payload"])
@@ -64,3 +85,13 @@ class MessageConsumer(AsyncWebsocketConsumer):
     def update_last_active(self, user):
         from .models import UserProfile
         UserProfile.objects.filter(user=user).update(last_active=timezone.now() - timedelta(seconds=30))
+
+    @database_sync_to_async
+    def mark_messages_read(self, user_id, conversation_id):
+        from .models import DirectMessage
+        from django.utils import timezone
+        # Update all messages in this chat sent by the OTHER user that are currently unread
+        DirectMessage.objects.filter(
+            conversation_id=conversation_id,
+            read_at__isnull=True
+        ).exclude(sender_id=user_id).update(read_at=timezone.now())

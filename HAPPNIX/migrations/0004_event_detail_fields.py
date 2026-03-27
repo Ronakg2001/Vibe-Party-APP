@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0003_event"),
+        ("HAPPNIX", "0003_event"),
     ]
 
     operations = [

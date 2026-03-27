@@ -6,7 +6,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0002_userprofile_gov_id_fields"),
+        ("HAPPNIX", "0002_userprofile_gov_id_fields"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

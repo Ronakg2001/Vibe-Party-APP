@@ -36,7 +36,7 @@ def parse_end(raw, start_at):
 
 
 def backfill_event_schedule(apps, schema_editor):
-    Event = apps.get_model("VIBE", "Event")
+    Event = apps.get_model("HAPPNIX", "Event")
     for event in Event.objects.all():
         start_at = parse_start(event.start_label)
         if start_at is None:
@@ -60,7 +60,7 @@ def noop(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0006_event_schedule_fields"),
+        ("HAPPNIX", "0006_event_schedule_fields"),
     ]
 
     operations = [

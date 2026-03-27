@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("VIBE", "0007_backfill_event_schedule"),
+        ("HAPPNIX", "0007_backfill_event_schedule"),
     ]
 
     operations = [

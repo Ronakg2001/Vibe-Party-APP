@@ -569,7 +569,34 @@
     </div>`;
     };
     const activeStatusHtml = formatActiveStatus(other.lastActive);
-    threadHeaderEl.innerHTML = `<div class="flex items-center gap-3"><img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover"><div class="min-w-0"><div class="truncate text-base font-black text-white">${escapeHtml(other.full_name || other.username || "Unknown")}</div><div id="active-chat-status" class="truncate text-xs text-gray-400mt-0.5">${activeStatusHtml}</div></div></div>`;
+    threadHeaderEl.innerHTML = `
+    <div class="flex items-center justify-between w-full pr-2">
+        <div class="flex items-center gap-3">
+            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover">
+            <div class="min-w-0">
+                <div class="truncate text-base font-black text-white">
+                    ${escapeHtml(other.full_name || other.username || "Unknown")}
+                </div>
+                <div id="active-chat-status" class="truncate text-xs text-gray-400 mt-0.5">${activeStatusHtml}</div>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-1">
+            <button type="button" data-message-action="clear-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 hover:text-fuchsia-400 rounded-full hover:bg-white/10 transition-colors" title="Clear Chat for me">
+                <i data-lucide="eraser" class="h-4 w-4"></i>
+            </button>
+
+            <button type="button" data-message-action="delete-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-white/10 transition-colors" title="Delete Chat permanently">
+                <i data-lucide="trash-2" class="h-4 w-4"></i>
+            </button>
+
+            <button type="button" data-message-action="close-active-conversation" class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors" title="Close conversation">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    </div>`;
     composeInput.disabled = false;
     sendBtn.disabled = state.sending;
     const draftText = state.drafts[conversation.id] || "";
@@ -1029,6 +1056,35 @@
       toggleTypingIndicator(payload.conversationId, payload.isTyping);
       return;
     }
+    if (payload.type === "messages.read.receipt") {
+      const convoId = payload.conversationId;
+      const readAtTime = payload.readAt || new Date().toISOString();
+      if (state.messagesByConversation[convoId]) {
+        state.messagesByConversation[convoId].forEach((msg) => {
+          if (msg.isOwn && !msg.readAt) {
+            msg.readAt = readAtTime;
+          }
+        });
+      }
+      if (Number(state.activeConversationId) === Number(convoId)) {
+        renderThread();
+      }
+      return;
+    }
+    if (payload.type === "conversation.deleted") {
+      const convoId = payload.conversationId;
+      state.conversations = state.conversations.filter(
+        (c) => Number(c.id) !== Number(convoId),
+      );
+      delete state.messagesByConversation[convoId];
+      if (Number(state.activeConversationId) === Number(convoId)) {
+        stopTypingSignal();
+        state.activeConversationId = null;
+        renderThread();
+      }
+      renderConversationList();
+      return;
+    }
   }
 
   function connectSocket() {
@@ -1199,9 +1255,29 @@
       closeForwardPanel();
       stopTypingSignal();
       state.activeConversationId = Number(actionEl.dataset.conversationId);
+      const convo = state.conversations.find(
+        (c) => Number(c.id) === state.activeConversationId,
+      );
+      if (convo && convo.unreadCount > 0 && state.socketConnected) {
+        convo.unreadCount = 0; // Instantly clear the pink unread badge locally
+        state.socket.send(
+          JSON.stringify({
+            type: "messages.read",
+            conversationId: convo.id,
+            targetUserId: convo.otherUser.sql_user_id,
+          }),
+        );
+      }
       renderConversationList();
       renderThread();
       await loadMessages(state.activeConversationId, { keepScroll: false });
+      return;
+    }
+    if (action === "close-active-conversation") {
+      stopTypingSignal();
+      state.activeConversationId = null; // Clear the active state
+      renderThread(); // This will trigger the empty "Select a conversation" screen
+      renderConversationList(); // Removes the active highlight from the sidebar
       return;
     }
     if (action === "start-chat" && actionEl.dataset.userId) {
@@ -1289,6 +1365,46 @@
     }
     if (action === "scroll-to-reply" && actionEl.dataset.targetId) {
       window.scrollToMessage(actionEl.dataset.targetId);
+      return;
+    }
+    if (action === "clear-conversation" && actionEl.dataset.conversationId) {
+      const convoId = actionEl.dataset.conversationId;
+      if (
+        window.confirm(
+          "Are you sure you want to clear this chat? This removes the messages for you, but the other person can still see them.",
+        )
+      ) {
+        try {
+          // 1. Tell the server to delete the messages
+          postJson(`/api/messages/conversations/${convoId}/clear`, {});
+
+          // 2. Instantly wipe the local cache to make it feel snappy
+          state.messagesByConversation[convoId] = [];
+
+          // 3. Redraw the empty thread if we are currently looking at it
+          if (Number(state.activeConversationId) === Number(convoId)) {
+            renderThread();
+          }
+        } catch (e) {
+          alert(e.message || "Failed to clear chat");
+        }
+      }
+      return;
+    }
+    if (action === "delete-conversation" && actionEl.dataset.conversationId) {
+      const convoId = actionEl.dataset.conversationId;
+      if (
+        window.confirm(
+          "Are you sure you want to permanently delete this conversation? This will remove it for both users and cannot be undone.",
+        )
+      ) {
+        try {
+          // We just fire the API request. The WebSocket will automatically handle removing it from the screen!
+          postJson(`/api/messages/conversations/${convoId}/delete`, {});
+        } catch (e) {
+          alert(e.message || "Failed to delete chat");
+        }
+      }
       return;
     }
   });

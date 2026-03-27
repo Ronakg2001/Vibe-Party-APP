@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("VIBE", "0008_follow"),
+        ("HAPPNIX", "0008_follow"),
     ]
 
     operations = [

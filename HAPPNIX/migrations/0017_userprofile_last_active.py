@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0016_directmessage_replied_to_alter_follow_status"),
+        ("HAPPNIX", "0016_directmessage_replied_to_alter_follow_status"),
     ]
 
     operations = [

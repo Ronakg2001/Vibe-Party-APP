@@ -7,7 +7,7 @@ from django.db.models import F, Q
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('VIBE', '0012_eventticket_archived_at'),
+        ('HAPPNIX', '0012_eventticket_archived_at'),
     ]
 
     operations = [
@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
                 ('read_at', models.DateTimeField(blank=True, null=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('conversation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='VIBE.directconversation')),
+                ('conversation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='HAPPNIX.directconversation')),
                 ('sender', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='direct_messages_sent', to=settings.AUTH_USER_MODEL)),
             ],
             options={

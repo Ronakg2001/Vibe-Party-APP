@@ -418,6 +418,7 @@ def conversations_api(request):
         DirectConversation.objects.filter(Q(user_one=request.user) | Q(user_two=request.user))
         .select_related("user_one", "user_two")
         .order_by("-updated_at", "-id")
+        .exclude(deleted_by=request.user)
     )
     payload = [_serialize_conversation(conversation, request.user) for conversation in conversations]
     unread_total = sum(item.get("unreadCount", 0) for item in payload)
@@ -507,6 +508,7 @@ def conversation_messages_api(request, conversation_id):
         return _error(str(exc))
 
     message.refresh_from_db()
+    conversation.deleted_by.clear()
     conversation.updated_at = timezone.now()
     conversation.save(update_fields=["updated_at"])
     conversation.refresh_from_db()
@@ -601,7 +603,7 @@ def forward_message_api(request, message_id):
     )
     _clone_forwarded_attachments(source_message, forwarded)
     forwarded.refresh_from_db()
-
+    conversation.deleted_by.clear()
     conversation.updated_at = timezone.now()
     conversation.save(update_fields=["updated_at"])
     conversation.refresh_from_db()
@@ -697,4 +699,49 @@ def mark_conversation_read_api(request, conversation_id):
         "conversationId": conversation.id,
         "updatedCount": updated_count,
         "conversation": _serialize_conversation(conversation, request.user),
+    })
+
+@csrf_exempt
+@require_POST
+def clear_conversation_api(request, conversation_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+    conversation = _conversation_for_user(request.user, conversation_id)
+    if conversation is None:
+        return _error("Conversation not found.", status=404)
+    visible_messages = _visible_messages_qs(conversation, request.user)
+    deletions = [
+        DirectMessageDeletion(message=msg, user=request.user)
+        for msg in visible_messages
+    ]
+    if deletions:
+        DirectMessageDeletion.objects.bulk_create(deletions, ignore_conflicts=True)
+    conversation.refresh_from_db()
+    _broadcast_conversation_snapshot(conversation, [request.user.id], "conversation.updated")
+    return JsonResponse({
+        "message": "Chat cleared successfully.",
+        "conversationId": conversation.id,
+        "conversation": _serialize_conversation(conversation, request.user),
+    })
+
+
+@csrf_exempt
+@require_POST
+def delete_conversation_api(request, conversation_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+    conversation = _conversation_for_user(request.user, conversation_id)
+    if conversation is None:
+        return _error("Conversation not found.", status=404)
+    convo_id = conversation.id
+    conversation.deleted_by.add(request.user)
+    if conversation.deleted_by.count() == 2:
+        conversation.delete()
+    _broadcast_to_users([request.user.id], {
+        "type": "conversation.deleted",
+        "conversationId": convo_id
+    })
+    return JsonResponse({
+        "message": "Conversation deleted from your account.",
+        "conversationId": convo_id
     })

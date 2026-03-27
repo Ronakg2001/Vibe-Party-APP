@@ -6,7 +6,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('VIBE', '0010_private_account_support'),
+        ('HAPPNIX', '0010_private_account_support'),
     ]
 
     operations = [
@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ('cancelled_at', models.DateTimeField(blank=True, null=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('attendee', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='event_tickets', to=settings.AUTH_USER_MODEL)),
-                ('event', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='tickets', to='VIBE.event')),
+                ('event', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='tickets', to='HAPPNIX.event')),
             ],
             options={
                 'ordering': ['-booked_at', '-id'],

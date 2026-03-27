@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 def mark_existing_follows_as_accepted(apps, schema_editor):
-    Follow = apps.get_model("VIBE", "Follow")
+    Follow = apps.get_model("HAPPNIX", "Follow")
     Follow.objects.filter(status="").update(status="accepted")
     Follow.objects.filter(status__isnull=True).update(status="accepted")
 
@@ -10,7 +10,7 @@ def mark_existing_follows_as_accepted(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("VIBE", "0009_activitynotification"),
+        ("HAPPNIX", "0009_activitynotification"),
     ]
 
     operations = [

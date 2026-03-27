@@ -150,6 +150,7 @@ class ActivityNotification(models.Model):
 class DirectConversation(models.Model):
     user_one = models.ForeignKey(User, on_delete=models.CASCADE, related_name="direct_conversations_started")
     user_two = models.ForeignKey(User, on_delete=models.CASCADE, related_name="direct_conversations_received")
+    deleted_by = models.ManyToManyField(User, related_name="deleted_conversations", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -231,5 +232,3 @@ class DirectMessageDeletion(models.Model):
 
     def __str__(self):
         return f"Message {self.message_id} deleted for {self.user.username}"
-
-
