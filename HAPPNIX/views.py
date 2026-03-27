@@ -9,6 +9,7 @@ import uuid
 from django.contrib.auth import get_user_model
 from django.contrib.auth import logout
 from django.db.models import F, Q
+from django.db import transaction
 from django.shortcuts import redirect
 from django.template import loader
 from django.http import HttpResponse, JsonResponse
@@ -23,7 +24,8 @@ from django.conf import settings
 from urllib.parse import urlparse
 
 from . import mongo_store
-from .models import Event, EventMedia, EventTicket, Follow, UserProfile
+from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile
+from .messaging import _broadcast_message_created
 from .utils import _error, _json_body
 
 
@@ -161,6 +163,18 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return 6371.0 * 2 * asin(sqrt(hav))
 
 
+def _resolved_ticketing(event):
+    raw_ticket_type = str(getattr(event, "ticket_type", "") or "").strip()
+    raw_ticket_tiers = getattr(event, "ticket_tiers", []) or []
+    has_paid_tiers = isinstance(raw_ticket_tiers, list) and any(float((tier or {}).get("price") or 0) > 0 for tier in raw_ticket_tiers if isinstance(tier, dict))
+    price_value = float(getattr(event, "price", 0) or 0)
+    if raw_ticket_type == "Paid" or has_paid_tiers or price_value > 0:
+        return "Paid", raw_ticket_tiers if isinstance(raw_ticket_tiers, list) else []
+    if raw_ticket_type == "Guestlist":
+        return "Guestlist", []
+    return "Free", []
+
+
 def _serialize_event(event, distance_km=None):
     lat = float(event.latitude)
     lon = float(event.longitude)
@@ -170,6 +184,7 @@ def _serialize_event(event, distance_km=None):
     media_urls = [item.file_url for item in media_items]
     image_media = [item.file_url for item in media_items if item.media_type == EventMedia.MediaType.IMAGE]
     cover_url = image_media[0] if image_media else (media_urls[0] if media_urls else event.image_url)
+    ticket_type, ticket_tiers = _resolved_ticketing(event)
     data = {
         "id": event.id,
         "eventId": str(event.event_uid),
@@ -187,6 +202,8 @@ def _serialize_event(event, distance_km=None):
         "longitude": lon,
         "price": float(event.price),
         "currency": event.currency,
+        "ticketType": ticket_type,
+        "ticketTiers": ticket_tiers,
         "maxAttendees": event.max_attendees,
         "ticketsSold": event.tickets_sold,
         "status": event.status,
@@ -266,20 +283,220 @@ def _ticket_is_expired(ticket, now=None):
     return bool(end_at and end_at <= current and ticket.status == EventTicket.Status.ACTIVE)
 
 
+def _ticket_amount(ticket):
+    return float((ticket.ticket_price or Decimal("0")) + (ticket.service_fee or Decimal("0")))
+
+
+def _ticket_transaction_id(prefix):
+    return f"{prefix.upper()}-{uuid.uuid4().hex[:12].upper()}"
+
+
+def _group_tickets_for(ticket):
+    group_code = (ticket.group_code or "").strip()
+    queryset = EventTicket.objects.filter(event=ticket.event)
+    if group_code:
+        queryset = queryset.filter(group_code=group_code)
+    else:
+        queryset = queryset.filter(id=ticket.id)
+    return list(
+        queryset.select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .order_by("booked_at", "id")
+    )
+
+
 def _serialize_ticket(ticket):
     now = timezone.localtime()
+    group_tickets = _group_tickets_for(ticket)
     return {
         "id": ticket.id,
+        "groupCode": ticket.group_code or str(ticket.id),
         "status": ticket.status,
         "qty": int(ticket.quantity or 1),
         "userId": ticket.attendee_id,
         "username": ticket.attendee.username,
+        "bookedById": ticket.booked_by_id or ticket.attendee_id,
+        "bookedByUsername": (ticket.booked_by.username if ticket.booked_by else ticket.attendee.username),
+        "paidById": ticket.paid_by_id,
+        "paidByUsername": ticket.paid_by.username if ticket.paid_by else "",
+        "tierName": ticket.tier_name or "General",
+        "inviteStatus": ticket.invite_status or "confirmed",
+        "pendingReason": ticket.pending_reason or "",
+        "ticketPrice": float(ticket.ticket_price or Decimal("0")),
+        "serviceFee": float(ticket.service_fee or Decimal("0")),
+        "amountDue": _ticket_amount(ticket),
+        "paymentTransactionId": ticket.payment_transaction_id or "",
+        "refundTransactionId": ticket.refund_transaction_id or "",
         "createdAt": ticket.booked_at.isoformat() if ticket.booked_at else None,
         "cancelledAt": ticket.cancelled_at.isoformat() if ticket.cancelled_at else None,
         "archivedAt": ticket.archived_at.isoformat() if getattr(ticket, 'archived_at', None) else None,
         "isExpired": _ticket_is_expired(ticket, now),
+        "canPay": ticket.status == EventTicket.Status.PENDING,
+        "participants": [
+            {
+                "ticketId": participant.id,
+                "userId": participant.attendee_id,
+                "username": participant.attendee.username,
+                "status": participant.status,
+                "bookedById": participant.booked_by_id or participant.attendee_id,
+                "bookedByUsername": participant.booked_by.username if participant.booked_by else participant.attendee.username,
+                "paidById": participant.paid_by_id,
+                "paidByUsername": participant.paid_by.username if participant.paid_by else "",
+                "inviteStatus": participant.invite_status or "confirmed",
+                "pendingReason": participant.pending_reason or "",
+                "ticketPrice": float(participant.ticket_price or Decimal("0")),
+                "serviceFee": float(participant.service_fee or Decimal("0")),
+                "amountDue": _ticket_amount(participant),
+                "paymentTransactionId": participant.payment_transaction_id or "",
+                "refundTransactionId": participant.refund_transaction_id or "",
+                "isCurrentUser": participant.attendee_id == ticket.attendee_id,
+                "isPaid": participant.status == EventTicket.Status.ACTIVE,
+            }
+            for participant in group_tickets
+        ],
         "event": _serialize_event(ticket.event),
     }
+
+
+def _normalize_ticket_invite_status(value):
+    label = str(value or "confirmed").strip().lower()
+    return "tentative" if label == "tentative" else "confirmed"
+
+
+def _invite_status_map(payload, allowed_user_ids):
+    raw_map = payload.get("inviteeStatuses") or {}
+    if not isinstance(raw_map, dict):
+        return {}
+    normalized = {}
+    for raw_user_id, raw_status in raw_map.items():
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id in allowed_user_ids:
+            normalized[user_id] = _normalize_ticket_invite_status(raw_status)
+    return normalized
+
+
+def _group_ticket_queryset(ticket):
+    queryset = EventTicket.objects.filter(event=ticket.event, archived_at__isnull=True)
+    if ticket.group_code:
+        return queryset.filter(group_code=ticket.group_code)
+    return queryset.filter(id=ticket.id)
+
+
+def _group_member_ticket(ticket, user):
+    return (
+        _group_ticket_queryset(ticket)
+        .exclude(status=EventTicket.Status.CANCELLED)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .filter(attendee=user)
+        .first()
+    )
+
+
+def _ticket_payment_fields(ticket_price, service_fee, should_activate, payer, invite_status, pending_reason):
+    amount_due = float((ticket_price or Decimal("0")) + (service_fee or Decimal("0")))
+    payment_transaction_id = ""
+    paid_by = None
+    if should_activate:
+        paid_by = payer
+        if amount_due > 0:
+            payment_transaction_id = _ticket_transaction_id("pay")
+    return {
+        "status": EventTicket.Status.ACTIVE if should_activate else EventTicket.Status.PENDING,
+        "paid_by": paid_by,
+        "invite_status": invite_status,
+        "pending_reason": "" if should_activate else pending_reason,
+        "payment_transaction_id": payment_transaction_id,
+        "refund_transaction_id": "",
+    }
+
+
+def _resolved_ticket_payload(payload, fallback_tier_name, fallback_ticket_price, fallback_service_fee):
+    tier_name = str(payload.get("tierName", fallback_tier_name) or fallback_tier_name).strip() or fallback_tier_name
+    try:
+        ticket_price = Decimal(str(payload.get("ticketPrice", fallback_ticket_price) or fallback_ticket_price or "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        ticket_price = Decimal(str(fallback_ticket_price or "0"))
+    try:
+        service_fee = Decimal(str(payload.get("serviceFee", fallback_service_fee) or fallback_service_fee or "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        service_fee = Decimal(str(fallback_service_fee or "0"))
+    return tier_name, max(ticket_price, Decimal("0")), max(service_fee, Decimal("0"))
+
+
+def _ticket_conflict_queryset(event, user_ids):
+    return EventTicket.objects.filter(
+        attendee_id__in=user_ids,
+        event=event,
+        archived_at__isnull=True,
+    ).exclude(status=EventTicket.Status.CANCELLED)
+
+
+def _ordered_user_ids(left_user_id, right_user_id):
+    left = int(left_user_id)
+    right = int(right_user_id)
+    return (left, right) if left < right else (right, left)
+
+
+def _get_or_create_ticket_conversation(left_user, right_user):
+    first_id, second_id = _ordered_user_ids(left_user.id, right_user.id)
+    conversation, _created = DirectConversation.objects.get_or_create(
+        user_one_id=first_id,
+        user_two_id=second_id,
+    )
+    return conversation
+
+
+def _send_group_ticket_invite(organizer, attendee, ticket):
+    if organizer.id == attendee.id:
+        return
+    event_title = str(ticket.event.title or "this event").strip()
+    invite_label = str(ticket.invite_status or "confirmed").strip().lower() or "confirmed"
+    status_label = "pending" if ticket.status == EventTicket.Status.PENDING else "confirmed"
+    amount_value = _ticket_amount(ticket)
+    amount_label = "Free" if amount_value <= 0 else f"INR {amount_value:g}"
+    inviter_label = (organizer.first_name or organizer.username).strip()
+    message_body = "\n".join([
+        "[Ticket Invite]",
+        f"Event: {event_title}",
+        f"Added by: @{organizer.username}",
+        f"Display Name: {inviter_label}",
+        f"Invite: {invite_label.title()}",
+        f"Status: {status_label.title()}",
+        f"Tier: {ticket.tier_name or 'General'}",
+        f"Amount: {amount_label}",
+        f"Ticket ID: {ticket.id}",
+        "Open My Events to view your ticket.",
+    ])
+    conversation = _get_or_create_ticket_conversation(organizer, attendee)
+    message = DirectMessage.objects.create(
+        conversation=conversation,
+        sender=organizer,
+        body=message_body,
+    )
+    conversation.deleted_by.clear()
+    conversation.updated_at = timezone.now()
+    conversation.save(update_fields=["updated_at"])
+    _broadcast_message_created(conversation, message)
+    mongo_store.log_notification(
+        recipient_user_id=attendee.id,
+        activity_type="ticket_invite",
+        actor_user=organizer,
+        title="Ticket shared with you",
+        body=f"{(organizer.first_name or organizer.username).strip()} added you to {event_title} as {invite_label}.",
+        payload={
+            "event_id": ticket.event_id,
+            "event_title": event_title,
+            "ticket_id": ticket.id,
+            "conversation_id": conversation.id,
+            "message_id": message.id,
+            "status": ticket.status,
+            "invite_status": invite_label,
+        },
+    )
 
 
 def _build_event_schedule(payload):
@@ -381,6 +598,41 @@ def create_event_api(request):
     if price < 0:
         return _error("Price cannot be negative.")
 
+    ticket_type = str(payload.get("ticketType", "Free")).strip() or "Free"
+    if ticket_type not in {"Free", "Paid", "Guestlist"}:
+        ticket_type = "Free"
+    raw_ticket_tiers = payload.get("ticketTiers", [])
+    if isinstance(raw_ticket_tiers, str):
+        try:
+            raw_ticket_tiers = json.loads(raw_ticket_tiers)
+        except (TypeError, ValueError):
+            raw_ticket_tiers = []
+    clean_ticket_tiers = []
+    if isinstance(raw_ticket_tiers, list):
+        for tier in raw_ticket_tiers:
+            if not isinstance(tier, dict):
+                continue
+            tier_name = str(tier.get("name", "")).strip() or "General"
+            try:
+                tier_price = Decimal(str(tier.get("price", 0) or 0))
+            except (InvalidOperation, TypeError, ValueError):
+                tier_price = Decimal("0")
+            clean_ticket_tiers.append({
+                "name": tier_name,
+                "price": float(max(tier_price, Decimal("0"))),
+                "qty": str(tier.get("qty", "") or "").strip(),
+                "flex": bool(tier.get("flex", False)),
+                "services": str(tier.get("services", "") or "").strip(),
+            })
+    if ticket_type == "Paid":
+        if not clean_ticket_tiers:
+            return _error("Please add at least one paid ticket tier.")
+        price = min(Decimal(str(tier.get("price", 0) or 0)) for tier in clean_ticket_tiers)
+    else:
+        clean_ticket_tiers = []
+        if ticket_type == "Free":
+            price = Decimal("0")
+
     try:
         max_attendees = int(payload.get("maxAttendees", 0) or 0)
     except (TypeError, ValueError):
@@ -433,6 +685,8 @@ def create_event_api(request):
         longitude=longitude,
         price=price,
         currency=currency,
+        ticket_type=ticket_type,
+        ticket_tiers=clean_ticket_tiers,
         event_category=event_category,
         max_attendees=max_attendees,
         tickets_sold=0,
@@ -1185,7 +1439,7 @@ def tickets_api(request):
 
     queryset = (
         EventTicket.objects.filter(attendee=request.user, archived_at__isnull=True)
-        .select_related("attendee", "event", "event__host")
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
         .prefetch_related("event__media_items")
         .order_by("-booked_at", "-id")
     )
@@ -1217,24 +1471,216 @@ def book_ticket_api(request):
     if end_at and end_at <= timezone.localtime():
         return _error("This event has already ended, so booking is closed.", status=400)
 
-    ticket, created = EventTicket.objects.get_or_create(
-        attendee=request.user,
-        event=event,
-        defaults={"status": EventTicket.Status.ACTIVE, "quantity": 1, "cancelled_at": None, "archived_at": None},
-    )
-    if not created and ticket.status == EventTicket.Status.ACTIVE:
-        return _error("You already joined this party. Cancel the existing ticket to join again.", status=409)
+    invitee_ids = []
+    for raw_user_id in payload.get("inviteeUserIds") or []:
+        try:
+            invitee_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if invitee_id > 0 and invitee_id != request.user.id and invitee_id not in invitee_ids:
+            invitee_ids.append(invitee_id)
 
-    if not created:
-        ticket.status = EventTicket.Status.ACTIVE
-        ticket.cancelled_at = None
-        ticket.archived_at = None
-        ticket.quantity = 1
-        ticket.save(update_fields=["status", "cancelled_at", "archived_at", "quantity", "updated_at"])
-    Event.objects.filter(id=event.id).update(tickets_sold=F("tickets_sold") + 1)
+    participant_ids = [request.user.id, *invitee_ids]
+    payer_ids = {request.user.id}
+    for raw_user_id in payload.get("paidForUserIds") or []:
+        try:
+            payer_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if payer_id in participant_ids:
+            payer_ids.add(payer_id)
+    invitee_statuses = _invite_status_map(payload, set(invitee_ids))
+
+    ticket_tier_name = str(payload.get("tierName", "General")).strip() or "General"
+    try:
+        ticket_price = Decimal(str(payload.get("ticketPrice", "0") or "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        ticket_price = Decimal("0")
+    try:
+        service_fee = Decimal(str(payload.get("serviceFee", "0") or "0"))
+    except (InvalidOperation, TypeError, ValueError):
+        service_fee = Decimal("0")
+    ticket_price = max(ticket_price, Decimal("0"))
+    service_fee = max(service_fee, Decimal("0"))
+
+    users = list(get_user_model().objects.filter(id__in=participant_ids).order_by("id"))
+    if len(users) != len(participant_ids):
+        return _error("One or more selected users could not be found.", status=404)
+
+    existing_conflicts = list(
+        _ticket_conflict_queryset(event, participant_ids)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+    )
+    existing_by_user_id = {ticket.attendee_id: ticket for ticket in existing_conflicts}
+    requester_existing_ticket = existing_by_user_id.get(request.user.id)
+    invitee_ids = [user_id for user_id in invitee_ids if user_id not in existing_by_user_id]
+    participant_ids = [request.user.id, *invitee_ids] if requester_existing_ticket is None else [request.user.id]
+
+    if requester_existing_ticket is not None:
+        skipped_usernames = [existing_by_user_id[user_id].attendee.username for user_id in existing_by_user_id if user_id != request.user.id]
+        if not skipped_usernames:
+            return _error("You already have this event in My Events.", status=409)
+        return JsonResponse({
+            "message": "You already have this event in My Events.",
+            "skippedUsers": skipped_usernames,
+            "ticket": _serialize_ticket(requester_existing_ticket),
+        })
+
+    users = list(get_user_model().objects.filter(id__in=participant_ids).order_by("id"))
+    if len(users) != len(participant_ids):
+        return _error("One or more selected users could not be found.", status=404)
+
+    group_code = str(uuid.uuid4()) if len(participant_ids) > 1 else ""
+    with transaction.atomic():
+        created_tickets = []
+        active_count = 0
+        for user in users:
+            if user.id == request.user.id:
+                payment_fields = _ticket_payment_fields(
+                    ticket_price,
+                    service_fee if ticket_price > 0 else Decimal("0"),
+                    True,
+                    request.user,
+                    "confirmed",
+                    "",
+                )
+            elif ticket_price <= 0:
+                invite_status = invitee_statuses.get(user.id, "confirmed")
+                payment_fields = _ticket_payment_fields(
+                    Decimal("0"),
+                    Decimal("0"),
+                    invite_status == "confirmed",
+                    request.user,
+                    invite_status,
+                    "tentative",
+                )
+            else:
+                payment_fields = _ticket_payment_fields(
+                    ticket_price,
+                    service_fee,
+                    user.id in payer_ids,
+                    request.user,
+                    "confirmed",
+                    "payment",
+                )
+            status = payment_fields["status"]
+            if status == EventTicket.Status.ACTIVE:
+                active_count += 1
+            defaults = {
+                "booked_by": request.user,
+                "group_code": group_code,
+                "tier_name": ticket_tier_name,
+                "ticket_price": ticket_price,
+                "service_fee": service_fee if ticket_price > 0 else Decimal("0"),
+                "quantity": 1,
+                "cancelled_at": None,
+                "archived_at": None,
+                **payment_fields,
+            }
+            existing_ticket = EventTicket.objects.filter(attendee=user, event=event).first()
+            if existing_ticket is not None:
+                for field_name, field_value in defaults.items():
+                    setattr(existing_ticket, field_name, field_value)
+                existing_ticket.save(update_fields=[
+                    "booked_by", "paid_by", "group_code", "tier_name", "ticket_price", "service_fee",
+                    "status", "quantity", "cancelled_at", "archived_at", "invite_status", "pending_reason",
+                    "payment_transaction_id", "refund_transaction_id", "updated_at"
+                ])
+                created_tickets.append(existing_ticket)
+            else:
+                created_tickets.append(EventTicket.objects.create(attendee=user, event=event, **defaults))
+        if active_count:
+            Event.objects.filter(id=event.id).update(tickets_sold=F("tickets_sold") + active_count)
+
     event.refresh_from_db(fields=["tickets_sold"])
-    ticket.refresh_from_db()
-    return JsonResponse({"message": "Ticket booked successfully.", "ticket": _serialize_ticket(ticket)})
+    for ticket in created_tickets:
+        if ticket.attendee_id != request.user.id:
+            _send_group_ticket_invite(request.user, ticket.attendee, ticket)
+    current_ticket = next(ticket for ticket in created_tickets if ticket.attendee_id == request.user.id)
+    return JsonResponse({"message": "Ticket booked successfully.", "ticket": _serialize_ticket(current_ticket)})
+
+
+@csrf_exempt
+@require_POST
+def pay_ticket_api(request, ticket_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    payload = _json_body(request)
+    base_ticket = (
+        EventTicket.objects.filter(id=ticket_id, archived_at__isnull=True)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .first()
+    )
+    if base_ticket is None:
+        return _error("Ticket not found.", status=404)
+    if base_ticket.status == EventTicket.Status.CANCELLED:
+        return _error("This ticket has been cancelled.", status=400)
+    if _ticket_is_expired(base_ticket):
+        return _error("This event has already ended, so payment is closed.", status=400)
+
+    viewer_ticket = _group_member_ticket(base_ticket, request.user)
+    if viewer_ticket is None:
+        return _error("You are not part of this ticket group.", status=403)
+
+    raw_target_ids = payload.get("payForTicketIds") or [ticket_id]
+    target_ids = []
+    for raw_ticket_id in raw_target_ids:
+        try:
+            candidate_id = int(raw_ticket_id)
+        except (TypeError, ValueError):
+            continue
+        if candidate_id > 0 and candidate_id not in target_ids:
+            target_ids.append(candidate_id)
+    if not target_ids:
+        target_ids = [base_ticket.id]
+
+    target_tickets = list(
+        _group_ticket_queryset(base_ticket)
+        .filter(id__in=target_ids)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+    )
+    if not target_tickets:
+        return _error("No pending group members were selected.", status=400)
+
+    pending_tickets = [ticket for ticket in target_tickets if ticket.status == EventTicket.Status.PENDING]
+    if not pending_tickets:
+        refreshed_viewer = _group_member_ticket(base_ticket, request.user) or viewer_ticket
+        return JsonResponse({"message": "Selected tickets are already confirmed.", "ticket": _serialize_ticket(refreshed_viewer)})
+
+    selected_tier_name, selected_ticket_price, selected_service_fee = _resolved_ticket_payload(
+        payload,
+        base_ticket.tier_name or "General",
+        base_ticket.ticket_price,
+        base_ticket.service_fee,
+    )
+
+    with transaction.atomic():
+        for ticket in pending_tickets:
+            ticket.tier_name = selected_tier_name
+            ticket.ticket_price = selected_ticket_price
+            ticket.service_fee = selected_service_fee if selected_ticket_price > 0 else Decimal("0")
+            amount_due = _ticket_amount(ticket)
+            ticket.status = EventTicket.Status.ACTIVE
+            ticket.paid_by = request.user
+            ticket.cancelled_at = None
+            ticket.invite_status = "confirmed"
+            ticket.pending_reason = ""
+            ticket.payment_transaction_id = _ticket_transaction_id("pay") if amount_due > 0 else ""
+            ticket.refund_transaction_id = ""
+            ticket.save(update_fields=[
+                "tier_name", "ticket_price", "service_fee", "status", "paid_by", "cancelled_at", "invite_status", "pending_reason",
+                "payment_transaction_id", "refund_transaction_id", "updated_at"
+            ])
+        Event.objects.filter(id=base_ticket.event_id).update(tickets_sold=F("tickets_sold") + len(pending_tickets))
+
+    refreshed_viewer = _group_member_ticket(base_ticket, request.user) or viewer_ticket
+    if refreshed_viewer and refreshed_viewer.event_id:
+        refreshed_viewer.event.refresh_from_db(fields=["tickets_sold"])
+    return JsonResponse({"message": "Payment completed successfully.", "ticket": _serialize_ticket(refreshed_viewer)})
 
 
 @csrf_exempt
@@ -1245,14 +1691,14 @@ def archive_ticket_api(request, ticket_id):
 
     ticket = (
         EventTicket.objects.filter(id=ticket_id, attendee=request.user)
-        .select_related("attendee", "event", "event__host")
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
         .prefetch_related("event__media_items")
         .first()
     )
     if ticket is None:
         return _error("Ticket not found.", status=404)
     if not _ticket_is_expired(ticket):
-        return _error("Only expired tickets can be archived.", status=400)
+        return _error("Only joined tickets from finished events can be archived.", status=400)
 
     ticket.archived_at = timezone.now()
     ticket.save(update_fields=["archived_at", "updated_at"])
@@ -1271,7 +1717,7 @@ def delete_ticket_api(request, ticket_id):
 
     expired = False
     if ticket.event_id:
-        ticket = EventTicket.objects.filter(id=ticket_id, attendee=request.user).select_related("attendee", "event", "event__host").prefetch_related("event__media_items").first()
+        ticket = EventTicket.objects.filter(id=ticket_id, attendee=request.user).select_related("attendee", "event", "event__host", "booked_by", "paid_by").prefetch_related("event__media_items").first()
         expired = _ticket_is_expired(ticket)
     can_delete = ticket.status == EventTicket.Status.CANCELLED or expired
     if not can_delete:
@@ -1289,7 +1735,7 @@ def cancel_ticket_api(request, ticket_id):
 
     ticket = (
         EventTicket.objects.filter(id=ticket_id, attendee=request.user)
-        .select_related("attendee", "event", "event__host")
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
         .prefetch_related("event__media_items")
         .first()
     )
@@ -1298,12 +1744,168 @@ def cancel_ticket_api(request, ticket_id):
     if ticket.status == EventTicket.Status.CANCELLED:
         return JsonResponse({"message": "Ticket already cancelled.", "ticket": _serialize_ticket(ticket)})
 
+    decrements = 1 if ticket.status == EventTicket.Status.ACTIVE else 0
     ticket.status = EventTicket.Status.CANCELLED
     ticket.cancelled_at = timezone.now()
-    ticket.save(update_fields=["status", "cancelled_at", "updated_at"])
-    Event.objects.filter(id=ticket.event_id, tickets_sold__gt=0).update(tickets_sold=F("tickets_sold") - 1)
-    ticket.event.refresh_from_db(fields=["tickets_sold"])
+    ticket.pending_reason = ""
+    if decrements and _ticket_amount(ticket) > 0:
+        ticket.refund_transaction_id = _ticket_transaction_id("refund")
+    ticket.save(update_fields=["status", "cancelled_at", "pending_reason", "refund_transaction_id", "updated_at"])
+    if decrements:
+        Event.objects.filter(id=ticket.event_id, tickets_sold__gt=0).update(tickets_sold=F("tickets_sold") - 1)
+        ticket.event.refresh_from_db(fields=["tickets_sold"])
     return JsonResponse({"message": "Ticket cancelled successfully.", "ticket": _serialize_ticket(ticket)})
+
+
+@csrf_exempt
+@require_POST
+def update_group_ticket_api(request, ticket_id):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    payload = _json_body(request)
+    base_ticket = (
+        EventTicket.objects.filter(id=ticket_id, archived_at__isnull=True)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .first()
+    )
+    if base_ticket is None:
+        return _error("Ticket not found.", status=404)
+    if _ticket_is_expired(base_ticket):
+        return _error("This event has already ended, so group changes are closed.", status=400)
+
+    viewer_ticket = _group_member_ticket(base_ticket, request.user)
+    if viewer_ticket is None:
+        return _error("You are not part of this ticket group.", status=403)
+
+    group_queryset = _group_ticket_queryset(base_ticket)
+    active_group_tickets = list(
+        group_queryset.exclude(status=EventTicket.Status.CANCELLED)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .order_by("booked_at", "id")
+    )
+    existing_user_ids = {ticket.attendee_id for ticket in active_group_tickets}
+
+    invitee_ids = []
+    for raw_user_id in payload.get("inviteeUserIds") or []:
+        try:
+            invitee_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if invitee_id > 0 and invitee_id not in existing_user_ids and invitee_id not in invitee_ids:
+            invitee_ids.append(invitee_id)
+
+    invitee_statuses = _invite_status_map(payload, set(invitee_ids))
+    payer_ids = set()
+    for raw_user_id in payload.get("paidForUserIds") or []:
+        try:
+            payer_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if payer_id in invitee_ids:
+            payer_ids.add(payer_id)
+
+    remove_user_ids = []
+    for raw_user_id in payload.get("removeUserIds") or []:
+        try:
+            remove_user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if remove_user_id > 0 and remove_user_id != request.user.id and remove_user_id not in remove_user_ids:
+            remove_user_ids.append(remove_user_id)
+
+    users_to_add = list(get_user_model().objects.filter(id__in=invitee_ids).order_by("id"))
+    if len(users_to_add) != len(invitee_ids):
+        return _error("One or more selected users could not be found.", status=404)
+
+    selected_tier_name, selected_ticket_price, selected_service_fee = _resolved_ticket_payload(
+        payload,
+        base_ticket.tier_name or "General",
+        base_ticket.ticket_price,
+        base_ticket.service_fee,
+    )
+
+    created_tickets = []
+    removed_count = 0
+    active_count = 0
+    with transaction.atomic():
+        for user in users_to_add:
+            if base_ticket.ticket_price <= 0 and selected_ticket_price <= 0:
+                invite_status = invitee_statuses.get(user.id, "confirmed")
+                payment_fields = _ticket_payment_fields(
+                    Decimal("0"),
+                    Decimal("0"),
+                    invite_status == "confirmed",
+                    request.user,
+                    invite_status,
+                    "tentative",
+                )
+                ticket_price = Decimal("0")
+                service_fee = Decimal("0")
+            else:
+                payment_fields = _ticket_payment_fields(
+                    selected_ticket_price,
+                    selected_service_fee,
+                    user.id in payer_ids,
+                    request.user,
+                    "confirmed",
+                    "payment",
+                )
+                ticket_price = selected_ticket_price
+                service_fee = selected_service_fee
+            status = payment_fields["status"]
+            if status == EventTicket.Status.ACTIVE:
+                active_count += 1
+            created_tickets.append(
+                EventTicket.objects.create(
+                    attendee=user,
+                    event=base_ticket.event,
+                    booked_by=request.user,
+                    paid_by=payment_fields["paid_by"],
+                    group_code=base_ticket.group_code or str(base_ticket.id),
+                    tier_name=selected_tier_name,
+                    invite_status=payment_fields["invite_status"],
+                    pending_reason=payment_fields["pending_reason"],
+                    ticket_price=ticket_price,
+                    service_fee=service_fee,
+                    payment_transaction_id=payment_fields["payment_transaction_id"],
+                    refund_transaction_id="",
+                    status=status,
+                    quantity=1,
+                    cancelled_at=None,
+                    archived_at=None,
+                )
+            )
+
+        removable_tickets = list(
+            group_queryset.filter(attendee_id__in=remove_user_ids, status=EventTicket.Status.PENDING)
+            .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+            .prefetch_related("event__media_items")
+        )
+        for ticket in removable_tickets:
+            ticket.status = EventTicket.Status.CANCELLED
+            ticket.cancelled_at = timezone.now()
+            ticket.pending_reason = "removed"
+            ticket.save(update_fields=["status", "cancelled_at", "pending_reason", "updated_at"])
+            removed_count += 1
+
+        if active_count:
+            Event.objects.filter(id=base_ticket.event_id).update(tickets_sold=F("tickets_sold") + active_count)
+
+    for ticket in created_tickets:
+        _send_group_ticket_invite(request.user, ticket.attendee, ticket)
+
+    refreshed_viewer = _group_member_ticket(base_ticket, request.user) or viewer_ticket
+    if refreshed_viewer and refreshed_viewer.event_id:
+        refreshed_viewer.event.refresh_from_db(fields=["tickets_sold"])
+    return JsonResponse({
+        "message": "Group ticket updated successfully.",
+        "addedCount": len(created_tickets),
+        "removedCount": removed_count,
+        "ticket": _serialize_ticket(refreshed_viewer),
+    })
 
 
 @require_GET

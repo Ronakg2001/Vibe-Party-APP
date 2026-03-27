@@ -1,4 +1,6 @@
+from decimal import Decimal
 from datetime import timedelta
+import json
 import asyncio
 import shutil
 import tempfile
@@ -11,7 +13,7 @@ from django.utils import timezone
 
 from Happnix_party_APP.asgi import application
 
-from .models import DirectConversation, DirectMessage, DirectMessageAttachment, DirectMessageDeletion, Event, EventTicket, Follow, UserProfile
+from .models import ActivityNotification, DirectConversation, DirectMessage, DirectMessageAttachment, DirectMessageDeletion, Event, EventTicket, Follow, UserProfile
 class DiscoverSearchAndFollowTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -147,6 +149,67 @@ class DiscoverSearchAndFollowTests(TestCase):
         self.assertTrue(current_profile['is_private'])
 
 
+class EventCreationApiTests(TestCase):
+    def setUp(self):
+        self.user_model = get_user_model()
+        self.host = self.user_model.objects.create_user(
+            username="ticket_host",
+            password="pass12345",
+            first_name="Ticket",
+            email="ticket_host@example.com",
+        )
+        UserProfile.objects.create(user=self.host, sex="other", date_of_birth="2000-01-01", mobile="8888888891")
+
+    def test_paid_event_with_legacy_free_type_still_serializes_as_paid(self):
+        event = Event.objects.create(
+            host=self.host,
+            title='Legacy Paid Night',
+            description='Legacy paid event',
+            start_label='2099-01-02 20:00',
+            location_name='Jaipur',
+            latitude=26.9124,
+            longitude=75.7873,
+            price=399,
+            currency='INR',
+            ticket_type='Free',
+            ticket_tiers=[],
+            status=Event.EventStatus.PUBLISHED,
+            is_active=True,
+        )
+        self.client.force_login(self.host)
+        response = self.client.get('/api/events/mine')
+        self.assertEqual(response.status_code, 200)
+        event_payload = next(item for item in response.json()['events'] if item['id'] == event.id)
+        self.assertEqual(event_payload['ticketType'], 'Paid')
+        self.assertEqual(event_payload['price'], 399.0)
+
+    def test_paid_event_creation_persists_ticket_config(self):
+        self.client.force_login(self.host)
+        response = self.client.post(
+            '/api/events/create',
+            data={
+                'title': 'Paid Night',
+                'description': 'VIP night',
+                'startLabel': '2099-01-01 20:00',
+                'locationName': 'Jaipur',
+                'latitude': '26.9124',
+                'longitude': '75.7873',
+                'currency': 'INR',
+                'ticketType': 'Paid',
+                'ticketTiers': json.dumps([
+                    {'name': 'Regular', 'price': '499', 'qty': '50', 'flex': False, 'services': 'Entry'},
+                    {'name': 'VIP', 'price': '999', 'qty': '10', 'flex': False, 'services': 'Table'},
+                ]),
+                'price': '499',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        event = Event.objects.get(title='Paid Night')
+        self.assertEqual(event.ticket_type, 'Paid')
+        self.assertEqual(event.price, 499)
+        self.assertEqual(len(event.ticket_tiers), 2)
+        self.assertEqual(event.ticket_tiers[0]['name'], 'Regular')
+
 class EventTicketApiTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -162,8 +225,15 @@ class EventTicketApiTests(TestCase):
             first_name="Guest",
             email="guest@example.com",
         )
+        self.friend = self.user_model.objects.create_user(
+            username="friend_user",
+            password="pass12345",
+            first_name="Friend",
+            email="friend@example.com",
+        )
         UserProfile.objects.create(user=self.host, sex="other", date_of_birth="2000-01-01", mobile="8888888801")
         UserProfile.objects.create(user=self.guest, sex="other", date_of_birth="2000-01-02", mobile="8888888802")
+        UserProfile.objects.create(user=self.friend, sex="other", date_of_birth="2000-01-03", mobile="8888888803")
         now = timezone.localtime()
         self.event = Event.objects.create(
             host=self.host,
@@ -208,6 +278,209 @@ class EventTicketApiTests(TestCase):
         self.assertEqual(ticket.status, EventTicket.Status.ACTIVE)
         self.event.refresh_from_db()
         self.assertEqual(self.event.tickets_sold, 1)
+
+
+    def test_free_event_group_booking_joins_all_added_people(self):
+        self.client.force_login(self.guest)
+        response = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'General',
+                'ticketPrice': '0',
+                'serviceFee': '0',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        owner_ticket = EventTicket.objects.get(attendee=self.guest, event=self.event)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.assertEqual(owner_ticket.status, EventTicket.Status.ACTIVE)
+        self.assertEqual(friend_ticket.status, EventTicket.Status.ACTIVE)
+        self.assertEqual(friend_ticket.booked_by, self.guest)
+        self.assertEqual(friend_ticket.paid_by, self.guest)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.tickets_sold, 2)
+
+    def test_group_booking_creates_pending_ticket_for_unpaid_invitee(self):
+        self.client.force_login(self.guest)
+        response = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        owner_ticket = EventTicket.objects.get(attendee=self.guest, event=self.event)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.assertEqual(owner_ticket.status, EventTicket.Status.ACTIVE)
+        self.assertEqual(friend_ticket.status, EventTicket.Status.PENDING)
+        self.assertEqual(friend_ticket.booked_by, self.guest)
+        self.assertEqual(friend_ticket.paid_by, None)
+        self.assertEqual(owner_ticket.group_code, friend_ticket.group_code)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.tickets_sold, 1)
+
+    def test_group_booking_creates_ticket_invite_message_and_notification(self):
+        self.client.force_login(self.guest)
+        response = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        conversation = DirectConversation.objects.filter(
+            user_one_id=min(self.guest.id, self.friend.id),
+            user_two_id=max(self.guest.id, self.friend.id),
+        ).first()
+        self.assertIsNotNone(conversation)
+        message = DirectMessage.objects.filter(conversation=conversation, sender=self.guest).order_by('-id').first()
+        self.assertIsNotNone(message)
+        self.assertIn('[Ticket Invite]', message.body)
+        self.assertTrue(ActivityNotification.objects.filter(recipient=self.friend, activity_type='ticket_invite').exists())
+
+    def test_pending_group_invitee_can_pay_later(self):
+        self.client.force_login(self.guest)
+        booked = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(booked.status_code, 200)
+
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.client.force_login(self.friend)
+        pay_response = self.client.post(f'/api/tickets/{friend_ticket.id}/pay', data='{}', content_type='application/json')
+        self.assertEqual(pay_response.status_code, 200)
+        friend_ticket.refresh_from_db()
+        self.assertEqual(friend_ticket.status, EventTicket.Status.ACTIVE)
+        self.assertEqual(friend_ticket.paid_by, self.friend)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.tickets_sold, 2)
+
+    def test_free_group_booking_can_create_tentative_invitee(self):
+        self.client.force_login(self.guest)
+        response = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'inviteeStatuses': {str(self.friend.id): 'tentative'},
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'General',
+                'ticketPrice': '0',
+                'serviceFee': '0',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.assertEqual(friend_ticket.status, EventTicket.Status.PENDING)
+        self.assertEqual(friend_ticket.invite_status, 'tentative')
+        self.assertEqual(friend_ticket.pending_reason, 'tentative')
+
+    def test_group_member_can_pay_for_another_pending_member(self):
+        self.client.force_login(self.guest)
+        booked = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(booked.status_code, 200)
+        owner_ticket = EventTicket.objects.get(attendee=self.guest, event=self.event)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.client.force_login(self.guest)
+        pay_response = self.client.post(
+            f'/api/tickets/{owner_ticket.id}/pay',
+            data=json.dumps({'payForTicketIds': [friend_ticket.id]}),
+            content_type='application/json',
+        )
+        self.assertEqual(pay_response.status_code, 200)
+        friend_ticket.refresh_from_db()
+        self.assertEqual(friend_ticket.status, EventTicket.Status.ACTIVE)
+        self.assertEqual(friend_ticket.paid_by, self.guest)
+        self.assertTrue(friend_ticket.payment_transaction_id)
+
+    def test_pending_payment_can_change_tier_before_joining(self):
+        self.client.force_login(self.guest)
+        booked = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id],
+                'tierName': 'Regular',
+                'ticketPrice': '199',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(booked.status_code, 200)
+        owner_ticket = EventTicket.objects.get(attendee=self.guest, event=self.event)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        pay_response = self.client.post(
+            f'/api/tickets/{owner_ticket.id}/pay',
+            data=json.dumps({
+                'payForTicketIds': [friend_ticket.id],
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(pay_response.status_code, 200)
+        friend_ticket.refresh_from_db()
+        self.assertEqual(friend_ticket.tier_name, 'VIP')
+        self.assertEqual(friend_ticket.ticket_price, Decimal('499'))
+
+    def test_cancelling_paid_ticket_generates_refund_transaction_id(self):
+        self.client.force_login(self.guest)
+        booked = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'tierName': 'VIP',
+                'ticketPrice': '499',
+                'serviceFee': '4',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(booked.status_code, 200)
+        ticket_id = booked.json()['ticket']['id']
+        cancel_response = self.client.post(f'/api/tickets/{ticket_id}/cancel', data='{}', content_type='application/json')
+        self.assertEqual(cancel_response.status_code, 200)
+        ticket = EventTicket.objects.get(id=ticket_id)
+        self.assertEqual(ticket.status, EventTicket.Status.CANCELLED)
+        self.assertTrue(ticket.refund_transaction_id)
 
 
 class DirectMessageApiTests(TestCase):

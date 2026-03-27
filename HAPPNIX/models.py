@@ -71,6 +71,8 @@ class Event(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default="INR")
+    ticket_type = models.CharField(max_length=20, default="Free")
+    ticket_tiers = models.JSONField(default=list, blank=True)
     event_category = models.CharField(max_length=60, default="party")
     max_attendees = models.PositiveIntegerField(default=0)
     tickets_sold = models.PositiveIntegerField(default=0)
@@ -108,10 +110,21 @@ class EventMedia(models.Model):
 class EventTicket(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
+        PENDING = "pending", "Pending"
         CANCELLED = "cancelled", "Cancelled"
 
     attendee = models.ForeignKey(User, on_delete=models.CASCADE, related_name="event_tickets")
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="tickets")
+    booked_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="tickets_booked_for", null=True, blank=True)
+    paid_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="tickets_paid_for", null=True, blank=True)
+    group_code = models.CharField(max_length=36, blank=True, db_index=True)
+    tier_name = models.CharField(max_length=120, blank=True)
+    invite_status = models.CharField(max_length=20, default="confirmed")
+    pending_reason = models.CharField(max_length=20, blank=True)
+    ticket_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    payment_transaction_id = models.CharField(max_length=64, blank=True)
+    refund_transaction_id = models.CharField(max_length=64, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     quantity = models.PositiveIntegerField(default=1)
     booked_at = models.DateTimeField(auto_now_add=True)

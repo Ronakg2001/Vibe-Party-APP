@@ -150,9 +150,22 @@ def search_profiles(query, limit=20):
     return list(docs)
 
 
+def _resolved_ticketing(event):
+    raw_ticket_type = str(getattr(event, "ticket_type", "") or "").strip()
+    raw_ticket_tiers = getattr(event, "ticket_tiers", []) or []
+    has_paid_tiers = isinstance(raw_ticket_tiers, list) and any(float((tier or {}).get("price") or 0) > 0 for tier in raw_ticket_tiers if isinstance(tier, dict))
+    price_value = _to_float(getattr(event, "price", 0) or 0) or 0
+    if raw_ticket_type == "Paid" or has_paid_tiers or float(price_value) > 0:
+        return "Paid", raw_ticket_tiers if isinstance(raw_ticket_tiers, list) else []
+    if raw_ticket_type == "Guestlist":
+        return "Guestlist", []
+    return "Free", []
+
+
 def _serialize_event_doc(event):
     lat = float(event.latitude)
     lon = float(event.longitude)
+    ticket_type, ticket_tiers = _resolved_ticketing(event)
     media_assets = [
         {
             "media_type": item.media_type,
@@ -182,6 +195,8 @@ def _serialize_event_doc(event):
         "longitude": lon,
         "price": _to_float(event.price),
         "currency": event.currency or "INR",
+        "ticket_type": ticket_type,
+        "ticket_tiers": ticket_tiers,
         "max_attendees": int(event.max_attendees or 0),
         "tickets_sold": int(event.tickets_sold or 0),
         "status": event.status or "published",

@@ -15,6 +15,9 @@
   const liveStatusEl = document.getElementById("message-live-status");
   const threadHeaderEl = document.getElementById("message-thread-header");
   const threadBodyEl = document.getElementById("message-thread-body");
+  const sidebarEl = document.getElementById("messages-sidebar");
+  const threadPanelEl = document.getElementById("messages-thread-panel");
+  const mobileViewport = window.matchMedia("(max-width: 767px)");
   const composeInput = document.getElementById("message-compose-input");
   const composeStatusEl = document.getElementById("message-compose-status");
   const composePreviewEl = document.getElementById("message-compose-preview");
@@ -75,6 +78,8 @@
     replyingToMessageId: null,
     drafts: {},
     isTyping: false,
+    typingIndicators: {},
+    mobileView: "list",
   };
 
   function stopTypingSignal() {
@@ -174,22 +179,16 @@
     if (!lastActive || lastActive === "undefined") return false;
     const date = new Date(lastActive);
     if (isNaN(date.getTime())) return false;
-    // 45 seconds threshold to account for network delays
     return new Date() - date < 45000;
   }
 
-  function formatActiveStatus(lastActive) {
+  function getActiveStatusText(lastActive) {
     const isOnline = getDynamicOnlineStatus(lastActive);
-
-    if (isOnline) {
-      return '<span class="text-emerald-400 font-medium tracking-wide flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>Online</span>';
-    }
-    if (!lastActive || lastActive === "undefined")
-      return '<span class="text-gray-500">Offline</span>';
+    if (isOnline) return "Online";
+    if (!lastActive || lastActive === "undefined") return "Offline";
 
     const date = new Date(lastActive);
-    if (isNaN(date.getTime()))
-      return '<span class="text-gray-500">Offline</span>';
+    if (isNaN(date.getTime())) return "Offline";
 
     const now = new Date();
     let diffMins = Math.floor((now - date) / 60000);
@@ -198,53 +197,74 @@
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffMins < 1)
-      return '<span class="text-gray-400">Active just now</span>';
-    if (diffMins < 60)
-      return `<span class="text-gray-400">Active ${diffMins}m ago</span>`;
-    if (diffHours < 24)
-      return `<span class="text-gray-400">Active ${diffHours}h ago</span>`;
-    if (diffDays === 1)
-      return `<span class="text-gray-400">Active yesterday</span>`;
-
-    return `<span class="text-gray-400">Active ${date.toLocaleDateString([], { month: "short", day: "numeric" })}</span>`;
+    if (diffMins < 1) return "Active just now";
+    if (diffMins < 60) return `Active ${diffMins}m ago`;
+    if (diffHours < 24) return `Active ${diffHours}h ago`;
+    if (diffDays === 1) return "Active yesterday";
+    return `Active ${date.toLocaleDateString([], { month: "short", day: "numeric" })}`;
   }
 
-  // --- TYPING INDICATOR UI ---
-  state.typingIndicators = {}; // Track who is typing per conversation
+  function formatActiveStatus(lastActive) {
+    const label = getActiveStatusText(lastActive);
+    const isOnline = label === "Online";
+    return `<span class="${isOnline ? "text-emerald-400 font-medium tracking-wide flex items-center gap-1.5" : "text-gray-400"}">${isOnline ? '<span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>' : ""}${escapeHtml(label)}</span>`;
+  }
+
+  function isMobileLayout() {
+    return mobileViewport.matches;
+  }
+
+  function renderResponsiveLayout() {
+    const showThread =
+      !isMobileLayout() ||
+      (state.mobileView === "thread" && Number(state.activeConversationId));
+
+    if (sidebarEl) {
+      sidebarEl.classList.toggle("hidden", isMobileLayout() && showThread);
+      sidebarEl.classList.toggle("flex", !isMobileLayout() || !showThread);
+    }
+    if (threadPanelEl) {
+      threadPanelEl.classList.toggle("hidden", !showThread);
+      threadPanelEl.classList.toggle("flex", showThread);
+    }
+  }
+
+  function setMobileView(view) {
+    state.mobileView = view;
+    renderResponsiveLayout();
+  }
+
+  function getConversationStatusMeta(conversation) {
+    const other = conversation?.otherUser || {};
+    const isTyping = !!state.typingIndicators[Number(conversation?.id || 0)];
+    return {
+      isTyping,
+      typingMarkup: isTyping
+        ? '<span class="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Typing...</span>'
+        : "",
+      presenceMarkup: `<span class="inline-flex items-center gap-1 rounded-full border ${getDynamicOnlineStatus(other.lastActive) ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-gray-400"} px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"><span class="h-1.5 w-1.5 rounded-full ${getDynamicOnlineStatus(other.lastActive) ? "bg-emerald-400" : "bg-gray-500"}"></span>${escapeHtml(getActiveStatusText(other.lastActive))}</span>`,
+    };
+  }
+
+  function renderTypingBubble() {
+    const conversation = getActiveConversation();
+    if (!conversation || !state.typingIndicators[Number(conversation.id)]) return;
+    const container = threadBodyEl.querySelector(
+      ".mx-auto.flex.w-full.max-w-3xl.flex-col",
+    );
+    if (!container || document.getElementById("typing-indicator-bubble")) return;
+    container.insertAdjacentHTML(
+      "beforeend",
+      `<div id="typing-indicator-bubble" class="mb-2 mt-1 flex justify-start"><div class="flex max-w-[96%] items-start flex-row"><div class="flex h-[44px] max-w-full items-center gap-1.5 rounded-[1.5rem] border border-white/10 bg-white/[0.06] px-4 py-3 shadow-lg"><span class="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style="animation-delay: 0ms;"></span><span class="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style="animation-delay: 150ms;"></span><span class="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style="animation-delay: 300ms;"></span></div></div></div>`,
+    );
+    threadBodyEl.scrollTop = threadBodyEl.scrollHeight;
+  }
 
   function toggleTypingIndicator(conversationId, isTyping) {
     state.typingIndicators[conversationId] = isTyping;
-
-    // Only draw it if we are currently looking at that specific chat
-    if (Number(conversationId) !== Number(state.activeConversationId)) return;
-
-    let typingEl = document.getElementById("typing-indicator-bubble");
-
-    if (isTyping && !typingEl) {
-      // Draw the bouncing dots bubble
-      const container = threadBodyEl.querySelector(
-        ".mx-auto.flex.max-w-3xl.flex-col",
-      );
-      if (container) {
-        container.insertAdjacentHTML(
-          "beforeend",
-          `
-                <div id="typing-indicator-bubble" class="flex justify-start mt-1 mb-2">
-                    <div class="flex max-w-[92%] items-start flex-row">
-                        <div class="max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg border border-white/10 bg-white/[0.06] flex items-center gap-1.5 h-[44px]">
-                            <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0ms;"></span>
-                            <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 150ms;"></span>
-                            <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 300ms;"></span>
-                        </div>
-                    </div>
-                </div>`,
-        );
-        threadBodyEl.scrollTop = threadBodyEl.scrollHeight;
-      }
-    } else if (!isTyping && typingEl) {
-      // Remove the bubble when they stop typing
-      typingEl.remove();
+    renderConversationList();
+    if (Number(conversationId) === Number(state.activeConversationId)) {
+      renderThread();
     }
   }
   function autosizeComposer() {
@@ -390,6 +410,7 @@
     if (!state.conversations.length) {
       conversationListEl.innerHTML =
         '<div class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-gray-500">Search for a user above to start your first chat.</div>';
+      renderResponsiveLayout();
       return;
     }
     conversationListEl.innerHTML = state.conversations
@@ -403,24 +424,28 @@
         const active =
           Number(conversation.id) === Number(state.activeConversationId);
         const isOnline = getDynamicOnlineStatus(other.lastActive);
-        return `<button type="button" data-message-action="open-conversation" data-conversation-id="${conversation.id}" class="flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left ${active ? "border-fuchsia-400/40 bg-fuchsia-500/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}">
-        <div class="relative">
-            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover">
-            
-            ${isOnline ? `<span class="absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-slate-900"></span>` : ""}
-            
+        const statusMeta = getConversationStatusMeta(conversation);
+        return `<button type="button" data-message-action="open-conversation" data-conversation-id="${conversation.id}" class="flex w-full items-start gap-3 rounded-[1.35rem] border px-3 py-3 text-left transition ${active ? "border-fuchsia-400/40 bg-fuchsia-500/10 shadow-[0_10px_30px_rgba(217,70,239,0.08)]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}">
+        <div class="relative pt-0.5">
+            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover ring-1 ring-white/10">
+            ${isOnline ? `<span class="absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-emerald-500"></span>` : ""}
             ${conversation.unreadCount ? `<span class="absolute -right-1 -top-1 inline-flex min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[10px] font-bold text-white">${conversation.unreadCount}</span>` : ""}
         </div>
         <div class="min-w-0 flex-1">
-            <div class="flex items-center justify-between gap-3">
-                <div class="truncate text-sm font-bold text-white">${escapeHtml(other.full_name || other.username || "Unknown")}</div>
-                <div class="shrink-0 text-[11px] text-gray-500">${escapeHtml(formatTime(conversation.lastMessage?.createdAt || conversation.updatedAt))}</div>
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="truncate text-sm font-bold text-white">${escapeHtml(other.full_name || other.username || "Unknown")}</div>
+                    <div class="truncate text-[11px] text-gray-500">@${escapeHtml(other.username || "unknown")}</div>
+                </div>
+                <div class="shrink-0 pt-0.5 text-[11px] text-gray-500">${escapeHtml(formatTime(conversation.lastMessage?.createdAt || conversation.updatedAt))}</div>
             </div>
-            <div class="mt-1 truncate text-xs ${conversation.unreadCount ? "text-white" : "text-gray-400"}">${preview}</div>
+            <div class="mt-2 flex flex-wrap items-center gap-1.5">${statusMeta.typingMarkup}${statusMeta.presenceMarkup}</div>
+            <div class="mt-2 truncate text-xs leading-5 ${conversation.unreadCount ? "text-white" : "text-gray-400"}">${preview}</div>
         </div>
     </button>`;
       })
       .join("");
+    renderResponsiveLayout();
   }
 
   function attachmentKind(file) {
@@ -519,6 +544,34 @@
     return `<div class="mb-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5"><div class="text-[11px] font-bold uppercase tracking-[0.14em] text-white/60">Forwarded</div><div class="mt-1 text-xs font-semibold text-white/85">${escapeHtml(sender.full_name || sender.username || "Unknown")}</div><div class="mt-1 text-xs text-white/70 line-clamp-2">${escapeHtml(source.previewText || "Message")}</div></div>`;
   }
 
+  function renderSpecialMessageBody(message) {
+    const body = String(message.body || "");
+    if (!body.startsWith("[Ticket Invite]")) {
+      return body
+        ? `<div class="whitespace-pre-wrap break-words text-sm leading-6 ${message.isUnsent ? "italic text-white/80" : ""}">${escapeHtml(body)}</div>`
+        : "";
+    }
+    const lines = body.split("\n").map((line) => String(line || "").trim()).filter(Boolean);
+    const fields = {};
+    lines.slice(1).forEach((line) => {
+      const separatorIndex = line.indexOf(":");
+      if (separatorIndex === -1) return;
+      const key = line.slice(0, separatorIndex).trim().toLowerCase();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (key && value) fields[key] = value;
+    });
+    const eventTitle = fields.event || "Shared Event Ticket";
+    const addedBy = fields["added by"] || "";
+    const displayName = fields["display name"] || "";
+    const invite = fields.invite || "Confirmed";
+    const status = fields.status || "Pending";
+    const tier = fields.tier || "General";
+    const amount = fields.amount || "Free";
+    const ticketId = fields["ticket id"] || "";
+    const footer = lines.find((line) => /^open my events/i.test(line)) || "Open My Events to view your ticket.";
+    return `<div class="overflow-hidden rounded-[1.75rem] border border-cyan-400/25 bg-gradient-to-br from-cyan-500/18 via-slate-950 to-slate-900"><div class="border-b border-cyan-400/15 px-4 py-3"><div class="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">Ticket Share</div><div class="mt-2 text-lg font-black text-white">${escapeHtml(eventTitle)}</div><div class="mt-1 text-xs text-cyan-100/80">${escapeHtml(displayName || addedBy || 'Shared with you')}</div></div><div class="grid grid-cols-2 gap-3 px-4 py-4 text-sm"><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Added By</div><div class="mt-1 font-semibold text-white">${escapeHtml(addedBy || displayName || 'Unknown')}</div></div><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Status</div><div class="mt-1 font-semibold text-white">${escapeHtml(status)}</div></div><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Invite</div><div class="mt-1 font-semibold text-white">${escapeHtml(invite)}</div></div><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Tier</div><div class="mt-1 font-semibold text-white">${escapeHtml(tier)}</div></div><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Amount</div><div class="mt-1 font-semibold text-white">${escapeHtml(amount)}</div></div><div class="rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Ticket ID</div><div class="mt-1 font-semibold text-white">${escapeHtml(ticketId || 'Pending')}</div></div></div><div class="border-t border-dashed border-cyan-400/20 px-4 py-3 text-xs text-cyan-100/85">${escapeHtml(footer)}</div></div>`;
+  }
+
   function renderMessageMenu(message) {
     const open = Number(state.openMessageMenuId) === Number(message.id);
     const items = [];
@@ -557,43 +610,39 @@
         '<div class="flex h-full items-center justify-center text-center text-sm text-gray-500">Pick someone from the left or search for a user to begin.</div>';
       composeInput.disabled = true;
       sendBtn.disabled = true;
+      renderResponsiveLayout();
       return;
     }
     const other = conversation.otherUser || {};
     const messages = state.messagesByConversation[conversation.id] || [];
     const renderRepliedTo = (message) => {
       if (!message.repliedTo) return "";
-      return `<div class="mb-2 rounded-xl border border-white/20 bg-black/20 p-2 text-xs opacity-80 cursor-pointer transition-opacity hover:opacity-100" data-message-action="scroll-to-reply" data-target-id="${message.repliedTo.id}">
-        <div class="font-bold text-fuchsia-300">@${escapeHtml(message.repliedTo.senderUsername)}</div>
-        <div class="truncate text-white/70">${escapeHtml(message.repliedTo.body || "Attachment")}</div>
-    </div>`;
+      return `<div class="mb-2 cursor-pointer rounded-xl border border-white/20 bg-black/20 p-2 text-xs opacity-80 transition-opacity hover:opacity-100" data-message-action="scroll-to-reply" data-target-id="${message.repliedTo.id}"><div class="font-bold text-fuchsia-300">@${escapeHtml(message.repliedTo.senderUsername)}</div><div class="truncate text-white/70">${escapeHtml(message.repliedTo.body || "Attachment")}</div></div>`;
     };
-    const activeStatusHtml = formatActiveStatus(other.lastActive);
+    const activeStatusHtml = state.typingIndicators[Number(conversation.id)]
+      ? '<span class="inline-flex items-center gap-1.5 text-emerald-300"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>Typing...</span>'
+      : formatActiveStatus(other.lastActive);
     threadHeaderEl.innerHTML = `
-    <div class="flex items-center justify-between w-full pr-2">
-        <div class="flex items-center gap-3">
-            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-12 w-12 rounded-full object-cover">
+    <div class="flex w-full items-center justify-between gap-3">
+        <div class="flex min-w-0 items-center gap-3">
+            <button type="button" data-message-action="close-active-conversation" class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-gray-300 transition hover:bg-white/[0.08] hover:text-white md:hidden" title="Back to conversations">
+                <i data-lucide="chevron-left" class="h-5 w-5"></i>
+            </button>
+            <img src="${escapeHtml(other.profile_picture_url || defaultAvatar)}" class="h-11 w-11 rounded-full object-cover ring-1 ring-white/10 md:h-12 md:w-12">
             <div class="min-w-0">
-                <div class="truncate text-base font-black text-white">
-                    ${escapeHtml(other.full_name || other.username || "Unknown")}
-                </div>
-                <div id="active-chat-status" class="truncate text-xs text-gray-400 mt-0.5">${activeStatusHtml}</div>
+                <div class="truncate text-base font-black text-white">${escapeHtml(other.full_name || other.username || "Unknown")}</div>
+                <div id="active-chat-status" class="mt-0.5 truncate text-xs text-gray-400">${activeStatusHtml}</div>
             </div>
         </div>
-        
         <div class="flex items-center gap-1">
-            <button type="button" data-message-action="clear-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 hover:text-fuchsia-400 rounded-full hover:bg-white/10 transition-colors" title="Clear Chat for me">
+            <button type="button" data-message-action="clear-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 transition-colors hover:rounded-full hover:bg-white/10 hover:text-fuchsia-400" title="Clear Chat for me">
                 <i data-lucide="eraser" class="h-4 w-4"></i>
             </button>
-
-            <button type="button" data-message-action="delete-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-white/10 transition-colors" title="Delete Chat permanently">
+            <button type="button" data-message-action="delete-conversation" data-conversation-id="${conversation.id}" class="p-2 text-gray-400 transition-colors hover:rounded-full hover:bg-white/10 hover:text-red-500" title="Delete Chat permanently">
                 <i data-lucide="trash-2" class="h-4 w-4"></i>
             </button>
-
-            <button type="button" data-message-action="close-active-conversation" class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors" title="Close conversation">
-                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
+            <button type="button" data-message-action="close-active-conversation" class="hidden p-2 text-gray-400 transition-colors hover:rounded-full hover:bg-white/10 hover:text-white md:inline-flex" title="Close conversation">
+                <i data-lucide="x" class="h-5 w-5"></i>
             </button>
         </div>
     </div>`;
@@ -602,6 +651,7 @@
     const draftText = state.drafts[conversation.id] || "";
     composeInput.value = draftText;
     autosizeComposer();
+    renderResponsiveLayout();
     if (draftText.trim().length > 0 && state.socketConnected) {
       const targetUserId = conversation.otherUser?.sql_user_id;
       if (targetUserId && !state.isTyping) {
@@ -618,11 +668,13 @@
     }
     if (!messages.length) {
       threadBodyEl.innerHTML =
-        '<div class="flex h-full items-center justify-center text-center text-sm text-gray-500">No messages yet. Say hello to start the conversation.</div>';
+        '<div class="flex h-full items-center justify-center px-4 text-center text-sm text-gray-500">No messages yet. Say hello to start the conversation.</div>';
+      renderTypingBubble();
       refreshIcons();
       return;
     }
-    threadBodyEl.innerHTML = `<div class="mx-auto flex max-w-3xl flex-col gap-3">${messages.map((message) => `<div class="flex ${message.isOwn ? "justify-end" : "justify-start"}"><div class="flex max-w-[92%] items-start ${message.isOwn ? "flex-row-reverse" : "flex-row"}"><div id="chat-bubble-${message.id}" class="transition-all duration-500 max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg ${message.isOwn ? "bg-fuchsia-600 text-white" : "border border-white/10 bg-white/[0.06] text-white"}">${renderRepliedTo(message)}${renderForwardedFrom(message)}${message.body ? `<div class="whitespace-pre-wrap break-words text-sm leading-6 ${message.isUnsent ? "italic text-white/80" : ""}">${escapeHtml(message.body)}</div>` : ""}${renderMessageAttachments(message)}<div class="mt-2 text-[11px] ${message.isOwn ? "text-fuchsia-100/80" : "text-gray-400"}">${escapeHtml(formatTime(message.createdAt))}${message.isEdited ? " � Edited" : ""}${message.isOwn && message.readAt ? " � Read" : ""}</div></div>${renderMessageMenu(message)}</div></div>`).join("")}</div>`;
+    threadBodyEl.innerHTML = `<div class="mx-auto flex w-full max-w-3xl flex-col gap-3">${messages.map((message) => `<div class="flex ${message.isOwn ? "justify-end" : "justify-start"}"><div class="flex max-w-[96%] items-start ${message.isOwn ? "flex-row-reverse" : "flex-row"}"><div id="chat-bubble-${message.id}" class="max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg transition-all duration-500 ${message.isOwn ? "bg-fuchsia-600 text-white" : "border border-white/10 bg-white/[0.06] text-white"}">${renderRepliedTo(message)}${renderForwardedFrom(message)}${renderSpecialMessageBody(message)}${renderMessageAttachments(message)}<div class="mt-2 text-[11px] ${message.isOwn ? "text-fuchsia-100/80" : "text-gray-400"}">${escapeHtml(formatTime(message.createdAt))}${message.isEdited ? " (edited)" : ""}${message.isOwn && message.readAt ? " (read)" : ""}</div></div>${renderMessageMenu(message)}</div></div>`).join("")}</div>`;
+    renderTypingBubble();
     threadBodyEl.scrollTop = threadBodyEl.scrollHeight;
     refreshIcons();
   }
@@ -807,6 +859,7 @@
     if (!data.conversation) return null;
     upsertConversation(data.conversation);
     state.activeConversationId = Number(data.conversation.id);
+    setMobileView("thread");
     renderConversationList();
     renderThread();
     renderForwardResults();
@@ -1080,6 +1133,7 @@
       if (Number(state.activeConversationId) === Number(convoId)) {
         stopTypingSignal();
         state.activeConversationId = null;
+        setMobileView("list");
         renderThread();
       }
       renderConversationList();
@@ -1193,6 +1247,7 @@
   function openMessages() {
     if (state.opening) return;
     state.opening = true;
+    setMobileView(state.activeConversationId ? "thread" : "list");
     modal.classList.remove("hidden");
     requestAnimationFrame(() => {
       modal.classList.remove("opacity-0");
@@ -1255,6 +1310,7 @@
       closeForwardPanel();
       stopTypingSignal();
       state.activeConversationId = Number(actionEl.dataset.conversationId);
+      setMobileView("thread");
       const convo = state.conversations.find(
         (c) => Number(c.id) === state.activeConversationId,
       );
@@ -1275,9 +1331,14 @@
     }
     if (action === "close-active-conversation") {
       stopTypingSignal();
-      state.activeConversationId = null; // Clear the active state
-      renderThread(); // This will trigger the empty "Select a conversation" screen
-      renderConversationList(); // Removes the active highlight from the sidebar
+      if (isMobileLayout()) {
+        setMobileView("list");
+        renderConversationList();
+        return;
+      }
+      state.activeConversationId = null;
+      renderThread();
+      renderConversationList();
       return;
     }
     if (action === "start-chat" && actionEl.dataset.userId) {
@@ -1533,15 +1594,10 @@
   // --- BACKGROUND PRESENCE UPDATER ---
 
   function updateAllPresenceUI() {
-    // 1. Update the Active Chat Header text
-    const conversation = getActiveConversation();
-    if (conversation) {
-      const other = conversation.otherUser || {};
-      const statusEl = document.getElementById("active-chat-status");
-      if (statusEl) statusEl.innerHTML = formatActiveStatus(other.lastActive);
-    }
-    // 2. Redraw the sidebar (to update green dots and time ago)
     renderConversationList();
+    if (getActiveConversation()) {
+      renderThread();
+    }
   }
 
   async function silentPresencePoll() {
@@ -1567,6 +1623,13 @@
     }
   }
 
+  if (typeof mobileViewport.addEventListener === "function") {
+    mobileViewport.addEventListener("change", renderResponsiveLayout);
+  } else if (typeof mobileViewport.addListener === "function") {
+    mobileViewport.addListener(renderResponsiveLayout);
+  }
+
   // Run the silent poll every 15 seconds
   setInterval(silentPresencePoll, 15000);
+  renderResponsiveLayout();
 })();

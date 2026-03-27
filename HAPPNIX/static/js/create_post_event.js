@@ -440,6 +440,10 @@ function togglePostType(isEvent) {
                 formData.append('ticketType', ticketType);
                 if (ticketType === 'Paid') {
                     formData.append('ticketTiers', JSON.stringify(ticketTiers));
+                    const minTierPrice = Math.min(...ticketTiers.map((tier) => Number(tier.price) || 0));
+                    formData.append('price', String(minTierPrice));
+                } else {
+                    formData.append('price', '0');
                 }
 
                 // Append Cover and Highlights

@@ -537,6 +537,19 @@
             </div>
         </div>
 
+
+        <div id="ticket-details-modal"
+            class="fixed inset-0 z-[61] flex items-end md:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300 md:p-6">
+            <div id="ticket-details-content"
+                class="relative bg-slate-900 border-t md:border border-white/10 w-full max-w-[520px] max-h-[92vh] overflow-y-auto rounded-t-[2.5rem] md:rounded-[2rem] p-8 pb-10 shadow-2xl transform translate-y-full md:translate-y-10 transition-transform duration-300 overscroll-contain">
+                <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-8 md:hidden"></div>
+                <button type="button" data-action="close-ticket-details"
+                    class="hidden md:block absolute top-6 right-6 text-gray-500 hover:text-white"><i data-lucide="x"
+                        class="w-6 h-6"></i></button>
+                <div id="ticket-details-body"></div>
+            </div>
+        </div>
+
         <div id="discover-profile-modal"
             class="fixed inset-0 z-[75] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm">
             <div id="discover-profile-card"

@@ -42,9 +42,9 @@ class EventAdmin(admin.ModelAdmin):
 
 @admin.register(EventTicket)
 class EventTicketAdmin(admin.ModelAdmin):
-    list_display = ("attendee", "event", "status", "booked_at", "archived_at")
+    list_display = ("attendee", "event", "status", "booked_by", "paid_by", "group_code", "booked_at", "archived_at")
     list_filter = ("status",)
-    search_fields = ("attendee__username", "event__title")
+    search_fields = ("attendee__username", "booked_by__username", "paid_by__username", "event__title", "group_code")
 
 
 @admin.register(ActivityNotification)
