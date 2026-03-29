@@ -10,9 +10,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import logout
 from django.db.models import F, Q
 from django.db import transaction
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render, get_object_or_404
 from django.template import loader
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.db import OperationalError, ProgrammingError
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -24,7 +24,7 @@ from django.conf import settings
 from urllib.parse import urlparse
 
 from . import mongo_store
-from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile
+from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile, EventTicket
 from .messaging import _broadcast_message_created
 from .utils import _error, _json_body
 
@@ -1937,3 +1937,23 @@ def current_profile_api(request):
     }
     source = "mongo" if mongo_profile else "sql-fallback"
     return JsonResponse({"source": source, "profile": payload})
+
+def view_ticket(request, ticket_id):
+    ticket = (
+        EventTicket.objects.filter(id=ticket_id)
+        .select_related("attendee", "event", "event__host", "booked_by", "paid_by")
+        .prefetch_related("event__media_items")
+        .first()
+    )
+    if ticket is None:
+        raise Http404("Ticket not found.")
+
+    group_tickets = _group_tickets_for(ticket)
+    context = {
+        "ticket": ticket,
+        "group_tickets": group_tickets,
+        "ticket_amount": _ticket_amount(ticket),
+        "ticket_is_expired": _ticket_is_expired(ticket),
+        "ticket_payload": _serialize_ticket(ticket),
+    }
+    return render(request, "ticket_view.html", context)
