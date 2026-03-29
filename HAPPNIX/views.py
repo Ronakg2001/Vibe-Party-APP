@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 from . import mongo_store
 from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile, EventTicket
 from .messaging import _broadcast_message_created
-from .utils import _error, _json_body
+from .utils import _error, _json_body, generate_hybrid_happnix_qr
 
 
 def _load_manifest_data():
@@ -276,6 +276,14 @@ def _event_is_live(event, now=None):
         return False
     return start_at <= current < end_at
 
+def view_ticket_page(request, ticket_id):
+    ticket = get_object_or_404(EventTicket, id=ticket_id, attendee=request.user)
+    verify_url = f"https://happnix.com/api/tickets/{ticket.id}/verify"
+    custom_qr_svg = generate_hybrid_happnix_qr(verify_url)
+    return render(request, 'ticket_view.html', {
+        'ticket': ticket,
+        'custom_qr_svg': custom_qr_svg # Pass it to the frontend
+    })
 
 def _ticket_is_expired(ticket, now=None):
     current = timezone.localtime(now or timezone.now())
@@ -726,10 +734,17 @@ def create_event_api(request):
     mongo_store.sync_user_profile(request.user.id)
     _log_event_published_notifications(request.user, event)
 
+    # Serialize the event first
+    event_data = _serialize_event(Event.objects.select_related("host").prefetch_related("media_items").get(id=event.id))
+    
+    # Build the URL and attach the SVG to the event_data dictionary
+    event_url = f"{request.scheme}://{request.get_host()}/events/{event.id}/"
+    event_data["qr_svg"] = generate_hybrid_happnix_qr(event_url)
+
     return JsonResponse(
         {
             "message": "Event created successfully.",
-            "event": _serialize_event(Event.objects.select_related("host").prefetch_related("media_items").get(id=event.id)),
+            "event": event_data,
         }
     )
 
@@ -1443,7 +1458,14 @@ def tickets_api(request):
         .prefetch_related("event__media_items")
         .order_by("-booked_at", "-id")
     )
-    tickets = [_serialize_ticket(ticket) for ticket in queryset]
+    tickets = []
+    for ticket in queryset:
+        data = _serialize_ticket(ticket)
+        # Build the URL and generate the SVG
+        verify_url = f"{request.scheme}://{request.get_host()}/api/tickets/{ticket.id}/verify"
+        data["qr_svg"] = generate_hybrid_happnix_qr(verify_url)
+        tickets.append(data)
+        
     return JsonResponse({"count": len(tickets), "tickets": tickets})
 
 
@@ -1957,3 +1979,4 @@ def view_ticket(request, ticket_id):
         "ticket_payload": _serialize_ticket(ticket),
     }
     return render(request, "ticket_view.html", context)
+

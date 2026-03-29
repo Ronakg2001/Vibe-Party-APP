@@ -12,8 +12,9 @@ echo    OneEnv Environment Activated
 echo 3. Running migrations
 python manage.py migrate
 
+for /f "tokens=14" %%a in ('ipconfig ^| findstr IPv4') do set myIP=%%a
 echo 4. Launching the WebApp 
-start "" chrome http://192.168.29.135:8000
+start "" chrome http://%myIP%:8000
 
 echo 5. Starting the server
-python manage.py runserver 192.168.29.135:8000
+python manage.py runserver %myIP%:8000

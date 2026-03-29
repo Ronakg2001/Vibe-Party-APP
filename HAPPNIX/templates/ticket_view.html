@@ -5,184 +5,61 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ ticket.event.title }} - Happnix Ticket</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="{% static 'css/ticket_view.css' %}" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+
+    <link rel="stylesheet" href="{% static 'css/ticket_view.css' %}" />
+
     <script
       type="text/javascript"
       src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"
     ></script>
+    <script src="{% static 'js/qr_generator.js' %}"></script>
   </head>
-  <body class="ticket-view-page">
-    <main class="ticket-shell">
-      <section class="ticket-hero">
-        <article class="ticket-panel ticket-main">
-          <div class="ticket-kicker">
-            <i data-lucide="ticket"></i>
-            Ticket Details
-          </div>
+  <body
+    class="bg-[#0b1121] text-white min-h-screen flex flex-col items-center justify-center p-4"
+  >
+    <div
+      class="bg-slate-900 border border-white/10 p-8 rounded-3xl text-center w-full max-w-sm ticket-card-glow relative overflow-hidden"
+    >
+      <h2 class="text-3xl font-black text-white mb-2 leading-tight">
+        {{ ticket.event.title }}
+      </h2>
 
-          <h1 class="ticket-title">{{ ticket.event.title }}</h1>
-          <p class="ticket-copy">
-            {{ ticket.event.description|default:"Your confirmed entry details are ready. Keep this page open at the gate so the team can scan the QR and verify your booking." }}
-          </p>
+      <div class="flex items-center justify-center gap-2 text-gray-400 mb-6">
+        <i data-lucide="calendar" class="w-4 h-4 text-cyan-400"></i>
+        <span class="text-sm font-medium"
+          >{{ ticket.event.start_at|date:"M d, Y - h:i A" }}</span
+        >
+      </div>
 
-          <div class="ticket-badges">
-            <div class="ticket-badge">
-              <i data-lucide="badge-check"></i>
-              <strong>
-                {% if ticket.status == "cancelled" %}
-                  Cancelled
-                {% elif ticket_is_expired %}
-                  Expired
-                {% elif ticket.status == "pending" %}
-                  Pending
-                {% else %}
-                  Active
-                {% endif %}
-              </strong>
-            </div>
-            <div class="ticket-badge">
-              <i data-lucide="layers-3"></i>
-              <strong>{{ ticket.tier_name|default:"General Admission" }}</strong>
-            </div>
-            <div class="ticket-badge">
-              <i data-lucide="users"></i>
-              <strong>{{ group_tickets|length }} Member{{ group_tickets|length|pluralize }}</strong>
-            </div>
-          </div>
+      <div
+        class="inline-block px-4 py-1.5 rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-400 font-bold text-sm mb-8 tracking-widest uppercase"
+      >
+        {{ ticket.tier_name|default:"General Admission" }}
+      </div>
 
-          <dl class="ticket-grid">
-            <div class="ticket-detail-card">
-              <dt>Date & Time</dt>
-              <dd>{{ ticket.event.start_at|date:"M d, Y - h:i A"|default:ticket.event.start_label }}</dd>
-            </div>
-            <div class="ticket-detail-card">
-              <dt>Location</dt>
-              <dd>{{ ticket.event.location_name }}</dd>
-            </div>
-            <div class="ticket-detail-card">
-              <dt>Booked By</dt>
-              <dd>@{{ ticket.booked_by.username|default:ticket.attendee.username }}</dd>
-            </div>
-            <div class="ticket-detail-card">
-              <dt>Attendee</dt>
-              <dd>@{{ ticket.attendee.username }}</dd>
-            </div>
-            <div class="ticket-detail-card">
-              <dt>Amount</dt>
-              <dd>
-                {% if ticket_amount > 0 %}
-                  INR {{ ticket_amount }}
-                {% else %}
-                  Free
-                {% endif %}
-              </dd>
-            </div>
-            <div class="ticket-detail-card">
-              <dt>Ticket ID</dt>
-              <dd>#{{ ticket.id }}</dd>
-            </div>
-          </dl>
-        </article>
+      <div class="qr-bg-layer mb-6 flex items-center justify-center">
+        <div class="w-[220px] h-[220px]">{{ custom_qr_svg|safe }}</div>
+      </div>
 
-        <aside class="ticket-panel ticket-secondary">
-          <div class="ticket-qr-wrap">
-            <h2>Entry QR</h2>
-            <p>Present this at the entrance for fast check-in.</p>
-            <div class="ticket-qr-box">
-              <div id="ticket-qr-container"></div>
-            </div>
-            <p class="ticket-note">QR color changes automatically for VIP tiers.</p>
-          </div>
+      <div class="space-y-1">
+        <p
+          class="text-[10px] text-gray-500 uppercase tracking-[0.2em] font-bold"
+        >
+          Ticket ID
+        </p>
+        <p class="text-sm text-gray-300 font-mono tracking-wider">
+          {{ ticket.id }}
+        </p>
+      </div>
 
-          <section class="ticket-side-card">
-            <h3>Booking Summary</h3>
-            <div class="ticket-meta-list">
-              <div class="ticket-meta-item">
-                <span>Event Host</span>
-                <span>@{{ ticket.event.host.username }}</span>
-              </div>
-              <div class="ticket-meta-item">
-                <span>Ticket Type</span>
-                <span>{{ ticket.event.ticket_type|default:"Free" }}</span>
-              </div>
-              <div class="ticket-meta-item">
-                <span>Invite Status</span>
-                <span>{{ ticket.invite_status|default:"confirmed"|title }}</span>
-              </div>
-              <div class="ticket-meta-item">
-                <span>Paid By</span>
-                <span>
-                  {% if ticket.paid_by %}
-                    @{{ ticket.paid_by.username }}
-                  {% else %}
-                    -
-                  {% endif %}
-                </span>
-              </div>
-            </div>
-          </section>
-        </aside>
-      </section>
+      <p class="mt-8 text-xs text-cyan-500/80 animate-pulse">
+        Present this code at the entrance
+      </p>
+    </div>
 
-      <section class="ticket-panel ticket-section">
-        <h2>Participants</h2>
-        <div class="ticket-participants">
-          {% for participant in group_tickets %}
-            <article class="ticket-participant">
-              <div>
-                <strong>
-                  @{{ participant.attendee.username }}
-                  {% if participant.attendee_id == ticket.attendee_id %}(You){% endif %}
-                </strong>
-                <span>Invite: {{ participant.invite_status|default:"confirmed"|title }}</span>
-                <span>
-                  {% if participant.paid_by %}
-                    Paid by @{{ participant.paid_by.username }}
-                  {% elif participant.status == "pending" %}
-                    Waiting for payment
-                  {% else %}
-                    Added by @{{ participant.booked_by.username|default:participant.attendee.username }}
-                  {% endif %}
-                </span>
-              </div>
-              <div class="participant-status {% if participant.status == 'cancelled' %}is-cancelled{% elif participant.status == 'pending' %}is-pending{% elif ticket_is_expired %}is-expired{% else %}is-active{% endif %}">
-                {{ participant.status|title }}
-              </div>
-            </article>
-          {% empty %}
-            <article class="ticket-participant">
-              <div>
-                <strong>No participants found</strong>
-                <span>This ticket does not have any linked attendees yet.</span>
-              </div>
-            </article>
-          {% endfor %}
-        </div>
-      </section>
-
-      <section class="ticket-panel ticket-section">
-        <h2>Transactions</h2>
-        <dl class="ticket-transactions">
-          <div class="ticket-transaction">
-            <dt>Payment Transaction</dt>
-            <dd>{{ ticket.payment_transaction_id|default:"Not available yet" }}</dd>
-          </div>
-          <div class="ticket-transaction">
-            <dt>Refund Transaction</dt>
-            <dd>{{ ticket.refund_transaction_id|default:"Not issued" }}</dd>
-          </div>
-        </dl>
-      </section>
-    </main>
-
-    {{ ticket_payload|json_script:"ticket-view-data" }}
     <script src="{% static 'js/ticket_view.js' %}"></script>
   </body>
 </html>

@@ -593,7 +593,10 @@ async function handlePostSubmit(e) {
           if (typeof loadHostedEvents === "function") {
             loadHostedEvents();
           }
-          showEventSuccessQR(result.event.id || result.event._id);
+          showEventSuccessModal(
+            result.event.id || result.event._id,
+            result.event.qr_svg,
+          );
           resetEventCreation();
 
           if (activityId && typeof finishUploadActivity === "function")
@@ -2030,66 +2033,35 @@ function generatePreview() {
   }
 }
 
-// --- Custom QR Code Generator ---
-let happnixQrCode = null;
-
-function showEventSuccessQR(eventId) {
-  const qrContainer = document.getElementById("happnix-qr-container");
+// --- Event Success Modal & QR Trigger ---
+function showEventSuccessModal(eventId) {
   const modal = document.getElementById("qr-success-modal");
+  if (!modal) return;
 
-  if (!qrContainer || !modal) return;
-
-  // Clear previous QR code if it exists
-  qrContainer.innerHTML = "";
-
-  // Construct the URL to your event details page
-  // (Adjust '/events/' to match your actual Django urls.py path for viewing an event)
+  // 1. Construct the URL for the event
   const eventUrl = window.location.origin + "/events/" + eventId + "/";
 
-  happnixQrCode = new QRCodeStyling({
-    width: 200,
-    height: 200,
-    data: eventUrl,
-    margin: 5,
-    qrOptions: { typeNumber: 0, mode: "Byte", errorCorrectionLevel: "H" },
-    image: "/static/img/HX_Logo.png", // Path to your logo
-    imageOptions: {
-      crossOrigin: "anonymous",
-      margin: 4, // Creates a nice border around the logo
-      imageSize: 0.4, // Takes up 40% of the center space
-      hideBackgroundDots: true, // Clears the dots behind the logo so it's readable
-    },
-    dotsOptions: {
-      type: "dots", // Options: "dot", "square", "extra-rounded"
-      gradient: {
-        type: "linear",
-        rotation: 0.785398, // 45 degrees
-        colorStops: [
-          { offset: 0, color: "#22d3ee" }, // Cyan
-          { offset: 1, color: "#d946ef" }, // Fuchsia
-        ],
-      },
-    },
-    backgroundOptions: { color: "transparent" },
-    cornersSquareOptions: { color: "#0b1121", type: "extra-rounded" },
-    cornersDotOptions: { color: "#7722ee", type: "square-dot" },
-  });
+  const qrContainer = document.getElementById("happnix-qr-container");
+  if (qrContainer && svgData) {
+    qrContainer.innerHTML = svgData;
+  }
+  // 2. Generate the QR code using your centralized file
+  // "happnix-qr-container" is the ID of the div inside your modal
+  const generatedQr = HappnixQR.generate(
+    "happnix-qr-container",
+    eventUrl,
+    "event",
+  );
 
-  // Draw the QR code inside the container
-  happnixQrCode.append(qrContainer);
-
-  // Show the success modal
+  // 3. Show the modal
   modal.classList.remove("hidden");
   if (typeof lucide !== "undefined") lucide.createIcons();
 
-  // Setup Download Button
+  // 4. Setup the Download Button
   const downloadBtn = document.getElementById("download-qr-btn");
-  if (downloadBtn) {
+  if (downloadBtn && generatedQr) {
     downloadBtn.onclick = () => {
-      happnixQrCode.download({
-        name: `Happnix_Event_${eventId}`,
-        extension: "png",
-      });
+      HappnixQR.download(generatedQr, `Happnix_Event_${eventId}`);
     };
   }
 }
