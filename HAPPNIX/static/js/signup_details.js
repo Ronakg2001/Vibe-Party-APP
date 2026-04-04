@@ -28,8 +28,7 @@ const form = document.getElementById("detailsForm");
     function setDobMax() {
       const dobInput = document.getElementById("dob");
       const today = new Date();
-      const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
-      dobInput.max = maxDate.toISOString().split("T")[0];
+      dobInput.max = today.toISOString().split("T")[0];
     }
 
     function isStrongPassword(value) {

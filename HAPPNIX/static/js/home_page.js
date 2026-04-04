@@ -76,6 +76,7 @@ const state = {
     inFlight: false,
     intervalMs: 15000,
   },
+  eventStatusTimerId: null,
 };
 const loaderStartTs = Date.now();
 
@@ -107,6 +108,19 @@ const THEME_STORAGE_KEY = "happnix-theme";
 const DISCOVER_HISTORY_STORAGE_KEY = "happnix-discover-history";
 const SHARED_POSTS_STORAGE_KEY = "happnix-shared-posts-v1";
 const TICKETS_STORAGE_KEY = "happnix-tickets-v1";
+
+function getFrontendConfigValue(path, fallbackValue) {
+  if (window.HappnixFrontendConfig && typeof window.HappnixFrontendConfig.get === "function") {
+    return window.HappnixFrontendConfig.get(path, fallbackValue);
+  }
+  return fallbackValue;
+}
+
+function formatConfiguredPattern(pattern, replacements = {}) {
+  return String(pattern || "").replace(/\{(\w+)\}/g, (_match, key) =>
+    replacements[key] !== undefined ? String(replacements[key]) : "",
+  );
+}
 
 function getStoredTheme() {
   try {
@@ -983,6 +997,306 @@ function getEventMonthDay(eventDetails) {
   };
 }
 
+function isEventCancelledFromDetails(eventDetails) {
+  const rawStatus = String(eventDetails?.status || "").trim().toLowerCase();
+  return rawStatus === "cancelled" || rawStatus === "canceled";
+}
+
+function startOfLocalDay(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addLocalDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getCalendarDayDiff(startDate, referenceDate = new Date()) {
+  const startDay = startOfLocalDay(startDate);
+  const referenceDay = startOfLocalDay(referenceDate);
+  if (!startDay || !referenceDay) return null;
+  return Math.round((startDay.getTime() - referenceDay.getTime()) / 86400000);
+}
+
+function getCalendarMonthDiff(startDate, referenceDate = new Date()) {
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return null;
+  return (
+    (startDate.getFullYear() - referenceDate.getFullYear()) * 12 +
+    (startDate.getMonth() - referenceDate.getMonth())
+  );
+}
+
+function getCalendarDistanceParts(startDate, referenceDate = new Date()) {
+  const startDay = startOfLocalDay(startDate);
+  const referenceDay = startOfLocalDay(referenceDate);
+  if (!startDay || !referenceDay || startDay < referenceDay) {
+    return { years: 0, months: 0, days: 0 };
+  }
+  let years = startDay.getFullYear() - referenceDay.getFullYear();
+  let months = startDay.getMonth() - referenceDay.getMonth();
+  let days = startDay.getDate() - referenceDay.getDate();
+  if (days < 0) {
+    const previousMonthLastDay = new Date(
+      startDay.getFullYear(),
+      startDay.getMonth(),
+      0,
+    ).getDate();
+    days += previousMonthLastDay;
+    months -= 1;
+  }
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+  return {
+    years: Math.max(0, years),
+    months: Math.max(0, months),
+    days: Math.max(0, days),
+  };
+}
+
+function getStartOfWeek(date) {
+  const base = startOfLocalDay(date);
+  if (!base) return null;
+  const dayIndex = (base.getDay() + 6) % 7;
+  base.setDate(base.getDate() - dayIndex);
+  return base;
+}
+
+function isWeekendDate(date) {
+  const day = date instanceof Date ? date.getDay() : -1;
+  return day === 0 || day === 6;
+}
+
+function formatEventCalendarDate(value) {
+  const date = value instanceof Date ? value : new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "Date TBD";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatEventStartCountdown(targetDate, now = new Date()) {
+  const diffMs = Math.max(0, targetDate.getTime() - now.getTime());
+  const totalSeconds = Math.ceil(diffMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+function pluralizeCountdownUnit(unitKey, count) {
+  const singular = getFrontendConfigValue(`events.countdown.unitLabels.${unitKey}`, unitKey);
+  const plural = getFrontendConfigValue(`events.countdown.unitLabels.${unitKey}s`, `${singular}s`);
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function joinCountdownParts(parts) {
+  const filtered = (parts || []).filter(Boolean);
+  if (!filtered.length) return "";
+  if (filtered.length === 1) return filtered[0];
+  if (filtered.length === 2) {
+    return `${filtered[0]} ${getFrontendConfigValue("events.countdown.conjunction", "and")} ${filtered[1]}`;
+  }
+  return `${filtered.slice(0, -1).join(", ")}, ${getFrontendConfigValue("events.countdown.conjunction", "and")} ${filtered[filtered.length - 1]}`;
+}
+
+function formatRelativeCountdown(parts) {
+  const body = joinCountdownParts(parts);
+  if (!body) return getFrontendConfigValue("events.countdown.fallbackDateText", "Date TBD");
+  return `${getFrontendConfigValue("events.countdown.prefixIn", "In")} ${body}`;
+}
+
+function formatEventEndCountdownLabel(eventDetails, now = new Date()) {
+  const endDate = getEventEndDate(eventDetails);
+  if (!endDate) return "";
+  const diffMs = Math.max(0, endDate.getTime() - now.getTime());
+  const totalSeconds = Math.ceil(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const remainingSeconds = totalSeconds % 86400;
+  const hours = Math.floor(remainingSeconds / 3600);
+  const minutes = Math.floor((remainingSeconds % 3600) / 60);
+  const seconds = remainingSeconds % 60;
+  const timeText = [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+  if (days <= 0) {
+    return formatConfiguredPattern(
+      getFrontendConfigValue("events.liveProgress.endsSameDayPattern", "Ends in {time}"),
+      { time: timeText },
+    );
+  }
+  return formatConfiguredPattern(
+    getFrontendConfigValue("events.liveProgress.endsMultiDayPattern", "Ends in {days} day{daySuffix} {time}"),
+    {
+      days,
+      daySuffix: days === 1 ? "" : "s",
+      time: timeText,
+    },
+  );
+}
+
+function getLiveEventProgressMeta(eventDetails, now = new Date()) {
+  const startDate = getEventStartDate(eventDetails);
+  const endDate = getEventEndDate(eventDetails);
+  if (!startDate || !endDate) return null;
+  const totalDuration = endDate.getTime() - startDate.getTime();
+  const elapsed = now.getTime() - startDate.getTime();
+  if (totalDuration <= 0 || elapsed < 0) return null;
+  const progress = elapsed / totalDuration;
+  const endingSoonThreshold = Number(getFrontendConfigValue("events.liveProgress.endingSoonThreshold", 0.7)) || 0.7;
+  const endTimerThreshold = Number(getFrontendConfigValue("events.liveProgress.endTimerThreshold", 0.85)) || 0.85;
+  if (progress >= endTimerThreshold) {
+    return { detail: formatEventEndCountdownLabel(eventDetails, now) };
+  }
+  if (progress >= endingSoonThreshold) {
+    return {
+      detail: getFrontendConfigValue("events.liveProgress.endingSoonText", "Event will end soon"),
+    };
+  }
+  return null;
+}
+
+function getUpcomingEventCountdownLabel(eventDetails, now = new Date()) {
+  const startDate = getEventStartDate(eventDetails);
+  const fallbackDateText = getFrontendConfigValue("events.countdown.fallbackDateText", "Date TBD");
+  if (!startDate) return fallbackDateText;
+  const dayDiff = getCalendarDayDiff(startDate, now);
+  if (dayDiff === null) return fallbackDateText;
+  if (dayDiff === 0) {
+    return `${getFrontendConfigValue("events.countdown.todayPrefix", "Today")}${getFrontendConfigValue("events.countdown.separator", " | ")}${formatEventStartCountdown(startDate, now)}`;
+  }
+  if (dayDiff === 1) {
+    return `${getFrontendConfigValue("events.countdown.tomorrowPrefix", "Tomorrow")}${getFrontendConfigValue("events.countdown.separator", " | ")}${formatEventStartCountdown(startDate, now)}`;
+  }
+  if (dayDiff > 1 && dayDiff <= 3) {
+    return formatConfiguredPattern(getFrontendConfigValue("events.countdown.daysPattern", "In {count} days"), { count: dayDiff });
+  }
+  const nowWeekStart = getStartOfWeek(now);
+  const nowWeekEnd = addLocalDays(nowWeekStart, 6);
+  const startDay = startOfLocalDay(startDate);
+  if (startDay && nowWeekStart && nowWeekEnd && startDay >= nowWeekStart && startDay <= nowWeekEnd && dayDiff > 3) {
+    return isWeekendDate(startDate)
+      ? getFrontendConfigValue("events.countdown.thisWeekendLabel", "This weekend")
+      : getFrontendConfigValue("events.countdown.thisWeekLabel", "This week");
+  }
+  if (dayDiff > 7) {
+    const monthDiff = getCalendarMonthDiff(startDate, now);
+    const distance = getCalendarDistanceParts(startDate, now);
+    if (startDate.getFullYear() > now.getFullYear() + 1) {
+      return formatRelativeCountdown([
+        distance.years > 0 ? pluralizeCountdownUnit("year", distance.years) : "",
+        distance.months > 0 ? pluralizeCountdownUnit("month", distance.months) : "",
+        distance.days > 0 ? pluralizeCountdownUnit("day", distance.days) : "",
+      ]);
+    }
+    if (startDate.getFullYear() === now.getFullYear() + 1) {
+      return getFrontendConfigValue("events.countdown.nextYearLabel", "Next year");
+    }
+    if (monthDiff !== null && monthDiff > 2) {
+      const monthCount = Math.max(1, distance.months || monthDiff);
+      return formatRelativeCountdown([
+        pluralizeCountdownUnit("month", monthCount),
+        distance.days > 0 ? pluralizeCountdownUnit("day", distance.days) : "",
+      ]);
+    }
+    if (monthDiff === 1) {
+      return getFrontendConfigValue("events.countdown.nextMonthLabel", "Next month");
+    }
+    if (monthDiff === 0) {
+      return getFrontendConfigValue("events.countdown.thisMonthLabel", "This month");
+    }
+    const weeks = Math.max(1, Math.ceil(dayDiff / 7));
+    return formatConfiguredPattern(getFrontendConfigValue("events.countdown.weeksPattern", "In {count} week{suffix}"), { count: weeks, suffix: weeks === 1 ? "" : "s" });
+  }
+  if (dayDiff > 3) {
+    const weeks = Math.max(1, Math.ceil(dayDiff / 7));
+    return formatConfiguredPattern(getFrontendConfigValue("events.countdown.weeksPattern", "In {count} week{suffix}"), { count: weeks, suffix: weeks === 1 ? "" : "s" });
+  }
+  return formatEventCalendarDate(startDate);
+}
+
+function getEventLifecycleMeta(eventDetails) {
+  const stateMap = {
+    cancelled: isEventCancelledFromDetails(eventDetails),
+    ended: isEventEndedFromDetails(eventDetails),
+    live: isEventLiveNow(eventDetails),
+    upcoming: true,
+  };
+  const activeKey = Object.keys(stateMap).find((key) => stateMap[key]) || "upcoming";
+  const stateConfig = getFrontendConfigValue(`events.status.states.${activeKey}`, {}) || {};
+  let detail = String(stateConfig.detail || "");
+  if (activeKey === "upcoming") {
+    detail = getUpcomingEventCountdownLabel(eventDetails);
+  } else if (activeKey === "live") {
+    const liveProgressMeta = getLiveEventProgressMeta(eventDetails);
+    detail = String(liveProgressMeta?.detail || stateConfig.detail || "");
+  }
+  return {
+    key: activeKey,
+    label: String(stateConfig.label || activeKey),
+    shellClass: String(stateConfig.shellClass || ""),
+    dotClass: String(stateConfig.dotClass || ""),
+    detail,
+  };
+}
+
+function renderEventLifecycleStatus(postId, eventDetails, options = {}) {
+  const meta = getEventLifecycleMeta(eventDetails);
+  const align = options.align === "right" ? "items-end text-right" : "items-start text-left";
+  const detailTone = getFrontendConfigValue(
+    `events.status.detailToneByKey.${meta.key}`,
+    "text-white/80",
+  );
+  return `<div class="flex flex-col gap-1 ${align}" data-event-status-block data-post-id="${escapeHtml(postId)}" data-align="${escapeHtml(options.align || "left")}"><span class="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] transition-all duration-500 ease-out ${meta.shellClass}"><span class="h-2.5 w-2.5 rounded-full transition-all duration-500 ease-out ${meta.dotClass}"></span>${meta.label}</span>${meta.detail ? `<span class="text-[11px] font-medium transition-all duration-500 ease-out ${detailTone}">${escapeHtml(meta.detail)}</span>` : ""}</div>`;
+}
+
+function getEventPostById(postId) {
+  const safePostId = String(postId || "");
+  const profilePosts = Object.values(state.publicProfileEventPosts || {}).flat();
+  const buckets = [
+    ...(state.hostedEventPosts || []),
+    ...(state.followingEventPosts || []),
+    ...(state.nearbyEventPosts || []),
+    ...(state.liveNowPosts || []),
+    ...(state.posts || []),
+    ...profilePosts,
+  ];
+  return buckets.find((post) => String(post?.id || "") === safePostId) || null;
+}
+
+function updateEventStatusBlocks() {
+  document.querySelectorAll("[data-event-status-block][data-post-id]").forEach((node) => {
+    const post = getEventPostById(node.dataset.postId);
+    if (!post?.isEvent) return;
+    node.outerHTML = renderEventLifecycleStatus(node.dataset.postId, post.eventDetails, {
+      align: node.dataset.align || "left",
+    });
+  });
+}
+
+function startEventStatusTicker() {
+  if (state.eventStatusTimerId) return;
+  state.eventStatusTimerId = window.setInterval(() => {
+    if (document.hidden) return;
+    updateEventStatusBlocks();
+  }, Number(getFrontendConfigValue("events.statusTickerIntervalMs", 1000)) || 1000);
+}
+
+function stopEventStatusTicker() {
+  if (!state.eventStatusTimerId) return;
+  clearInterval(state.eventStatusTimerId);
+  state.eventStatusTimerId = null;
+}
+
 function updateNotificationBadges() {
   const dots = [
     document.getElementById("mobile-notification-dot"),
@@ -1020,7 +1334,9 @@ function renderNotificationsList() {
       '<div class="py-12 text-center text-sm text-gray-400">Loading notifications...</div>';
     return;
   }
-  const items = Array.isArray(state.notifications) ? state.notifications : [];
+  const items = (Array.isArray(state.notifications) ? state.notifications : []).filter(
+    (item) => String(item.activity_type || "").toLowerCase() !== "message",
+  );
   if (items.length === 0) {
     listEl.innerHTML =
       '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">No notifications yet.</div>';
@@ -1038,7 +1354,10 @@ function renderNotificationsList() {
         item.actor_profile_picture_url || defaultAvatar,
       );
       const title = escapeHtml(item.title || "Activity");
-      const body = escapeHtml(item.body || "");
+      const isMessageNotification = String(item.activity_type || "").toLowerCase() === "message";
+      const body = isMessageNotification
+        ? "You have a new message."
+        : escapeHtml(item.body || "");
       return `
             <article class="rounded-2xl border ${item.is_read ? "border-white/10 bg-white/[0.03]" : "border-fuchsia-400/20 bg-fuchsia-500/[0.08]"} px-4 py-4 shadow-lg shadow-black/10 ${item.actor_sql_user_id ? "cursor-pointer" : ""}" ${item.actor_sql_user_id ? `data-action="open-discover-profile" data-user-id="${item.actor_sql_user_id}"` : ""}>
                 <div class="flex items-start gap-3">
@@ -1425,7 +1744,11 @@ async function loadCurrentUserProfile() {
       privacyStatusEl.className = `text-sm font-bold ${profile.is_private ? "text-amber-200" : "text-emerald-200"}`;
     }
   } catch (error) {
-    // Keep existing template-backed values if API fails.
+    console.error("Failed to load current profile:", error);
+    setLocationStatus(
+      error.message || "Failed to load your profile.",
+      true,
+    );
   }
   renderCurrentUserProfile();
   renderProfileGrid();
@@ -1906,26 +2229,41 @@ function saveLocationModal() {
       "happnix_custom_location_center",
       JSON.stringify(locationModalSelectedCenter),
     );
+    state.userLocation = {
+      latitude: Number(locationModalSelectedCenter.lat),
+      longitude: Number(locationModalSelectedCenter.lng),
+    };
+  } else {
+    localStorage.removeItem("happnix_custom_location_center");
   }
   if (locationModalSelectedBounds) {
     localStorage.setItem(
       "happnix_custom_location_bounds",
       JSON.stringify(locationModalSelectedBounds),
     );
+  } else {
+    localStorage.removeItem("happnix_custom_location_bounds");
   }
   renderTopLocationUi();
   closeLocationModal();
+  loadNearbyEvents();
 }
 
 function clearLocationModal() {
+  const input = document.getElementById("location-modal-input");
   if (locationModalContext === "event") {
     const eventLocationInput = document.getElementById("event-location");
     if (eventLocationInput) {
       eventLocationInput.value = "";
     }
     state.eventLocationPoint = null;
-    const input = document.getElementById("location-modal-input");
     if (input) input.value = "";
+    if (locationModalMap && locationModalMarker) {
+      const fallback = L.latLng(20.5937, 78.9629);
+      locationModalMap.setView(fallback, 5);
+      locationModalMarker.setLatLng(fallback);
+      updateLocationModalFromMap();
+    }
     hideLocationModalSuggestions();
     return;
   }
@@ -1933,10 +2271,24 @@ function clearLocationModal() {
   localStorage.removeItem("happnix_custom_location_center");
   localStorage.removeItem("happnix_custom_location_bounds");
   state.customLocationName = "";
-  const input = document.getElementById("location-modal-input");
-  if (input) input.value = "";
+  if (state.detectedLocationName && state.userLocation) {
+    state.userLocation = {
+      latitude: Number(state.userLocation.latitude),
+      longitude: Number(state.userLocation.longitude),
+    };
+  }
+  if (input) input.value = state.detectedLocationName || "";
+  if (locationModalMap && locationModalMarker) {
+    const fallback = state.userLocation
+      ? L.latLng(state.userLocation.latitude, state.userLocation.longitude)
+      : L.latLng(20.5937, 78.9629);
+    locationModalMap.setView(fallback, state.userLocation ? 14 : 5);
+    locationModalMarker.setLatLng(fallback);
+    updateLocationModalFromMap();
+  }
   hideLocationModalSuggestions();
   renderTopLocationUi();
+  loadNearbyEvents();
 }
 
 function renderTopLocationUi() {
@@ -2122,6 +2474,7 @@ function serverEventToPost(eventData) {
     startAt: eventData.startAt || null,
     endAt: eventData.endAt || null,
     endLabel: eventData.endLabel || "",
+    status: eventData.status || "published",
     location: eventData.locationName,
     price: minTicketPrice,
     mapUrl: eventData.mapUrl,
@@ -3687,6 +4040,24 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.getItem("happnix_custom_location_name") || "";
     state.detectedLocationName =
       localStorage.getItem("happnix_detected_location_name") || "";
+    try {
+      const storedCustomCenter = localStorage.getItem(
+        "happnix_custom_location_center",
+      );
+      if (storedCustomCenter) {
+        const parsedCenter = JSON.parse(storedCustomCenter);
+        if (
+          parsedCenter &&
+          Number.isFinite(Number(parsedCenter.lat)) &&
+          Number.isFinite(Number(parsedCenter.lng))
+        ) {
+          state.userLocation = {
+            latitude: Number(parsedCenter.lat),
+            longitude: Number(parsedCenter.lng),
+          };
+        }
+      }
+    } catch (_error) {}
     const locationInput = document.getElementById("location-modal-input");
     if (locationInput) {
       locationInput.addEventListener("input", () => {
@@ -3818,6 +4189,8 @@ document.addEventListener("DOMContentLoaded", () => {
     renderProfileGrid();
     renderTicketList();
     renderHostedEventList();
+    updateEventStatusBlocks();
+    startEventStatusTicker();
     loadHostedEvents();
     switchMyEventsTab("tickets");
     const eventMediaInput = document.getElementById("event-media-input");
@@ -3930,8 +4303,8 @@ function renderLiveNow() {
             <button type="button" class="group relative min-w-[220px] max-w-[220px] overflow-hidden rounded-3xl border border-emerald-400/20 bg-slate-950 text-left shadow-[0_12px_40px_rgba(16,185,129,0.16)]" data-action="open-booking-modal" data-post-id="${post.id}">
                 <div class="absolute inset-0 bg-gradient-to-b from-emerald-400/10 via-transparent to-slate-950/90"></div>
                 <img src="${media}" class="h-28 w-full object-cover opacity-80 transition-transform duration-500 group-hover:scale-105">
-                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300">
-                    <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>Live
+                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-emerald-700/45 bg-emerald-950/65 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-200">
+                    <span class="h-2.5 w-2.5 rounded-full bg-emerald-700 animate-pulse shadow-[0_0_10px_rgba(4,120,87,0.95),0_0_22px_rgba(16,185,129,0.5)]"></span>${escapeHtml(getFrontendConfigValue("events.liveCard.badgeLabel", "Live now"))}
                 </div>
                 <div class="absolute right-3 top-3 rounded-2xl border border-white/10 bg-black/50 px-2 py-1 text-center text-white">
                     <div class="text-[9px] tracking-[0.22em] text-gray-400">${dateBits.month}</div>
@@ -4144,11 +4517,12 @@ function renderFeed() {
                                 <span class="text-[10px] font-bold uppercase leading-none">${getEventMonthDay(post.eventDetails).month}</span><span class="text-lg font-bold leading-none">${getEventMonthDay(post.eventDetails).day}</span>
                             </div>
                             <div>
-                                <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-2 flex-wrap">
                                     <h3 class="font-bold text-sm text-white group-hover/event:text-fuchsia-300 transition-colors">${post.eventDetails.title}</h3>
-                                    ${isEventEndedFromDetails(post.eventDetails) ? '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ""}${joined ? '<span class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ""}
+                                    ${joined ? '<span class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ""}
                                 </div>
                                 <p class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${post.eventDetails.location}${post.eventDetails.distanceKm !== undefined ? ` (${post.eventDetails.distanceKm} km)` : ""}</p>
+                                <div class="mt-2">${renderEventLifecycleStatus(post.id, post.eventDetails)}</div>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
@@ -4232,12 +4606,12 @@ function renderDiscoverProfileEvents(events) {
                 </div>
                 <div class="p-4 space-y-4">
                     <div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <h4 class="text-lg font-black text-white">${escapeHtml(post.eventDetails?.title || "Untitled event")}</h4>
-                            ${isEventEndedFromDetails(post.eventDetails) ? '<span class="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ""}
                         </div>
                         <p class="mt-1 text-sm text-fuchsia-300">${escapeHtml(post.eventDetails?.date || "Date TBD")}</p>
                         <p class="mt-1 text-sm text-gray-400">${escapeHtml(post.eventDetails?.location || "")}</p>
+                        <div class="mt-2">${renderEventLifecycleStatus(post.id, post.eventDetails)}</div>
                         <p class="mt-2 text-sm leading-6 text-gray-300">${escapeHtml(post.caption || "Join the vibe.")}</p>
                     </div>
                     <div class="flex items-center gap-3">
@@ -4745,12 +5119,12 @@ function renderTicketList() {
                         <div class="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs ${statusClass}"><i data-lucide="check" class="w-3 h-3"></i> ${statusLabel}</div>
                         ${isCancelled ? `<div class="flex flex-wrap items-center gap-2"><div class="text-xs text-gray-500">Cancelled ${formatNotificationTime(ticket.cancelledAt)}</div>${deleteVisible ? `<button type="button" data-action="delete-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 transition-colors">Delete</button>` : `<span class="text-[11px] text-gray-500">Long press card to show delete</span>`}</div>` : expired ? `<div class="flex flex-wrap items-center gap-2"><button type="button" data-action="archive-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/20 transition-colors">Archive</button><button type="button" data-action="delete-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 transition-colors">Delete</button></div>` : `<button type="button" data-action="cancel-ticket" data-ticket-id="${ticket.id}" class="inline-flex items-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20 transition-colors">Cancel Ticket</button>`}
                     </div>
-                    <div class="col-span-1 flex flex-col items-center justify-center border-l border-white/10 pl-2">
-                        <div class="mb-1 bg-[#e2e8f0] p-1 rounded-xl w-[70px] h-[70px] ${isCancelled || expired ? "opacity-30" : ""}">
-                            ${ticket.qr_svg || ""}
-                        </div>
-                        <span class="font-mono text-[10px] text-gray-500">#${String(ticket.id).substr(0, 4)}</span>
-                    </div>
+                <div class="col-span-1 flex flex-col items-center justify-center border-l border-white/10 pl-4">
+                  <div class="w-16 h-16 mb-2 flex items-center justify-center">
+                    <div id="inline-qr-${ticket.id}" data-width="48" data-height="48"></div>
+                  </div>
+                    <span class="font-mono text-[10px] text-gray-500">#${String(ticket.id).substr(0, 4)}</span>
+                </div>
                 </div>
             </div>
         </div>
@@ -4773,7 +5147,7 @@ function renderTicketList() {
         : "ticket_regular";
 
       if (typeof HappnixQR !== "undefined") {
-        HappnixQR.generate(`inline-qr-${ticket.id}`, verifyUrl, qrType);
+        HappnixQR.generate(`inline-qr-${ticket.id}`, window.location.origin + "/ticket/" + ticket.id + "/");
       }
     }
   });
@@ -4864,7 +5238,7 @@ function openBookingModal(postId) {
                 <span class="text-xl font-bold text-white">Total</span>
                 <span id="booking-total-amount" class="text-2xl font-black ${isEnded || isAlreadyJoined ? "text-rose-300" : "text-fuchsia-400"}">${isEnded ? "Closed" : isAlreadyJoined ? "Joined" : ticketType === "Free" ? "Free" : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)}</span>
             </div>
-            <button id="booking-action-btn" data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg ${isEnded || isAlreadyJoined ? "bg-white/10 text-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30"}" ${isEnded || isAlreadyJoined ? "disabled" : ""}>${isEnded ? "Event Ended" : isAlreadyJoined ? "Already Joined" : ticketType === "Free" ? "Join Event" : "Pay & Join"}</button>
+            <button id="booking-action-btn" data-action="confirm-booking" class="w-full py-4 rounded-xl font-bold text-lg ${isEnded || isAlreadyJoined ? "bg-white/10 text-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30"}" ${isEnded || isAlreadyJoined ? "disabled" : ""}>${isEnded ? "Event Ended" : isAlreadyJoined ? "Already Joined" : (bookingDraftState.invitees || []).length > 0 ? "Join as Group" : "Join now"}</button>
             <button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button>
         </div>
     `;
@@ -5109,7 +5483,7 @@ function renderHostedEventList() {
                         </div>
                         <div class="text-right">
                             <div class="text-[10px] uppercase text-gray-400 tracking-wider">Status</div>
-                            <div class="font-black ${isEventEndedFromDetails(eventPost.eventDetails) ? "text-rose-300" : "text-emerald-300"}">${isEventEndedFromDetails(eventPost.eventDetails) ? "Ended" : "Live"}</div>
+                            <div class="mt-1">${renderEventLifecycleStatus(eventPost.id, eventPost.eventDetails, { align: "right" })}</div>
                         </div>
                     </div>
                 </div>
@@ -5489,6 +5863,7 @@ const bookingDraftState = {
   invitees: [],
   searchResults: [],
   inviteeStatuses: {},
+  inviteeTierIndexes: {},
 };
 const groupTicketDetailState = {
   ticketId: null,
@@ -5748,6 +6123,54 @@ function selectedBookingTierIndex() {
   const checked = document.querySelector('input[name="booking-tier"]:checked');
   return checked ? Number(checked.value || 0) : 0;
 }
+function bookingTierOptionsForEvent(event) {
+  const fallbackPrice = Number(event?.eventDetails?.price) || 0;
+  const baseFee = inferEventTicketType(event) === "Paid" ? 4 : 0;
+  let tiers = Array.isArray(event?.eventDetails?.ticketTiers)
+    ? event.eventDetails.ticketTiers
+    : [];
+  if (inferEventTicketType(event) === "Paid" && tiers.length === 0) {
+    tiers = [{ name: "General", price: fallbackPrice }];
+  }
+  return tiers.map((tier) => ({
+    name: String(tier?.name || "General").trim() || "General",
+    price: Number(tier?.price || 0) || 0,
+    fee: Number(tier?.fee || baseFee) || baseFee,
+  }));
+}
+function getInviteeTierIndex(userId) {
+  const key = String(userId || "");
+  const storedIndex = Number(bookingDraftState.inviteeTierIndexes[key]);
+  return Number.isFinite(storedIndex) && storedIndex >= 0
+    ? storedIndex
+    : selectedBookingTierIndex();
+}
+function buildBookingParticipantTicketPayload(event) {
+  const ticketType = inferEventTicketType(event);
+  if (ticketType !== "Paid") return {};
+  const tiers = bookingTierOptionsForEvent(event);
+  if (!tiers.length) return {};
+  const payload = {};
+  const selfTier = tiers[selectedBookingTierIndex()] || tiers[0];
+  const selfUserId = Number(state.currentUser.id || 0);
+  if (selfUserId > 0 && selfTier) {
+    payload[String(selfUserId)] = {
+      tierName: selfTier.name,
+      ticketPrice: selfTier.price,
+      serviceFee: selfTier.fee,
+    };
+  }
+  (bookingDraftState.invitees || []).forEach((user) => {
+    const tier = tiers[getInviteeTierIndex(user.userId)] || selfTier || tiers[0];
+    if (!tier) return;
+    payload[String(user.userId)] = {
+      tierName: tier.name,
+      ticketPrice: tier.price,
+      serviceFee: tier.fee,
+    };
+  });
+  return payload;
+}
 function getBookingParticipants() {
   return [
     {
@@ -5776,40 +6199,59 @@ function updateBookingTotal() {
     totalEl.textContent = "Free";
     return;
   }
-  const tierInput = document.querySelector(
-    'input[name="booking-tier"]:checked',
-  );
-  if (!tierInput) return;
-  const ticketPrice = Number(tierInput.dataset.price || 0) || 0;
-  const fee = Number(tierInput.dataset.fee || 0) || 0;
-  const paidCount = Math.max(1, getBookingPaidForUserIds().length);
-  totalEl.textContent =
-    ticketPrice + fee > 0 ? formatInr((ticketPrice + fee) * paidCount) : "Free";
+  const tiers = bookingTierOptionsForEvent(event);
+  if (!tiers.length) return;
+  const paidForUserIds = new Set(getBookingPaidForUserIds());
+  const selfUserId = Number(state.currentUser.id || 0);
+  let total = 0;
+  const selfTier = tiers[selectedBookingTierIndex()] || tiers[0];
+  if (selfTier && selfUserId > 0 && paidForUserIds.has(selfUserId)) {
+    total += selfTier.price + selfTier.fee;
+  }
+  (bookingDraftState.invitees || []).forEach((user) => {
+    if (!paidForUserIds.has(Number(user.userId || 0))) return;
+    const tier = tiers[getInviteeTierIndex(user.userId)] || selfTier || tiers[0];
+    if (!tier) return;
+    total += tier.price + tier.fee;
+  });
+  totalEl.textContent = total > 0 ? formatInr(total) : "Free";
 }
 function renderBookingInvitees() {
   const selectedEl = document.getElementById("booking-invitees");
   const paidListEl = document.getElementById("booking-paid-list");
   const isFree =
     inferEventTicketType(getPostById(currentBookingEventId)) === "Free";
-  if (selectedEl)
+    if (selectedEl)
     selectedEl.innerHTML = bookingDraftState.invitees.length
       ? bookingDraftState.invitees
           .map((user) => {
             const inviteStatus =
               bookingDraftState.inviteeStatuses[String(user.userId)] ||
               "confirmed";
-            return `<div class="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3"><div class="flex items-center justify-between gap-3"><div><div class="font-semibold text-white">@${escapeHtml(user.username)}</div><div class="text-xs text-gray-400">${isFree ? "Choose confirmed or tentative before sending the ticket." : "Included in this group ticket"}</div></div><button type="button" data-action="remove-booking-invitee" data-user-id="${user.userId}" class="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20 transition-colors">Remove</button></div>${isFree ? `<div class="mt-3"><select data-action="booking-invite-status" data-user-id="${user.userId}" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-3 text-sm text-white focus:border-fuchsia-500/50 focus:outline-none"><option value="confirmed" ${inviteStatus === "confirmed" ? "selected" : ""}>Confirm</option><option value="tentative" ${inviteStatus === "tentative" ? "selected" : ""}>Tentative</option></select></div>` : ""}</div>`;
+            const tierOptions = bookingTierOptionsForEvent(
+              getPostById(currentBookingEventId),
+            );
+            const selectedTierIndex = getInviteeTierIndex(user.userId);
+            return `<div class="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3"><div class="flex items-center justify-between gap-3"><div><div class="font-semibold text-white">@${escapeHtml(user.username)}</div><div class="text-xs text-gray-400">${isFree ? "Choose confirmed or tentative before sending the ticket." : "Choose a tier for this person now, or leave them pending."}</div></div><button type="button" data-action="remove-booking-invitee" data-user-id="${user.userId}" class="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20 transition-colors">Remove</button></div>${isFree ? `<div class="mt-3"><select data-action="booking-invite-status" data-user-id="${user.userId}" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-3 text-sm text-white focus:border-fuchsia-500/50 focus:outline-none"><option value="confirmed" ${inviteStatus === "confirmed" ? "selected" : ""}>Confirm</option><option value="tentative" ${inviteStatus === "tentative" ? "selected" : ""}>Tentative</option></select></div>` : tierOptions.length ? `<div class="mt-3"><select data-action="booking-invite-tier" data-user-id="${user.userId}" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-3 text-sm text-white focus:border-fuchsia-500/50 focus:outline-none">${tierOptions.map((tier, index) => `<option value="${index}" ${index === selectedTierIndex ? "selected" : ""}>${escapeHtml(tier.name)} - ${formatInr((Number(tier.price || 0) || 0) + (Number(tier.fee || 0) || 0))}</option>`).join("")}</select></div>` : ""}</div>`;
           })
           .join("")
-      : `<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-4 text-sm text-gray-500">${isFree ? "Add people and mark them confirmed or tentative before you send the ticket." : "Add people to this group booking. You can choose who you pay for now and who stays pending."}</div>`;
+      : `<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-4 text-sm text-gray-500">${isFree ? "Add people and mark them confirmed or tentative before you send the ticket." : "Add people to this group booking. You can set each person's tier before joining."}</div>`;
   if (paidListEl) {
     if (isFree) paidListEl.innerHTML = "";
     else {
+            const tierOptions = bookingTierOptionsForEvent(getPostById(currentBookingEventId));
       paidListEl.innerHTML = getBookingParticipants()
-        .map(
-          (user) =>
-            `<label class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 ${user.isSelf ? "border-cyan-400/30 bg-cyan-500/10" : ""}"><div><div class="font-semibold text-white">${user.isSelf ? "You" : `@${escapeHtml(user.username)}`}</div><div class="text-xs text-gray-400">${user.isSelf ? "Always selected and always paid now" : "Check if you want to pay for this person now"}</div></div><input type="checkbox" name="booking-pay-for" value="${user.userId}" class="h-4 w-4 accent-fuchsia-500" ${user.isSelf ? "checked disabled" : ""}></label>`,
-        )
+        .map((user) => {
+          const tier = user.isSelf
+            ? tierOptions[selectedBookingTierIndex()] || tierOptions[0]
+            : tierOptions[getInviteeTierIndex(user.userId)] ||
+              tierOptions[selectedBookingTierIndex()] ||
+              tierOptions[0];
+          const tierLabel = tier
+            ? `${escapeHtml(tier.name)}${tier.price + tier.fee > 0 ? ` - ${formatInr(tier.price + tier.fee)}` : " - Free"}`
+            : "Tier pending";
+          return `<label class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 ${user.isSelf ? "border-cyan-400/30 bg-cyan-500/10" : ""}"><div><div class="font-semibold text-white">${user.isSelf ? "You" : `@${escapeHtml(user.username)}`}</div><div class="text-xs text-gray-400">${user.isSelf ? "Always selected and always paid now" : "Check if you want to pay for this person now"}</div><div class="mt-1 text-[11px] text-cyan-200">${tierLabel}</div></div><input type="checkbox" name="booking-pay-for" value="${user.userId}" class="h-4 w-4 accent-fuchsia-500" ${user.isSelf ? "checked disabled" : ""}></label>`;
+        })
         .join("");
       paidListEl
         .querySelectorAll('input[name="booking-pay-for"]')
@@ -5819,6 +6261,7 @@ function renderBookingInvitees() {
     }
   }
   updateBookingTotal();
+  if (currentBookingEventId) bindBookingActionButton(currentBookingEventId);
 }
 function renderBookingSearchResults() {
   const resultsEl = document.getElementById("booking-search-results");
@@ -5879,15 +6322,16 @@ function bindBookingActionButton(postId) {
     !existingTicket.canPay;
   const pendingTicket = existingTicket && existingTicket.status === "pending";
   actionButton.disabled = Boolean(isEnded || alreadyJoined);
+  const hasInvitees = (bookingDraftState.invitees || []).length > 0;
   actionButton.textContent = isEnded
     ? "Event Ended"
     : alreadyJoined
       ? "Already Joined"
       : pendingTicket
         ? "Pay & Join"
-        : ticketType === "Free"
-          ? "Join Group Event"
-          : "Book Group Ticket";
+        : hasInvitees
+          ? "Join as Group"
+          : "Join now";
   actionButton.className = `w-full py-4 rounded-xl font-bold text-lg ${actionButton.disabled ? "bg-white/10 text-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-pink-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-fuchsia-500/30"}`;
   actionButton.type = "button";
   actionButton.style.pointerEvents = "auto";
@@ -5908,6 +6352,7 @@ function openBookingModal(postId) {
   bookingDraftState.invitees = [];
   bookingDraftState.searchResults = [];
   bookingDraftState.inviteeStatuses = {};
+  bookingDraftState.inviteeTierIndexes = {};
   const modal = document.getElementById("booking-modal");
   const content = document.getElementById("modal-content");
   const details = document.getElementById("modal-event-details");
@@ -5927,7 +6372,7 @@ function openBookingModal(postId) {
     existingTicket.status === "active" &&
     !existingTicket.canPay;
   const pendingTicket = existingTicket && existingTicket.status === "pending";
-  details.innerHTML = `<div class="flex gap-5 mb-8"><img src="${event.image}" class="w-24 h-32 rounded-2xl object-cover shadow-2xl"><div class="pt-2"><div class="flex items-center gap-2 mb-2 flex-wrap"><h3 class="font-black text-2xl leading-tight text-white">${escapeHtml(event.eventDetails.title)}</h3>${isEnded ? '<span class="px-2 py-1 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ""}${alreadyJoined ? '<span class="px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ""}${pendingTicket ? '<span class="px-2 py-1 rounded-full bg-amber-500/15 text-amber-200 text-[10px] font-bold uppercase tracking-[0.2em]">Pending</span>' : ""}</div><p class="text-fuchsia-400 font-medium mb-1">${escapeHtml(event.eventDetails.date)}</p><p class="text-gray-400 text-sm">${escapeHtml(event.eventDetails.location)}</p>${event.eventDetails.endLabel ? `<p class="text-xs text-gray-500 mt-1">Ends: ${escapeHtml(event.eventDetails.endLabel)}</p>` : ""}${event.eventDetails.mapUrl ? `<a href="${event.eventDetails.mapUrl}" target="_blank" rel="noopener" class="inline-block mt-2 text-xs text-cyan-300 hover:text-cyan-200">Open in Maps</a>` : ""}</div></div><div class="space-y-6">${eventQrMarkup(postId)}${renderEventHighlightsSection("Pre-event Highlights", highlights.before, "before")}${renderEventHighlightsSection("Post-event Highlights", highlights.after, "after")}${alreadyJoined ? `<div class="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4 text-sm text-cyan-100">You already joined this party. Your ticket is visible in My Events with the rest of your group.</div>` : pendingTicket ? `<div class="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">@${escapeHtml(existingTicket.bookedByUsername || existingTicket.username)} added you to this ticket. Open My Events to manage your pending ticket.</div>` : `${ticketType === "Free" ? `<div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5"><span class="font-bold text-gray-300">Free Entry</span><span class="text-sm font-semibold text-emerald-300">No charge</span></div>` : `<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Choose Ticket</div><div class="space-y-2">${ticketTiers.map((tier, index) => `<label class="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 ${isEnded ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-fuchsia-500/40"} transition-colors"><div class="flex items-center gap-3"><input type="radio" name="booking-tier" value="${index}" data-price="${Number(tier.price) || 0}" data-fee="${baseFee}" ${index === 0 ? "checked" : ""} class="accent-fuchsia-500" ${isEnded ? "disabled" : ""}><div><div class="font-semibold text-white">${escapeHtml(tier.name || "General")}</div>${tier.services ? `<div class="text-xs text-gray-400">${escapeHtml(tier.services)}</div>` : ""}</div></div><div class="text-fuchsia-400 font-bold">${formatInr(Number(tier.price) || 0)}</div></label>`).join("")}</div></div>`}<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Add People</div><div class="rounded-3xl border border-white/10 bg-white/[0.03] p-4 space-y-3"><input id="booking-user-search" type="text" placeholder="Search username to add people" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:border-fuchsia-500/50 focus:outline-none"><div id="booking-search-results" class="space-y-2"></div><div id="booking-invitees" class="space-y-2"></div></div></div>${ticketType === "Paid" ? `<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Select Who You Pay For</div><div id="booking-paid-list" class="space-y-2"></div></div>` : `<div class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100">Everyone marked confirmed joins now. Anyone marked tentative gets a pending ticket, a message, and a notification.</div>`}`}<div class="border-t border-white/10 pt-4 flex justify-between items-center"><span class="text-xl font-bold text-white">Total</span><span id="booking-total-amount" class="text-2xl font-black ${isEnded || alreadyJoined ? "text-rose-300" : "text-fuchsia-400"}">${isEnded ? "Closed" : alreadyJoined ? "Joined" : pendingTicket ? (existingTicket.amountDue > 0 ? formatInr(existingTicket.amountDue || 0) : "Pending") : ticketType === "Free" ? "Free" : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)}</span></div><button id="booking-action-btn" data-action="confirm-booking">Loading</button><button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button></div>`;
+  details.innerHTML = `<div class="flex gap-5 mb-8"><img src="${event.image}" class="w-24 h-32 rounded-2xl object-cover shadow-2xl"><div class="pt-2"><div class="flex items-center gap-2 mb-2 flex-wrap"><h3 class="font-black text-2xl leading-tight text-white">${escapeHtml(event.eventDetails.title)}</h3>${isEnded ? '<span class="px-2 py-1 rounded-full bg-rose-500/15 text-rose-300 text-[10px] font-bold uppercase tracking-[0.2em]">Ended</span>' : ""}${alreadyJoined ? '<span class="px-2 py-1 rounded-full bg-cyan-500/15 text-cyan-300 text-[10px] font-bold uppercase tracking-[0.2em]">Joined</span>' : ""}${pendingTicket ? '<span class="px-2 py-1 rounded-full bg-amber-500/15 text-amber-200 text-[10px] font-bold uppercase tracking-[0.2em]">Pending</span>' : ""}</div><p class="text-fuchsia-400 font-medium mb-1">${escapeHtml(event.eventDetails.date)}</p><p class="text-gray-400 text-sm">${escapeHtml(event.eventDetails.location)}</p><div class="mt-2">${renderEventLifecycleStatus(postId, event.eventDetails)}</div>${event.eventDetails.endLabel ? `<p class="text-xs text-gray-500 mt-1">Ends: ${escapeHtml(event.eventDetails.endLabel)}</p>` : ""}${event.eventDetails.mapUrl ? `<a href="${event.eventDetails.mapUrl}" target="_blank" rel="noopener" class="inline-block mt-2 text-xs text-cyan-300 hover:text-cyan-200">Open in Maps</a>` : ""}</div></div><div class="space-y-6">${eventQrMarkup(postId)}${renderEventHighlightsSection("Pre-event Highlights", highlights.before, "before")}${renderEventHighlightsSection("Post-event Highlights", highlights.after, "after")}${alreadyJoined ? `<div class="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4 text-sm text-cyan-100">You already joined this party. Your ticket is visible in My Events with the rest of your group.</div>` : pendingTicket ? `<div class="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">@${escapeHtml(existingTicket.bookedByUsername || existingTicket.username)} added you to this ticket. Open My Events to manage your pending ticket.</div>` : `${ticketType === "Free" ? `<div class="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5"><span class="font-bold text-gray-300">Free Entry</span><span class="text-sm font-semibold text-emerald-300">No charge</span></div>` : `<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Choose Ticket</div><div class="space-y-2">${ticketTiers.map((tier, index) => `<label class="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5 ${isEnded ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-fuchsia-500/40"} transition-colors"><div class="flex items-center gap-3"><input type="radio" name="booking-tier" value="${index}" data-price="${Number(tier.price) || 0}" data-fee="${baseFee}" ${index === 0 ? "checked" : ""} class="accent-fuchsia-500" ${isEnded ? "disabled" : ""}><div><div class="font-semibold text-white">${escapeHtml(tier.name || "General")}</div>${tier.services ? `<div class="text-xs text-gray-400">${escapeHtml(tier.services)}</div>` : ""}</div></div><div class="text-fuchsia-400 font-bold">${formatInr(Number(tier.price) || 0)}</div></label>`).join("")}</div></div>`}<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Add People</div><div class="rounded-3xl border border-white/10 bg-white/[0.03] p-4 space-y-3"><input id="booking-user-search" type="text" placeholder="Search username to add people" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:border-fuchsia-500/50 focus:outline-none"><div id="booking-search-results" class="space-y-2"></div><div id="booking-invitees" class="space-y-2"></div></div></div>${ticketType === "Paid" ? `<div class="space-y-3"><div class="text-sm font-semibold text-gray-300">Select Who You Pay For</div><div id="booking-paid-list" class="space-y-2"></div></div>` : `<div class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100">Everyone marked confirmed joins now. Anyone marked tentative gets a pending ticket, a message, and a notification.</div>`}`}<div class="border-t border-white/10 pt-4 flex justify-between items-center"><span class="text-xl font-bold text-white">Total</span><span id="booking-total-amount" class="text-2xl font-black ${isEnded || alreadyJoined ? "text-rose-300" : "text-fuchsia-400"}">${isEnded ? "Closed" : alreadyJoined ? "Joined" : pendingTicket ? (existingTicket.amountDue > 0 ? formatInr(existingTicket.amountDue || 0) : "Pending") : ticketType === "Free" ? "Free" : formatInr((Number(ticketTiers[0]?.price) || 0) + baseFee)}</span></div><button id="booking-action-btn" data-action="confirm-booking">Loading</button><button data-action="close-booking-modal" class="w-full text-center text-sm text-gray-500 p-2 hover:text-white transition-colors">Cancel</button></div>`;
   if (!isEnded && !alreadyJoined && !pendingTicket) {
     renderBookingInvitees();
     const searchInput = document.getElementById("booking-user-search");
@@ -5937,7 +6382,12 @@ function openBookingModal(postId) {
       );
     details
       .querySelectorAll('input[name="booking-tier"]')
-      .forEach((input) => input.addEventListener("change", updateBookingTotal));
+      .forEach((input) =>
+        input.addEventListener("change", () => {
+          renderBookingInvitees();
+          updateBookingTotal();
+        }),
+      );
     updateBookingTotal();
   }
   bindBookingActionButton(postId);
@@ -5994,6 +6444,7 @@ async function confirmBooking() {
       eventId: Number(String(event.id || "").replace("event-", "")),
       inviteeUserIds: bookingDraftState.invitees.map((user) => user.userId),
       inviteeStatuses,
+      participantTickets: buildBookingParticipantTicketPayload(event),
       paidForUserIds:
         ticketType === "Paid"
           ? getBookingPaidForUserIds()
@@ -6125,67 +6576,25 @@ function selectedDetailTier(ticket) {
   );
 }
 function eventQrMarkup(postId) {
-  return `<div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div class="flex flex-col items-center gap-3 text-center"><div><div class="text-[11px] uppercase tracking-[0.18em] text-gray-500">Event QR</div><div class="mt-1 text-sm text-gray-300">Scan to reopen this event</div></div><div class="rounded-2xl bg-white p-3 shadow-lg"><div id="event-qr-container" class="h-36 w-36"></div></div></div></div>`;
+  return `<div class="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div class="flex flex-col items-center gap-3 text-center"><div><div class="text-[11px] uppercase tracking-[0.18em] text-gray-500">Event QR</div><div class="mt-1 text-sm text-gray-300">Scan to reopen this event</div></div><div class="rounded-2xl bg-white p-3 shadow-lg"><div id="event-qr-container" class="h-36 w-36" data-width="144" data-height="144"></div></div></div></div>`;
 }
 function ticketQrMarkup(ticket, participants) {
-  return `<div class="rounded-3xl border border-white/10 bg-white p-4 text-slate-950"><div class="flex flex-col items-center gap-4 md:flex-row md:items-start md:justify-between"><div><div class="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Entry QR</div><div class="mt-2 text-sm font-bold">${escapeHtml(ticket.event.eventDetails.title || "Event Ticket")}</div><div class="mt-1 text-xs text-slate-500">Ticket ${escapeHtml(String(ticket.id || ""))}</div><div class="mt-1 text-xs text-slate-500">Tier ${escapeHtml(ticket.tierName || "General")}</div></div><div class="rounded-2xl bg-slate-100 p-3 shadow-sm"><div id="ticket-qr-modal-container" class="h-36 w-36"></div></div></div><div class="mt-4 grid grid-cols-2 gap-2 text-[11px]"><div><span class="font-bold">Booked by:</span> @${escapeHtml(ticket.bookedByUsername || ticket.username)}</div><div><span class="font-bold">Group:</span> ${escapeHtml(ticket.groupCode || ticket.id)}</div><div><span class="font-bold">Date:</span> ${escapeHtml(ticket.event.eventDetails.date || "Date TBD")}</div><div><span class="font-bold">People:</span> ${participants.length}</div></div></div>`;
+  return `<div class="rounded-3xl border border-white/10 bg-white p-4 text-slate-950"><div class="flex flex-col items-center gap-4 md:flex-row md:items-start md:justify-between"><div><div class="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Entry QR</div><div class="mt-2 text-sm font-bold">${escapeHtml(ticket.event.eventDetails.title || "Event Ticket")}</div><div class="mt-1 text-xs text-slate-500">Ticket ${escapeHtml(String(ticket.id || ""))}</div><div class="mt-1 text-xs text-slate-500">Tier ${escapeHtml(ticket.tierName || "General")}</div></div><div class="rounded-2xl bg-slate-100 p-3 shadow-sm"><div id="ticket-qr-modal-container" class="h-36 w-36" data-width="144" data-height="144"></div></div></div><div class="mt-4 grid grid-cols-2 gap-2 text-[11px]"><div><span class="font-bold">Booked by:</span> @${escapeHtml(ticket.bookedByUsername || ticket.username)}</div><div><span class="font-bold">Group:</span> ${escapeHtml(ticket.groupCode || ticket.id)}</div><div><span class="font-bold">Date:</span> ${escapeHtml(ticket.event.eventDetails.date || "Date TBD")}</div><div><span class="font-bold">People:</span> ${participants.length}</div></div></div>`;
 }
-function buildQrCode(containerId, data, options = {}) {
-  const qrContainer = document.getElementById(containerId);
-  if (!qrContainer || typeof QRCodeStyling === "undefined") return;
-  qrContainer.innerHTML = "";
-  const startColor = options.startColor || "#22d3ee";
-  const endColor = options.endColor || "#d946ef";
-  const qrCode = new QRCodeStyling({
-    width: options.size || 144,
-    height: options.size || 144,
-    data,
-    margin: 4,
-    qrOptions: { typeNumber: 0, mode: "Byte", errorCorrectionLevel: "H" },
-    image: "/static/img/HX_Logo.PNG",
-    imageOptions: {
-      crossOrigin: "anonymous",
-      margin: 3,
-      imageSize: 0.36,
-      hideBackgroundDots: true,
-    },
-    dotsOptions: {
-      type: "dots",
-      gradient: {
-        type: "linear",
-        rotation: 0.785398,
-        colorStops: [
-          { offset: 0, color: startColor },
-          { offset: 1, color: endColor },
-        ],
-      },
-    },
-    backgroundOptions: { color: "transparent" },
-    cornersSquareOptions: { color: "#0f172a", type: "extra-rounded" },
-    cornersDotOptions: { color: endColor, type: "dot" },
-  });
-  qrCode.append(qrContainer);
+function buildQrCode(containerId, data) {
+  if (typeof HappnixQR === "undefined") return;
+  HappnixQR.generate(containerId, data);
 }
 function renderEventQrCode(postId) {
   buildQrCode(
     "event-qr-container",
     `${window.location.origin}/home/?event=${encodeURIComponent(String(postId || ""))}`,
-    { size: 144 },
   );
 }
 function renderTicketQrCode(ticket) {
-  const isVipTier = String(ticket.tierName || "")
-    .trim()
-    .toLowerCase()
-    .includes("vip");
   buildQrCode(
     "ticket-qr-modal-container",
     `${window.location.origin}/ticket/${ticket.id}/`,
-    {
-      size: 144,
-      startColor: isVipTier ? "#f59e0b" : "#22d3ee",
-      endColor: isVipTier ? "#facc15" : "#d946ef",
-    },
   );
 }
 async function cancelTicket(ticketId) {
@@ -6454,6 +6863,8 @@ if (!window.__finalGroupTicketBindingsBound) {
           bookingDraftState.invitees = [...bookingDraftState.invitees, match];
           bookingDraftState.inviteeStatuses[String(userId)] =
             bookingDraftState.inviteeStatuses[String(userId)] || "confirmed";
+          bookingDraftState.inviteeTierIndexes[String(userId)] =
+            getInviteeTierIndex(userId);
           bookingDraftState.searchResults =
             bookingDraftState.searchResults.filter(
               (user) => Number(user.userId) !== userId,
@@ -6462,6 +6873,7 @@ if (!window.__finalGroupTicketBindingsBound) {
           if (searchInput) searchInput.value = "";
           renderBookingSearchResults();
           renderBookingInvitees();
+          bindBookingActionButton(currentBookingEventId);
         }
         return;
       }
@@ -6476,7 +6888,9 @@ if (!window.__finalGroupTicketBindingsBound) {
           (user) => Number(user.userId) !== userId,
         );
         delete bookingDraftState.inviteeStatuses[String(userId)];
+        delete bookingDraftState.inviteeTierIndexes[String(userId)];
         renderBookingInvitees();
+        bindBookingActionButton(currentBookingEventId);
         return;
       }
       const addGroupInviteeButton = event.target.closest(
@@ -6561,6 +6975,16 @@ if (!window.__finalGroupTicketBindingsBound) {
   document.addEventListener(
     "change",
     (event) => {
+      const inviteTierSelect = event.target.closest(
+        '[data-action="booking-invite-tier"]',
+      );
+      if (inviteTierSelect?.dataset.userId) {
+        bookingDraftState.inviteeTierIndexes[
+          String(inviteTierSelect.dataset.userId)
+        ] = Number(inviteTierSelect.value || 0) || 0;
+        renderBookingInvitees();
+        return;
+      }
       const inviteStatusSelect = event.target.closest(
         '[data-action="booking-invite-status"]',
       );
@@ -6604,3 +7028,16 @@ if (!window.__finalGroupTicketBindingsBound) {
   );
   window.setTimeout(() => loadTickets(), 150);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

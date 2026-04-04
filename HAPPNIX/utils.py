@@ -2,7 +2,10 @@ import segno
 import json
 import random
 from datetime import date
-
+import qrcode
+import qrcode.image.svg
+from io import BytesIO
+ 
 from django.http import JsonResponse
 from django.utils.safestring import mark_safe
 
@@ -25,7 +28,7 @@ def _calculate_age(dob):
     today = date.today()
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
-def generate_hybrid_happnix_qr(data_url):
+"""def generate_hybrid_happnix_qr(data_url):
     # 1. Generate the raw math (High Error Correction)
     qr = segno.make(data_url, error='h')
     matrix = qr.matrix # This gives us the 2D grid of True/False (1s and 0s)
@@ -76,4 +79,28 @@ def generate_hybrid_happnix_qr(data_url):
     svg_parts.append('</svg>')
     
     # mark_safe tells Django this is safe HTML to render, not raw text
-    return mark_safe("".join(svg_parts))
+    return mark_safe("".join(svg_parts))"""
+
+def generate_hybrid_happnix_qr(data):
+    """
+    Generates a custom SVG QR code.
+    Make sure you have installed qrcode: pip install qrcode
+    """
+    # Use SVG path image factory to generate raw SVG XML
+    factory = qrcode.image.svg.SvgPathImage
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=0, # 0 border to fit nicely in your UI
+        image_factory=factory,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    
+    img = qr.make_image()
+    stream = BytesIO()
+    img.save(stream)
+    
+    # Return the raw SVG string
+    return stream.getvalue().decode('utf-8')

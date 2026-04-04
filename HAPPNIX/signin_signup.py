@@ -18,7 +18,7 @@ from django.views.decorators.csrf import csrf_exempt
 from . import mongo_store
 from .models import UserProfile
 
-from .utils import _json_body, _error, _generate_otp, _calculate_age
+from .utils import _json_body, _error, _generate_otp
 
 
 @csrf_exempt
@@ -203,8 +203,6 @@ def register_user_details(request):
     if dob is None:
         return _error("Enter a valid date of birth.")
 
-    if _calculate_age(dob) < 18:
-        return _error("You must be at least 18 years old.")
 
     User = get_user_model()
     if User.objects.filter(username=username).exists():

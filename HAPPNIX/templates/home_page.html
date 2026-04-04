@@ -28,7 +28,7 @@
       type="text/javascript"
       src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"
     ></script>
-    <script src="{% static 'js/qr_generator.js' %}"></script>
+    <script src="{% static 'js/qr_generator.js' %}?v=20260402b"></script>
     <!-- Custom Config for Party Theme -->
     <script src="{% static 'js/home_page_tailwind.js' %}?v=20260320c"></script>
     <script src="{% static 'js/mobile_navigation_tailwind.js' %}?v=20260320c"></script>
@@ -371,7 +371,7 @@
               <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
               <span
                 id="mobile-message-badge"
-                class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"
+                class="hidden absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1.5 rounded-full bg-fuchsia-500 text-[10px] font-black text-white items-center justify-center shadow-[0_0_12px_rgba(217,70,239,0.55)]"
               ></span>
             </button>
           </div>
@@ -441,7 +441,7 @@
               <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
               <span
                 id="desktop-message-badge"
-                class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-fuchsia-500 text-[10px] font-bold text-white items-center justify-center"
+                class="hidden absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1.5 rounded-full bg-fuchsia-500 text-[10px] font-black text-white items-center justify-center shadow-[0_0_12px_rgba(217,70,239,0.55)]"
               ></span>
             </button>
           </div>
@@ -1281,7 +1281,8 @@
       {"csrfToken":"{{ csrf_token|escapejs }}","currentAvatarUrl":"{{ current_avatar_url|default:''|escapejs }}","currentUsername":"{{ current_username|default:'party_alex'|escapejs }}","manifestData":{{ manifest_data_json|safe }}}
     </script>
     <script src="{% static 'js/mobile_navigation.js' %}?v=20260320c"></script>
-    <script src="{% static 'js/home_page.js' %}?v=20260320c"></script>
-    <script src="{% static 'js/messages.js' %}?v=20260325a"></script>
+    <script src="{% static 'js/frontend_config.js' %}?v=20260403a"></script>
+    <script src="{% static 'js/home_page.js' %}?v=20260403a"></script>
+    <script src="{% static 'js/messages.js' %}?v=20260404a"></script>
   </body>
 </html>

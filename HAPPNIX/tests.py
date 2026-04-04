@@ -210,6 +210,49 @@ class EventCreationApiTests(TestCase):
         self.assertEqual(len(event.ticket_tiers), 2)
         self.assertEqual(event.ticket_tiers[0]['name'], 'Regular')
 
+
+    def test_event_creation_allows_duration_longer_than_24_hours_up_to_10_days(self):
+        self.client.force_login(self.host)
+        response = self.client.post(
+            '/api/events/create',
+            data={
+                'title': 'Long Weekend',
+                'description': 'Extended celebration',
+                'startLabel': '2099-04-03 10:00',
+                'endLabel': '2099-04-13 09:59',
+                'locationName': 'Jaipur',
+                'latitude': '26.9124',
+                'longitude': '75.7873',
+                'currency': 'INR',
+                'ticketType': 'Free',
+                'price': '0',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        event = Event.objects.get(title='Long Weekend')
+        self.assertEqual(event.start_label, '2099-04-03 10:00')
+        self.assertEqual(event.end_label, '2099-04-13 09:59')
+
+    def test_event_creation_rejects_duration_beyond_ten_days_from_start(self):
+        self.client.force_login(self.host)
+        response = self.client.post(
+            '/api/events/create',
+            data={
+                'title': 'Too Long Festival',
+                'description': 'Extended celebration',
+                'startLabel': '2099-04-03 10:00',
+                'endLabel': '2099-04-13 10:00',
+                'locationName': 'Jaipur',
+                'latitude': '26.9124',
+                'longitude': '75.7873',
+                'currency': 'INR',
+                'ticketType': 'Free',
+                'price': '0',
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('10 days', response.json()['message'])
+
 class EventTicketApiTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -462,6 +505,41 @@ class EventTicketApiTests(TestCase):
         self.assertEqual(friend_ticket.tier_name, 'VIP')
         self.assertEqual(friend_ticket.ticket_price, Decimal('499'))
 
+    def test_group_booking_can_use_different_tiers_for_different_people(self):
+        self.client.force_login(self.guest)
+        response = self.client.post(
+            '/api/tickets/book',
+            data=json.dumps({
+                'eventId': self.event.id,
+                'inviteeUserIds': [self.friend.id],
+                'paidForUserIds': [self.guest.id, self.friend.id],
+                'tierName': 'Regular',
+                'ticketPrice': '199',
+                'serviceFee': '4',
+                'participantTickets': {
+                    str(self.guest.id): {
+                        'tierName': 'Regular',
+                        'ticketPrice': '199',
+                        'serviceFee': '4',
+                    },
+                    str(self.friend.id): {
+                        'tierName': 'VIP',
+                        'ticketPrice': '499',
+                        'serviceFee': '4',
+                    },
+                },
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        owner_ticket = EventTicket.objects.get(attendee=self.guest, event=self.event)
+        friend_ticket = EventTicket.objects.get(attendee=self.friend, event=self.event)
+        self.assertEqual(owner_ticket.tier_name, 'Regular')
+        self.assertEqual(owner_ticket.ticket_price, Decimal('199'))
+        self.assertEqual(friend_ticket.tier_name, 'VIP')
+        self.assertEqual(friend_ticket.ticket_price, Decimal('499'))
+        self.assertEqual(friend_ticket.status, EventTicket.Status.ACTIVE)
+
     def test_cancelling_paid_ticket_generates_refund_transaction_id(self):
         self.client.force_login(self.guest)
         booked = self.client.post(
@@ -600,6 +678,51 @@ class DirectMessageWebSocketTests(TransactionTestCase):
 
         asyncio.run(run_case())
 
+    def test_presence_updates_are_broadcast_on_connect_and_disconnect(self):
+        user_model = get_user_model()
+        alice = user_model.objects.create_user(
+            username='socket_alice',
+            password='pass12345',
+            email='socket_alice@example.com',
+        )
+        bob = user_model.objects.create_user(
+            username='socket_bob',
+            password='pass12345',
+            email='socket_bob@example.com',
+        )
+        UserProfile.objects.create(user=alice, sex='other', date_of_birth='2000-01-05', mobile='7777777705')
+        UserProfile.objects.create(user=bob, sex='other', date_of_birth='2000-01-06', mobile='7777777706')
+        DirectConversation.objects.create(user_one=alice, user_two=bob)
+
+        async def run_case():
+            bob_socket = WebsocketCommunicator(application, '/ws/messages/')
+            bob_socket.scope['user'] = bob
+            connected, _subprotocol = await bob_socket.connect()
+            self.assertTrue(connected)
+            self.assertEqual((await bob_socket.receive_json_from())['type'], 'socket.connected')
+
+            alice_socket = WebsocketCommunicator(application, '/ws/messages/')
+            alice_socket.scope['user'] = alice
+            connected, _subprotocol = await alice_socket.connect()
+            self.assertTrue(connected)
+            self.assertEqual((await alice_socket.receive_json_from())['type'], 'socket.connected')
+
+            online_event = await bob_socket.receive_json_from()
+            self.assertEqual(online_event['type'], 'presence.updated')
+            self.assertEqual(online_event['userId'], alice.id)
+            self.assertTrue(online_event['isOnline'])
+
+            await alice_socket.disconnect()
+
+            offline_event = await bob_socket.receive_json_from()
+            self.assertEqual(offline_event['type'], 'presence.updated')
+            self.assertEqual(offline_event['userId'], alice.id)
+            self.assertFalse(offline_event['isOnline'])
+
+            await bob_socket.disconnect()
+
+        asyncio.run(run_case())
+
 
 @override_settings(MEDIA_ROOT=r"E:\\project\\Party_connect_hub_redefine\\media_test")
 class DirectMessageAttachmentAndActionsTests(TestCase):
@@ -727,3 +850,4 @@ class DirectMessageAttachmentAndActionsTests(TestCase):
         self.assertEqual(forwarded_message.forwarded_from_id, original_message_id)
         self.assertEqual(forwarded_message.body, 'Look at this poster')
         self.assertEqual(forwarded_message.attachments.count(), 1)
+

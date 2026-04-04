@@ -1,4 +1,4 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, time, timedelta
 from math import asin, cos, radians, sin, sqrt
 import json
@@ -9,7 +9,7 @@ import uuid
 from django.contrib.auth import get_user_model
 from django.contrib.auth import logout
 from django.db.models import F, Q
-from django.db import transaction
+from django.db import connection, transaction
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template import loader
 from django.http import Http404, HttpResponse, JsonResponse
@@ -27,6 +27,95 @@ from . import mongo_store
 from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile, EventTicket
 from .messaging import _broadcast_message_created
 from .utils import _error, _json_body, generate_hybrid_happnix_qr
+
+
+def _safe_profile(user):
+    try:
+        return user.profile
+    except (AttributeError, UserProfile.DoesNotExist):
+        return None
+
+
+EVENT_COORDINATE_QUANTIZER = Decimal("0.000001")
+EVENT_PRICE_QUANTIZER = Decimal("0.01")
+EVENT_PRICE_MAX = Decimal("999999.99")
+
+
+def _normalize_decimal(value, *, quantizer, minimum=None, maximum=None):
+    try:
+        normalized = Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        normalized = minimum if minimum is not None else Decimal("0")
+    if minimum is not None and normalized < minimum:
+        normalized = minimum
+    if maximum is not None and normalized > maximum:
+        normalized = maximum
+    return normalized
+
+
+def _repair_invalid_event_numeric_storage(host_id=None):
+    table_name = Event._meta.db_table
+    select_sql = f"SELECT id, latitude, longitude, price, ticket_tiers FROM {table_name}"
+    params = []
+    if host_id is not None:
+        select_sql += " WHERE host_id = %s"
+        params.append(int(host_id))
+
+    with connection.cursor() as cursor:
+        cursor.execute(select_sql, params)
+        rows = cursor.fetchall()
+        for event_id, latitude, longitude, price, ticket_tiers in rows:
+            safe_latitude = _normalize_decimal(
+                latitude,
+                quantizer=EVENT_COORDINATE_QUANTIZER,
+                minimum=Decimal("-90"),
+                maximum=Decimal("90"),
+            )
+            safe_longitude = _normalize_decimal(
+                longitude,
+                quantizer=EVENT_COORDINATE_QUANTIZER,
+                minimum=Decimal("-180"),
+                maximum=Decimal("180"),
+            )
+            safe_price = _normalize_decimal(
+                price,
+                quantizer=EVENT_PRICE_QUANTIZER,
+                minimum=Decimal("0"),
+                maximum=EVENT_PRICE_MAX,
+            )
+            parsed_ticket_tiers = []
+            if isinstance(ticket_tiers, str) and ticket_tiers.strip():
+                try:
+                    parsed_ticket_tiers = json.loads(ticket_tiers)
+                except (TypeError, ValueError):
+                    parsed_ticket_tiers = []
+            elif isinstance(ticket_tiers, list):
+                parsed_ticket_tiers = ticket_tiers
+            safe_ticket_tiers = []
+            for tier in parsed_ticket_tiers if isinstance(parsed_ticket_tiers, list) else []:
+                if not isinstance(tier, dict):
+                    continue
+                safe_ticket_tiers.append({
+                    **tier,
+                    "price": float(_normalize_decimal(
+                        tier.get("price", 0) or 0,
+                        quantizer=EVENT_PRICE_QUANTIZER,
+                        minimum=Decimal("0"),
+                        maximum=EVENT_PRICE_MAX,
+                    )),
+                })
+            safe_ticket_tiers_json = json.dumps(safe_ticket_tiers)
+            current_ticket_tiers_json = ticket_tiers if isinstance(ticket_tiers, str) else json.dumps(ticket_tiers or [])
+            if (
+                str(latitude) != str(safe_latitude)
+                or str(longitude) != str(safe_longitude)
+                or str(price) != str(safe_price)
+                or current_ticket_tiers_json != safe_ticket_tiers_json
+            ):
+                cursor.execute(
+                    f"UPDATE {table_name} SET latitude = %s, longitude = %s, price = %s, ticket_tiers = %s WHERE id = %s",
+                    [str(safe_latitude), str(safe_longitude), str(safe_price), safe_ticket_tiers_json, event_id],
+                )
 
 
 def _load_manifest_data():
@@ -88,7 +177,7 @@ def Home_page(request):
         return redirect("/signin/")
 
     template = loader.get_template('home_page.html')
-    profile = getattr(request.user, "profile", None)
+    profile = _safe_profile(request.user)
     mongo_profile = mongo_store.profile_for_user(request.user.id)
     manifest_data = _load_manifest_data()
     is_verified = profile.gov_id_verified if profile else False
@@ -166,10 +255,29 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 def _resolved_ticketing(event):
     raw_ticket_type = str(getattr(event, "ticket_type", "") or "").strip()
     raw_ticket_tiers = getattr(event, "ticket_tiers", []) or []
-    has_paid_tiers = isinstance(raw_ticket_tiers, list) and any(float((tier or {}).get("price") or 0) > 0 for tier in raw_ticket_tiers if isinstance(tier, dict))
-    price_value = float(getattr(event, "price", 0) or 0)
+    safe_ticket_tiers = []
+    if isinstance(raw_ticket_tiers, list):
+        for tier in raw_ticket_tiers:
+            if not isinstance(tier, dict):
+                continue
+            safe_ticket_tiers.append({
+                **tier,
+                "price": float(_normalize_decimal(
+                    tier.get("price", 0) or 0,
+                    quantizer=EVENT_PRICE_QUANTIZER,
+                    minimum=Decimal("0"),
+                    maximum=EVENT_PRICE_MAX,
+                )),
+            })
+    has_paid_tiers = any(float((tier or {}).get("price") or 0) > 0 for tier in safe_ticket_tiers)
+    price_value = float(_normalize_decimal(
+        getattr(event, "price", 0) or 0,
+        quantizer=EVENT_PRICE_QUANTIZER,
+        minimum=Decimal("0"),
+        maximum=EVENT_PRICE_MAX,
+    ))
     if raw_ticket_type == "Paid" or has_paid_tiers or price_value > 0:
-        return "Paid", raw_ticket_tiers if isinstance(raw_ticket_tiers, list) else []
+        return "Paid", safe_ticket_tiers
     if raw_ticket_type == "Guestlist":
         return "Guestlist", []
     return "Free", []
@@ -278,11 +386,8 @@ def _event_is_live(event, now=None):
 
 def view_ticket_page(request, ticket_id):
     ticket = get_object_or_404(EventTicket, id=ticket_id, attendee=request.user)
-    verify_url = f"https://happnix.com/api/tickets/{ticket.id}/verify"
-    custom_qr_svg = generate_hybrid_happnix_qr(verify_url)
     return render(request, 'ticket_view.html', {
         'ticket': ticket,
-        'custom_qr_svg': custom_qr_svg # Pass it to the frontend
     })
 
 def _ticket_is_expired(ticket, now=None):
@@ -316,9 +421,17 @@ def _group_tickets_for(ticket):
 def _serialize_ticket(ticket):
     now = timezone.localtime()
     group_tickets = _group_tickets_for(ticket)
+    ticket_data = f"happnix://ticket/{ticket.id}/{ticket.attendee_id}"
+    try:
+        qr_svg = generate_hybrid_happnix_qr(ticket_data)
+    except Exception as e:
+        print(f"QR Generation Failed for Ticket {ticket.id}: {e}") # Check your terminal for this!
+        qr_svg = ""
+        
     return {
         "id": ticket.id,
         "groupCode": ticket.group_code or str(ticket.id),
+        "qrCodeSvg": qr_svg,
         "status": ticket.status,
         "qty": int(ticket.quantity or 1),
         "userId": ticket.attendee_id,
@@ -434,6 +547,26 @@ def _resolved_ticket_payload(payload, fallback_tier_name, fallback_ticket_price,
         service_fee = Decimal(str(fallback_service_fee or "0"))
     return tier_name, max(ticket_price, Decimal("0")), max(service_fee, Decimal("0"))
 
+
+def _participant_ticket_payloads(payload, allowed_user_ids, fallback_tier_name, fallback_ticket_price, fallback_service_fee):
+    resolved = {}
+    raw_map = payload.get("participantTickets") or {}
+    if not isinstance(raw_map, dict):
+        return resolved
+    for raw_user_id, raw_ticket_payload in raw_map.items():
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id not in allowed_user_ids or not isinstance(raw_ticket_payload, dict):
+            continue
+        resolved[user_id] = _resolved_ticket_payload(
+            raw_ticket_payload,
+            fallback_tier_name,
+            fallback_ticket_price,
+            fallback_service_fee,
+        )
+    return resolved
 
 def _ticket_conflict_queryset(event, user_ids):
     return EventTicket.objects.filter(
@@ -554,9 +687,11 @@ def _build_event_schedule(payload):
 
     if end_at is not None:
         duration_minutes = int((end_at - start_at).total_seconds() // 60)
-        if duration_minutes < 30 or duration_minutes > 24 * 60:
-            raise ValueError("Event duration must be between 30 min and 24 hr.")
-
+        if duration_minutes < 30:
+            raise ValueError("Event duration must be at least 30 min.")
+        max_end_at = start_at + timedelta(days=10) - timedelta(minutes=1)
+        if end_at > max_end_at:
+            raise ValueError("Event end time cannot be more than 10 days from the start date and time.")
     if not end_label and end_at is not None:
         end_label = timezone.localtime(end_at).strftime("%Y-%m-%d %H:%M")
 
@@ -590,21 +725,39 @@ def create_event_api(request):
         return _error("Event location is required.")
 
     try:
-        latitude = float(payload.get("latitude"))
-        longitude = float(payload.get("longitude"))
+        latitude = _normalize_decimal(
+            payload.get("latitude"),
+            quantizer=EVENT_COORDINATE_QUANTIZER,
+            minimum=Decimal("-90"),
+            maximum=Decimal("90"),
+        )
+        longitude = _normalize_decimal(
+            payload.get("longitude"),
+            quantizer=EVENT_COORDINATE_QUANTIZER,
+            minimum=Decimal("-180"),
+            maximum=Decimal("180"),
+        )
     except (TypeError, ValueError):
         return _error("Valid latitude and longitude are required.")
 
-    if latitude < -90 or latitude > 90 or longitude < -180 or longitude > 180:
+    try:
+        raw_latitude = float(payload.get("latitude"))
+        raw_longitude = float(payload.get("longitude"))
+    except (TypeError, ValueError):
+        return _error("Valid latitude and longitude are required.")
+
+    if raw_latitude < -90 or raw_latitude > 90 or raw_longitude < -180 or raw_longitude > 180:
         return _error("Latitude/longitude values are out of valid range.")
 
     try:
-        price = Decimal(str(payload.get("price", 0) or 0))
+        price = _normalize_decimal(
+            payload.get("price", 0) or 0,
+            quantizer=EVENT_PRICE_QUANTIZER,
+            minimum=Decimal("0"),
+            maximum=EVENT_PRICE_MAX,
+        )
     except (InvalidOperation, TypeError, ValueError):
         return _error("Price must be a valid number.")
-
-    if price < 0:
-        return _error("Price cannot be negative.")
 
     ticket_type = str(payload.get("ticketType", "Free")).strip() or "Free"
     if ticket_type not in {"Free", "Paid", "Guestlist"}:
@@ -622,12 +775,17 @@ def create_event_api(request):
                 continue
             tier_name = str(tier.get("name", "")).strip() or "General"
             try:
-                tier_price = Decimal(str(tier.get("price", 0) or 0))
+                tier_price = _normalize_decimal(
+                    tier.get("price", 0) or 0,
+                    quantizer=EVENT_PRICE_QUANTIZER,
+                    minimum=Decimal("0"),
+                    maximum=EVENT_PRICE_MAX,
+                )
             except (InvalidOperation, TypeError, ValueError):
                 tier_price = Decimal("0")
             clean_ticket_tiers.append({
                 "name": tier_name,
-                "price": float(max(tier_price, Decimal("0"))),
+                "price": float(tier_price),
                 "qty": str(tier.get("qty", "") or "").strip(),
                 "flex": bool(tier.get("flex", False)),
                 "services": str(tier.get("services", "") or "").strip(),
@@ -635,7 +793,15 @@ def create_event_api(request):
     if ticket_type == "Paid":
         if not clean_ticket_tiers:
             return _error("Please add at least one paid ticket tier.")
-        price = min(Decimal(str(tier.get("price", 0) or 0)) for tier in clean_ticket_tiers)
+        price = min(
+            _normalize_decimal(
+                tier.get("price", 0) or 0,
+                quantizer=EVENT_PRICE_QUANTIZER,
+                minimum=Decimal("0"),
+                maximum=EVENT_PRICE_MAX,
+            )
+            for tier in clean_ticket_tiers
+        )
     else:
         clean_ticket_tiers = []
         if ticket_type == "Free":
@@ -784,6 +950,7 @@ def delete_event_api(request, event_id):
 
 @require_GET
 def live_events_api(request):
+    _repair_invalid_event_numeric_storage()
     now = timezone.localtime()
     queryset = (
         Event.objects.filter(is_active=True, status=Event.EventStatus.PUBLISHED)
@@ -810,6 +977,7 @@ def live_events_api(request):
 
 @require_GET
 def nearby_events_api(request):
+    _repair_invalid_event_numeric_storage()
     try:
         latitude = float(request.GET.get("latitude", ""))
         longitude = float(request.GET.get("longitude", ""))
@@ -878,6 +1046,8 @@ def my_events_api(request):
     if not request.user.is_authenticated:
         return _error("Please sign in first.", status=401)
 
+    _repair_invalid_event_numeric_storage(request.user.id)
+
     queryset = (
         Event.objects.filter(host=request.user)
         .select_related("host")
@@ -889,7 +1059,7 @@ def my_events_api(request):
 
 
 def _is_private_account(user):
-    profile = getattr(user, "profile", None)
+    profile = _safe_profile(user)
     return bool(getattr(profile, "is_private", False))
 
 
@@ -985,7 +1155,7 @@ def _profile_counts(user):
 
 def _basic_user_payload(user):
     mongo_profile = mongo_store.profile_for_user(user.id) or {}
-    profile = getattr(user, "profile", None)
+    profile = _safe_profile(user)
     return {
         "sql_user_id": user.id,
         "username": user.username,
@@ -1047,7 +1217,7 @@ def _log_event_published_notifications(host_user, event):
 
 def _serialize_public_profile(viewer, user):
     mongo_profile = mongo_store.profile_for_user(user.id) or {}
-    profile = getattr(user, "profile", None)
+    profile = _safe_profile(user)
     can_view_content = _can_view_private_content(viewer, user)
     hosted_events_qs = (
         Event.objects.filter(host=user, status=Event.EventStatus.PUBLISHED, is_active=True)
@@ -1109,8 +1279,8 @@ def search_users_api(request):
                 "sql_user_id": row.id,
                 "username": row.username,
                 "full_name": row.first_name or "",
-                "profile_picture_url": getattr(getattr(row, "profile", None), "profile_picture_url", ""),
-                "is_private": bool(getattr(getattr(row, "profile", None), "is_private", False)),
+                "profile_picture_url": getattr(_safe_profile(row), "profile_picture_url", ""),
+                "is_private": bool(getattr(_safe_profile(row), "is_private", False)),
             }
             for row in fallback_qs
         ],
@@ -1395,7 +1565,11 @@ def notifications_api(request):
         return _error("limit must be an integer.")
 
     notifications = mongo_store.notifications_for_user(request.user.id, limit=limit)
-    unread_count = mongo_store.unread_notification_count(request.user.id)
+    notifications = [
+        item for item in notifications
+        if str(item.get("activity_type", "")).strip().lower() != "message"
+    ]
+    unread_count = sum(1 for item in notifications if not item.get("is_read"))
     return JsonResponse({"count": len(notifications), "unreadCount": unread_count, "notifications": notifications})
 
 
@@ -1524,6 +1698,13 @@ def book_ticket_api(request):
         service_fee = Decimal("0")
     ticket_price = max(ticket_price, Decimal("0"))
     service_fee = max(service_fee, Decimal("0"))
+    participant_ticket_payloads = _participant_ticket_payloads(
+        payload,
+        set(participant_ids),
+        ticket_tier_name,
+        ticket_price,
+        service_fee,
+    )
 
     users = list(get_user_model().objects.filter(id__in=participant_ids).order_by("id"))
     if len(users) != len(participant_ids):
@@ -1558,16 +1739,20 @@ def book_ticket_api(request):
         created_tickets = []
         active_count = 0
         for user in users:
+            user_tier_name, user_ticket_price, user_service_fee = participant_ticket_payloads.get(
+                user.id,
+                (ticket_tier_name, ticket_price, service_fee),
+            )
             if user.id == request.user.id:
                 payment_fields = _ticket_payment_fields(
-                    ticket_price,
-                    service_fee if ticket_price > 0 else Decimal("0"),
+                    user_ticket_price,
+                    user_service_fee if user_ticket_price > 0 else Decimal("0"),
                     True,
                     request.user,
                     "confirmed",
                     "",
                 )
-            elif ticket_price <= 0:
+            elif user_ticket_price <= 0:
                 invite_status = invitee_statuses.get(user.id, "confirmed")
                 payment_fields = _ticket_payment_fields(
                     Decimal("0"),
@@ -1579,8 +1764,8 @@ def book_ticket_api(request):
                 )
             else:
                 payment_fields = _ticket_payment_fields(
-                    ticket_price,
-                    service_fee,
+                    user_ticket_price,
+                    user_service_fee,
                     user.id in payer_ids,
                     request.user,
                     "confirmed",
@@ -1592,9 +1777,9 @@ def book_ticket_api(request):
             defaults = {
                 "booked_by": request.user,
                 "group_code": group_code,
-                "tier_name": ticket_tier_name,
-                "ticket_price": ticket_price,
-                "service_fee": service_fee if ticket_price > 0 else Decimal("0"),
+                "tier_name": user_tier_name,
+                "ticket_price": user_ticket_price,
+                "service_fee": user_service_fee if user_ticket_price > 0 else Decimal("0"),
                 "quantity": 1,
                 "cancelled_at": None,
                 "archived_at": None,
@@ -1936,7 +2121,7 @@ def current_profile_api(request):
         return _error("Please sign in first.", status=401)
 
     mongo_profile = mongo_store.profile_for_user(request.user.id) or {}
-    profile = getattr(request.user, "profile", None)
+    profile = _safe_profile(request.user)
     payload = {
         "sql_user_id": request.user.id,
         "username": request.user.username,
@@ -1979,4 +2164,6 @@ def view_ticket(request, ticket_id):
         "ticket_payload": _serialize_ticket(ticket),
     }
     return render(request, "ticket_view.html", context)
+
+
 

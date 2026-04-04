@@ -64,6 +64,7 @@
     socketConnected: false,
     socketReconnectTimer: null,
     socketReconnectDelayMs: 1500,
+    socketShouldReconnect: false,
     pendingAttachments: [],
     mediaRecorder: null,
     recordingStream: null,
@@ -80,6 +81,7 @@
     isTyping: false,
     typingIndicators: {},
     mobileView: "list",
+    nextLocalMessageId: -1,
   };
 
   function stopTypingSignal() {
@@ -168,6 +170,127 @@
       : date.toLocaleDateString([], { month: "short", day: "numeric" });
   }
 
+  function messageDeliveryState(message) {
+    if (!message?.isOwn) return null;
+    if (message.readAt) return "read";
+    return message.localStatus || "sent";
+  }
+
+  function getFrontendConfigValue(path, fallbackValue) {
+    if (window.HappnixFrontendConfig && typeof window.HappnixFrontendConfig.get === "function") {
+      return window.HappnixFrontendConfig.get(path, fallbackValue);
+    }
+    return fallbackValue;
+  }
+
+  function renderMessageStatusDot(message) {
+    const status = messageDeliveryState(message);
+    if (!status) return "";
+    const positionClass = getFrontendConfigValue(
+      "messaging.statusDot.positionClass",
+      "absolute bottom-3 right-3",
+    );
+    const sizeClass = getFrontendConfigValue(
+      "messaging.statusDot.sizeClass",
+      "h-2.5 w-2.5",
+    );
+    const transitionClass = getFrontendConfigValue(
+      "messaging.statusDot.transitionClass",
+      "transition-all duration-500 ease-out",
+    );
+    const stateConfig = getFrontendConfigValue(
+      `messaging.statusDot.states.${status}`,
+      null,
+    ) || getFrontendConfigValue("messaging.statusDot.states.delivered", {});
+    const label = String(
+      stateConfig.label ||
+        getFrontendConfigValue("messaging.statusDot.states.delivered.label", "Delivered"),
+    );
+    const className = String(
+      stateConfig.className ||
+        getFrontendConfigValue("messaging.statusDot.states.delivered.className", "bg-white"),
+    );
+    return `<span class="${positionClass} inline-flex ${sizeClass} rounded-full ${transitionClass} ${className}" title="${label}" aria-label="${label}"></span>`;
+  }
+
+  function renderRetryFailedMessageButton(message) {
+    if (!message?.isOwn || message.localStatus !== "failed") return "";
+    return `<button type="button" data-message-action="retry-failed-message" data-message-id="${message.id}" class="absolute -left-11 bottom-2 inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-100 shadow-[0_0_16px_rgba(244,63,94,0.25)] transition-all duration-300 hover:bg-rose-500/25 hover:text-white" title="Resend message" aria-label="Resend message"><i data-lucide="alert-circle" class="h-4.5 w-4.5"></i></button>`;
+  }
+
+  function messageMetaRow(message) {
+    const parts = [escapeHtml(formatTime(message.createdAt))];
+    if (message.isEdited) parts.push("(edited)");
+    const tone = message.isOwn ? "text-fuchsia-100/80" : "text-gray-400";
+    if (message.isOwn) {
+      return `<div class="relative mt-2 pr-5 text-right text-[11px] ${tone} transition-all duration-500 ease-out">${renderRetryFailedMessageButton(message)}<span>${parts.filter(Boolean).join(" ")}</span>${renderMessageStatusDot(message)}</div>`;
+    }
+    return `<div class="mt-2 text-[11px] ${tone}"><span>${parts.filter(Boolean).join(" ")}</span></div>`;
+  }
+
+  function serializePendingAttachments(items) {
+    return (items || []).map((item) => ({
+      localId: item.localId,
+      file: item.file,
+      kind: item.kind,
+      previewUrl: item.previewUrl,
+      durationSeconds: item.durationSeconds || null,
+    }));
+  }
+
+  function buildOptimisticMessage(conversation, body, options = {}) {
+    const localAttachments = serializePendingAttachments(options.attachments || []);
+    return {
+      id: state.nextLocalMessageId--,
+      conversationId: Number(conversation.id),
+      body,
+      senderId: null,
+      senderUsername: "",
+      isOwn: true,
+      isEdited: false,
+      isUnsent: false,
+      isForwarded: false,
+      forwardedFrom: null,
+      repliedTo: options.repliedTo || null,
+      hasAttachments: localAttachments.length > 0,
+      attachments: [],
+      localAttachments,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      readAt: null,
+      editedAt: null,
+      unsentAt: null,
+      canEdit: false,
+      canDelete: false,
+      canUnsend: false,
+      canForward: false,
+      canReply: false,
+      localStatus: "sending",
+      isLocalOnly: true,
+      localReplyingToMessageId: options.replyingToMessageId || null,
+    };
+  }
+
+  function normalizeIncomingMessage(message, options = {}) {
+    if (!message) return message;
+    const normalized = { ...message };
+    if (!normalized.isOwn) return normalized;
+    if (normalized.readAt) {
+      normalized.localStatus = "read";
+      return normalized;
+    }
+    if (options.statusOverride) {
+      normalized.localStatus = options.statusOverride;
+      return normalized;
+    }
+    if (options.markDelivered) {
+      normalized.localStatus = "delivered";
+      return normalized;
+    }
+    normalized.localStatus = normalized.localStatus || "sent";
+    return normalized;
+  }
+
   function formatBytes(value) {
     const size = Number(value || 0);
     if (size < 1024) return `${size} B`;
@@ -175,16 +298,25 @@
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function getDynamicOnlineStatus(lastActive) {
+  function getDynamicOnlineStatus(userOrLastActive) {
+    if (userOrLastActive && typeof userOrLastActive === "object") {
+      if (typeof userOrLastActive.isOnline === "boolean") return userOrLastActive.isOnline;
+      return getDynamicOnlineStatus(userOrLastActive.lastActive);
+    }
+    const lastActive = userOrLastActive;
     if (!lastActive || lastActive === "undefined") return false;
     const date = new Date(lastActive);
     if (isNaN(date.getTime())) return false;
     return new Date() - date < 45000;
   }
 
-  function getActiveStatusText(lastActive) {
-    const isOnline = getDynamicOnlineStatus(lastActive);
+  function getActiveStatusText(userOrLastActive) {
+    const isOnline = getDynamicOnlineStatus(userOrLastActive);
     if (isOnline) return "Online";
+    const lastActive =
+      userOrLastActive && typeof userOrLastActive === "object"
+        ? userOrLastActive.lastActive
+        : userOrLastActive;
     if (!lastActive || lastActive === "undefined") return "Offline";
 
     const date = new Date(lastActive);
@@ -204,8 +336,8 @@
     return `Active ${date.toLocaleDateString([], { month: "short", day: "numeric" })}`;
   }
 
-  function formatActiveStatus(lastActive) {
-    const label = getActiveStatusText(lastActive);
+  function formatActiveStatus(userOrLastActive) {
+    const label = getActiveStatusText(userOrLastActive);
     const isOnline = label === "Online";
     return `<span class="${isOnline ? "text-emerald-400 font-medium tracking-wide flex items-center gap-1.5" : "text-gray-400"}">${isOnline ? '<span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>' : ""}${escapeHtml(label)}</span>`;
   }
@@ -242,7 +374,7 @@
       typingMarkup: isTyping
         ? '<span class="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Typing...</span>'
         : "",
-      presenceMarkup: `<span class="inline-flex items-center gap-1 rounded-full border ${getDynamicOnlineStatus(other.lastActive) ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-gray-400"} px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"><span class="h-1.5 w-1.5 rounded-full ${getDynamicOnlineStatus(other.lastActive) ? "bg-emerald-400" : "bg-gray-500"}"></span>${escapeHtml(getActiveStatusText(other.lastActive))}</span>`,
+      presenceMarkup: `<span class="inline-flex items-center gap-1 rounded-full border ${getDynamicOnlineStatus(other) ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-gray-400"} px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"><span class="h-1.5 w-1.5 rounded-full ${getDynamicOnlineStatus(other) ? "bg-emerald-400" : "bg-gray-500"}"></span>${escapeHtml(getActiveStatusText(other))}</span>`,
     };
   }
 
@@ -306,7 +438,7 @@
     );
     badgeEls.forEach((el) => {
       const has = state.unreadCount > 0;
-      el.textContent = String(state.unreadCount || "");
+      el.textContent = state.unreadCount > 99 ? "99+" : String(state.unreadCount || "");
       el.classList.toggle("hidden", !has);
       el.classList.toggle("inline-flex", has);
     });
@@ -331,15 +463,46 @@
     recalcUnread();
   }
 
-  function replaceMessageInCache(message) {
+  function updatePresenceState(userId, presence) {
+    let changed = false;
+    state.conversations = state.conversations.map((conversation) => {
+      if (Number(conversation?.otherUser?.sql_user_id) !== Number(userId)) {
+        return conversation;
+      }
+      changed = true;
+      return {
+        ...conversation,
+        otherUser: {
+          ...conversation.otherUser,
+          isOnline: Boolean(presence.isOnline),
+          lastActive: presence.lastActive || conversation.otherUser?.lastActive || null,
+        },
+      };
+    });
+    return changed;
+  }
+
+  function replaceMessageInCache(message, options = {}) {
     const conversationId = Number(message?.conversationId || 0);
     if (!conversationId) return;
     const list = state.messagesByConversation[conversationId] || [];
     const idx = list.findIndex(
       (item) => Number(item.id) === Number(message.id),
     );
-    if (idx >= 0) list[idx] = message;
-    else list.push(message);
+    const previous = idx >= 0 ? list[idx] : null;
+    const normalized = normalizeIncomingMessage(
+      previous ? { ...previous, ...message } : message,
+      {
+        ...options,
+        statusOverride:
+          options.statusOverride ||
+          (previous?.localStatus && !options.markDelivered && !message.readAt
+            ? previous.localStatus
+            : undefined),
+      },
+    );
+    if (idx >= 0) list[idx] = normalized;
+    else list.push(normalized);
     list.sort(
       (a, b) =>
         new Date(a.createdAt || 0).getTime() -
@@ -423,7 +586,7 @@
         );
         const active =
           Number(conversation.id) === Number(state.activeConversationId);
-        const isOnline = getDynamicOnlineStatus(other.lastActive);
+        const isOnline = getDynamicOnlineStatus(other);
         const statusMeta = getConversationStatusMeta(conversation);
         return `<button type="button" data-message-action="open-conversation" data-conversation-id="${conversation.id}" class="flex w-full items-start gap-3 rounded-[1.35rem] border px-3 py-3 text-left transition ${active ? "border-fuchsia-400/40 bg-fuchsia-500/10 shadow-[0_10px_30px_rgba(217,70,239,0.08)]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}">
         <div class="relative pt-0.5">
@@ -520,9 +683,17 @@
   }
 
   function renderMessageAttachments(message) {
-    const attachments = Array.isArray(message.attachments)
+    const attachments = Array.isArray(message.attachments) && message.attachments.length
       ? message.attachments
-      : [];
+      : Array.isArray(message.localAttachments)
+        ? message.localAttachments.map((item) => ({
+            type: item.kind,
+            url: item.previewUrl,
+            name: item.file?.name,
+            size: item.file?.size,
+            durationSeconds: item.durationSeconds || null,
+          }))
+        : [];
     if (!attachments.length) return "";
     return `<div class="mt-3 space-y-3">${attachments
       .map((attachment) => {
@@ -621,7 +792,7 @@
     };
     const activeStatusHtml = state.typingIndicators[Number(conversation.id)]
       ? '<span class="inline-flex items-center gap-1.5 text-emerald-300"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>Typing...</span>'
-      : formatActiveStatus(other.lastActive);
+      : formatActiveStatus(other);
     threadHeaderEl.innerHTML = `
     <div class="flex w-full items-center justify-between gap-3">
         <div class="flex min-w-0 items-center gap-3">
@@ -673,7 +844,7 @@
       refreshIcons();
       return;
     }
-    threadBodyEl.innerHTML = `<div class="mx-auto flex w-full max-w-3xl flex-col gap-3">${messages.map((message) => `<div class="flex ${message.isOwn ? "justify-end" : "justify-start"}"><div class="flex max-w-[96%] items-start ${message.isOwn ? "flex-row-reverse" : "flex-row"}"><div id="chat-bubble-${message.id}" class="max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg transition-all duration-500 ${message.isOwn ? "bg-fuchsia-600 text-white" : "border border-white/10 bg-white/[0.06] text-white"}">${renderRepliedTo(message)}${renderForwardedFrom(message)}${renderSpecialMessageBody(message)}${renderMessageAttachments(message)}<div class="mt-2 text-[11px] ${message.isOwn ? "text-fuchsia-100/80" : "text-gray-400"}">${escapeHtml(formatTime(message.createdAt))}${message.isEdited ? " (edited)" : ""}${message.isOwn && message.readAt ? " (read)" : ""}</div></div>${renderMessageMenu(message)}</div></div>`).join("")}</div>`;
+    threadBodyEl.innerHTML = `<div class="mx-auto flex w-full max-w-3xl flex-col gap-3">${messages.map((message) => `<div class="flex ${message.isOwn ? "justify-end" : "justify-start"}"><div class="flex max-w-[96%] items-start ${message.isOwn ? "flex-row-reverse" : "flex-row"}"><div id="chat-bubble-${message.id}" class="relative max-w-full rounded-[1.5rem] px-4 py-3 shadow-lg transition-all duration-500 ${message.isOwn ? "bg-fuchsia-600 pb-4 text-white" : "border border-white/10 bg-white/[0.06] text-white"}">${renderRepliedTo(message)}${renderForwardedFrom(message)}${renderSpecialMessageBody(message)}${renderMessageAttachments(message)}${messageMetaRow(message)}</div>${renderMessageMenu(message)}</div></div>`).join("")}</div>`;
     renderTypingBubble();
     threadBodyEl.scrollTop = threadBodyEl.scrollHeight;
     refreshIcons();
@@ -773,7 +944,7 @@
       state.messagesByConversation[conversationId] = Array.isArray(
         data.messages,
       )
-        ? data.messages
+        ? data.messages.map((message) => normalizeIncomingMessage(message))
         : [];
       if (data.conversation) upsertConversation(data.conversation);
       renderConversationList();
@@ -877,13 +1048,25 @@
     replyPreviewEl.classList.add("hidden");
   });
 
-  async function sendMessage() {
-    const conversation = getActiveConversation();
+  async function submitMessagePayload(options = {}) {
+    const conversation = options.conversation || getActiveConversation();
     if (!conversation || state.sending) return;
-    const body = String(composeInput.value || "").trim();
-    if (!body && !state.pendingAttachments.length) {
+    const body = String(options.body || "").trim();
+    const attachmentItems = serializePendingAttachments(options.attachments || []);
+    if (!body && !attachmentItems.length) {
       showComposeStatus("Write a message or add an attachment.", true);
       return;
+    }
+    const optimisticMessage =
+      options.optimisticMessage ||
+      buildOptimisticMessage(conversation, body, {
+        attachments: attachmentItems,
+        replyingToMessageId: options.replyingToMessageId || null,
+        repliedTo: options.repliedTo || null,
+      });
+    if (!options.optimisticMessage) {
+      replaceMessageInCache(optimisticMessage, { statusOverride: "sending" });
+      renderThread();
     }
     state.sending = true;
     sendBtn.disabled = true;
@@ -892,22 +1075,20 @@
       clearTimeout(state.typingTimer);
       state.isTyping = false;
       let data;
-      if (state.pendingAttachments.length) {
+      if (attachmentItems.length) {
         const formData = new FormData();
         formData.append("body", body);
-        if (state.replyingToMessageId)
-          formData.append("repliedToId", state.replyingToMessageId);
+        if (options.replyingToMessageId)
+          formData.append("repliedToId", options.replyingToMessageId);
         formData.append(
           "attachmentMeta",
           JSON.stringify(
-            state.pendingAttachments.map((item) => ({
+            attachmentItems.map((item) => ({
               durationSeconds: item.durationSeconds || null,
             })),
           ),
         );
-        state.pendingAttachments.forEach((item) =>
-          formData.append("attachments", item.file),
-        );
+        attachmentItems.forEach((item) => formData.append("attachments", item.file));
         data = await postMultipart(
           `/api/messages/conversations/${conversation.id}/messages`,
           formData,
@@ -917,27 +1098,72 @@
           `/api/messages/conversations/${conversation.id}/messages`,
           {
             body: body,
-            repliedToId: state.replyingToMessageId,
+            repliedToId: options.replyingToMessageId || null,
           },
         );
       }
-      state.replyingToMessageId = null;
-      replyPreviewEl?.classList.add("hidden");
-      replaceMessageInCache(data.message);
+      removeMessageFromCache(conversation.id, optimisticMessage.id);
+      replaceMessageInCache(data.message, { statusOverride: "sent" });
       upsertConversation(data.conversation);
-      composeInput.value = "";
-      state.drafts[conversation.id] = "";
-      autosizeComposer();
-      clearPendingAttachments();
+      if (options.clearComposer) {
+        state.replyingToMessageId = null;
+        replyPreviewEl?.classList.add("hidden");
+        composeInput.value = "";
+        state.drafts[conversation.id] = "";
+        autosizeComposer();
+        clearPendingAttachments();
+      }
       stopTypingSignal();
       renderConversationList();
       renderThread();
     } catch (error) {
+      replaceMessageInCache(
+        { ...optimisticMessage, localStatus: "failed" },
+        { statusOverride: "failed" },
+      );
+      renderThread();
       showComposeStatus(error.message || "Failed to send message.", true);
     } finally {
       state.sending = false;
       sendBtn.disabled = false;
     }
+  }
+
+  async function sendMessage() {
+    const conversation = getActiveConversation();
+    if (!conversation || state.sending) return;
+    const body = String(composeInput.value || "").trim();
+    if (!body && !state.pendingAttachments.length) {
+      showComposeStatus("Write a message or add an attachment.", true);
+      return;
+    }
+    await submitMessagePayload({
+      conversation,
+      body,
+      attachments: state.pendingAttachments,
+      replyingToMessageId: state.replyingToMessageId,
+      repliedTo: state.replyingToMessageId
+        ? getMessageById(state.replyingToMessageId)
+        : null,
+      clearComposer: true,
+    });
+  }
+
+  async function retryFailedMessage(messageId) {
+    const message = getMessageById(messageId);
+    const conversation = getActiveConversation();
+    if (!message || !conversation || message.localStatus !== "failed" || state.sending) {
+      return;
+    }
+    await submitMessagePayload({
+      conversation,
+      body: message.body,
+      attachments: message.localAttachments || [],
+      replyingToMessageId: message.localReplyingToMessageId || null,
+      repliedTo: message.repliedTo || null,
+      optimisticMessage: { ...message, localStatus: "sending" },
+      clearComposer: false,
+    });
   }
 
   async function editMessage(messageId) {
@@ -1035,6 +1261,7 @@
   }
 
   function scheduleSocketReconnect() {
+    if (!state.socketShouldReconnect) return;
     clearSocketReconnect();
     state.socketReconnectTimer = window.setTimeout(
       () => connectSocket(),
@@ -1104,6 +1331,15 @@
       await loadConversations({ keepActive: true });
       if (Number(payload.conversationId) === Number(state.activeConversationId))
         await loadMessages(payload.conversationId, { keepScroll: true });
+      return;
+    }
+    if (payload.type === "presence.updated") {
+      const changed = updatePresenceState(payload.userId, payload);
+      if (changed) {
+        renderConversationList();
+        if (getActiveConversation()) renderThread();
+      }
+      return;
     }
     if (payload.type === "user.typing") {
       toggleTypingIndicator(payload.conversationId, payload.isTyping);
@@ -1116,10 +1352,30 @@
         state.messagesByConversation[convoId].forEach((msg) => {
           if (msg.isOwn && !msg.readAt) {
             msg.readAt = readAtTime;
+            msg.localStatus = "read";
           }
         });
       }
       if (Number(state.activeConversationId) === Number(convoId)) {
+        renderThread();
+      }
+      return;
+    }
+    if (payload.type === "messages.delivered.receipt") {
+      const convoId = Number(payload.conversationId);
+      const messageIds = new Set((payload.messageIds || []).map((id) => Number(id)));
+      if (!messageIds.size || !state.messagesByConversation[convoId]) return;
+      state.messagesByConversation[convoId].forEach((msg) => {
+        if (
+          msg.isOwn &&
+          !msg.readAt &&
+          messageIds.has(Number(msg.id)) &&
+          msg.localStatus !== "read"
+        ) {
+          msg.localStatus = "delivered";
+        }
+      });
+      if (Number(state.activeConversationId) === convoId) {
         renderThread();
       }
       return;
@@ -1172,10 +1428,14 @@
     });
     state.socket.addEventListener("close", () => {
       state.socketConnected = false;
+      state.socket = null;
       setLiveStatus();
       renderConversationList();
       scheduleSocketReconnect();
-      if (state.pingInterval) clearInterval(state.pingInterval);
+      if (state.pingInterval) {
+        clearInterval(state.pingInterval);
+        state.pingInterval = null;
+      }
     });
     state.socket.addEventListener("error", () => {
       state.socketConnected = false;
@@ -1247,6 +1507,7 @@
   function openMessages() {
     if (state.opening) return;
     state.opening = true;
+    state.socketShouldReconnect = true;
     setMobileView(state.activeConversationId ? "thread" : "list");
     modal.classList.remove("hidden");
     requestAnimationFrame(() => {
@@ -1266,8 +1527,27 @@
     searchInput.focus();
   }
 
+  function closeSocket() {
+    state.socketShouldReconnect = false;
+    clearSocketReconnect();
+    if (state.pingInterval) {
+      clearInterval(state.pingInterval);
+      state.pingInterval = null;
+    }
+    if (state.socket) {
+      const socket = state.socket;
+      state.socket = null;
+      state.socketConnected = false;
+      setLiveStatus();
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close(1000, "Messages modal closed");
+      }
+    }
+  }
+
   function closeMessages() {
     stopTypingSignal();
+    closeSocket();
     modal.classList.add("opacity-0");
     card.classList.add("scale-95");
     window.setTimeout(() => modal.classList.add("hidden"), 200);
@@ -1327,6 +1607,10 @@
       renderConversationList();
       renderThread();
       await loadMessages(state.activeConversationId, { keepScroll: false });
+      return;
+    }
+    if (action === "retry-failed-message" && actionEl.dataset.messageId) {
+      await retryFailedMessage(actionEl.dataset.messageId);
       return;
     }
     if (action === "close-active-conversation") {

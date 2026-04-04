@@ -269,6 +269,25 @@ def _broadcast_message_created(conversation, message):
                 "message": _serialize_message(message, user),
             },
         )
+    _broadcast_message_delivered_if_online(conversation, message)
+
+
+def _broadcast_message_delivered_if_online(conversation, message):
+    from .consumers import is_user_connected
+
+    recipient = _conversation_other_user(conversation, message.sender)
+    if not recipient or not is_user_connected(recipient.id):
+        return
+
+    _broadcast_to_users(
+        [message.sender_id],
+        {
+            "type": "messages.delivered.receipt",
+            "conversationId": conversation.id,
+            "messageIds": [message.id],
+            "deliveredAt": timezone.now().isoformat(),
+        },
+    )
 
 
 def _broadcast_message_updated(conversation, message, user_ids):
@@ -394,19 +413,7 @@ def _clone_forwarded_attachments(source_message, new_message):
 
 
 def _log_message_notification(sender, recipient, message):
-    if sender.id == recipient.id:
-        return
-    snippet = _message_preview_text(message)
-    if len(snippet) > 90:
-        snippet = f"{snippet[:87]}..."
-    mongo_store.log_notification(
-        recipient_user_id=recipient.id,
-        activity_type="message",
-        actor_user=sender,
-        title="New message",
-        body=snippet or f"{(sender.first_name or sender.username).strip()} sent you a message.",
-        payload={"conversation_id": message.conversation_id, "message_id": message.id},
-    )
+    return
 
 
 @require_GET

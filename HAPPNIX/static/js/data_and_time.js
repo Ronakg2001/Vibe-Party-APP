@@ -19,10 +19,13 @@ const eventCalendarState = {
     selectedDates: [],
     targetInputId: 'event-date-display',
     dragMode: '',
+    dragAnchorDate: '',
     dragVisitedDates: [],
     dragDidMove: false,
     suppressCalendarClick: false
 };
+const MIN_EVENT_DURATION_MINUTES = 30;
+const MAX_EVENT_DURATION_MINUTES = (10 * 24 * 60) - 1;
 
 function formatTime12(hour12, minute, period) {
     const hh = String(hour12).padStart(2, '0');
@@ -143,7 +146,7 @@ function isAnalogCandidateAllowed(hour12, minute, period) {
         const endDate = document.getElementById('event-end-date')?.value || '';
         if (startDate) {
             const duration = calculateDurationMinutesFromTimes(startTime, candidateTime, startDate, endDate);
-            if (duration === null || duration < 30 || duration > 24 * 60) return false;
+            if (duration === null || duration < MIN_EVENT_DURATION_MINUTES || duration > MAX_EVENT_DURATION_MINUTES) return false;
         }
     }
     return true;
@@ -727,6 +730,31 @@ function localDateToDateKey(localDate) {
     return toDateKey(localDate.getFullYear(), localDate.getMonth(), localDate.getDate());
 }
 
+function buildContinuousEventDateRange(startDateKey, endDateKey) {
+    const startDate = dateKeyToLocalDate(startDateKey);
+    const endDate = dateKeyToLocalDate(endDateKey);
+    if (!startDate || !endDate) return [];
+    const orderedStart = startDate <= endDate ? startDate : endDate;
+    const orderedEnd = startDate <= endDate ? endDate : startDate;
+    const maxEnd = new Date(orderedStart);
+    maxEnd.setDate(maxEnd.getDate() + 10);
+    const cappedEnd = orderedEnd > maxEnd ? maxEnd : orderedEnd;
+    const dates = [];
+    const cursor = new Date(orderedStart);
+    while (cursor <= cappedEnd) {
+        dates.push(localDateToDateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return normalizeEventDateKeys(dates);
+}
+
+function rangeSelectionPreviewLabel(dateKeys) {
+    const normalized = normalizeEventDateKeys(dateKeys);
+    if (normalized.length === 0) return 'No date selected';
+    if (normalized.length === 1) return formatDateDisplay(normalized[0]);
+    return `${formatCompactDate(normalized[0])} - ${formatCompactDate(normalized[normalized.length - 1])} (${normalized.length} days)`;
+}
+
 function getEventCalendarSelectionKeys() {
     if (eventCalendarState.targetInputId === 'event-date-display') {
         return normalizeEventDateKeys(eventCalendarState.selectedDates);
@@ -746,15 +774,35 @@ function setEventCalendarSelectionKeys(dateKeys) {
 }
 
 function toggleEventCalendarDateKey(dateKey, forceMode = '') {
-    const current = getEventCalendarSelectionKeys();
-    const exists = current.includes(dateKey);
-    const mode = forceMode || (exists ? 'remove' : 'add');
     if (eventCalendarState.targetInputId === 'event-date-display') {
-        const next = mode === 'add' ? [...current, dateKey] : current.filter((item) => item !== dateKey);
-        setEventCalendarSelectionKeys(next);
-    } else {
-        setEventCalendarSelectionKeys(mode === 'remove' && exists ? [] : [dateKey]);
+        const current = getEventCalendarSelectionKeys();
+        if (forceMode === 'reset' && current.includes(dateKey)) {
+            if (current.length === 1) {
+                setEventCalendarSelectionKeys([]);
+                eventCalendarState.dragAnchorDate = '';
+                return;
+            }
+            if (dateKey === current[0]) {
+                setEventCalendarSelectionKeys(current.slice(1));
+                eventCalendarState.dragAnchorDate = current[1] || '';
+                return;
+            }
+            const dateIndex = current.indexOf(dateKey);
+            setEventCalendarSelectionKeys(current.slice(0, dateIndex));
+            eventCalendarState.dragAnchorDate = current[0] || '';
+            return;
+        }
+        const anchorDate = eventCalendarState.dragAnchorDate || current[0] || dateKey;
+        if (forceMode === 'reset' && current.length === 0) {
+            setEventCalendarSelectionKeys([dateKey]);
+            eventCalendarState.dragAnchorDate = dateKey;
+            return;
+        }
+        setEventCalendarSelectionKeys(buildContinuousEventDateRange(anchorDate, dateKey));
+        eventCalendarState.dragAnchorDate = anchorDate;
+        return;
     }
+    setEventCalendarSelectionKeys([dateKey]);
 }
 
 function formatCompactDate(dateKey) {
@@ -774,6 +822,7 @@ function formatEventDateSelectionDisplay(dateKeys) {
 
 function stopEventCalendarDrag() {
     eventCalendarState.dragMode = '';
+    eventCalendarState.dragAnchorDate = '';
     eventCalendarState.dragVisitedDates = [];
     eventCalendarState.dragDidMove = false;
 }
@@ -874,7 +923,7 @@ function moveEventDateSelectionByDays(daysDelta) {
 
     eventCalendarState.selectedDate = nextKey;
     if (eventCalendarState.targetInputId === 'event-date-display') {
-        eventCalendarState.selectedDates = [nextKey];
+        eventCalendarState.selectedDates = buildContinuousEventDateRange(nextKey, nextKey);
     }
     setCalendarViewToSelectedDate(nextKey);
     renderEventCalendar();
@@ -961,7 +1010,7 @@ function renderEventCalendar() {
 
     monthLabel.textContent = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     preview.textContent = eventCalendarState.targetInputId === 'event-date-display'
-        ? (selectedKeys.length > 0 ? formatEventDateSelectionDisplay(selectedKeys) : 'No date selected')
+        ? rangeSelectionPreviewLabel(selectedKeys)
         : (eventCalendarState.selectedDate ? formatDateDisplay(eventCalendarState.selectedDate) : 'No date selected');
 
     const cells = [];
@@ -983,12 +1032,15 @@ function renderEventCalendar() {
         buttonEl.addEventListener('pointerdown', (event) => {
             const dateKey = buttonEl.getAttribute('data-date') || '';
             if (!dateKey) return;
-            const alreadySelected = selectedSet.has(dateKey);
-            eventCalendarState.dragMode = alreadySelected ? 'remove' : 'add';
+            eventCalendarState.dragMode = 'range';
+            eventCalendarState.dragAnchorDate =
+                eventCalendarState.targetInputId === 'event-date-display' && selectedKeys.length > 0
+                    ? selectedKeys[0]
+                    : dateKey;
             eventCalendarState.dragVisitedDates = [dateKey];
             eventCalendarState.dragDidMove = false;
             eventCalendarState.suppressCalendarClick = true;
-            toggleEventCalendarDateKey(dateKey, eventCalendarState.dragMode);
+            toggleEventCalendarDateKey(dateKey);
             renderEventCalendar();
             event.preventDefault();
         });
@@ -1012,7 +1064,7 @@ function renderEventCalendar() {
                 }
                 return;
             }
-            toggleEventCalendarDateKey(dateKey);
+            toggleEventCalendarDateKey(dateKey, 'reset');
             renderEventCalendar();
             event.preventDefault();
         });
@@ -1116,7 +1168,7 @@ function saveEventDateSelection() {
         const displayEndTime = document.getElementById('event-end-time-display');
         if (startDate && hiddenEndTime?.value) {
             const delta = calculateDurationMinutesFromTimes(startTime, hiddenEndTime.value, startDate, endDateValue);
-            if (delta === null || delta < 30 || delta > 24 * 60) {
+            if (delta === null || delta < MIN_EVENT_DURATION_MINUTES || delta > MAX_EVENT_DURATION_MINUTES) {
                 hiddenEndTime.value = '';
                 if (displayEndTime) displayEndTime.value = '';
                 recalculateEventDurationFromTimes();
@@ -1178,7 +1230,7 @@ function saveEventDateSelection() {
         setLocationStatus('Selected start date changed. End date/time was cleared.', true);
     } else if (hiddenEndTime?.value) {
         const delta = calculateDurationMinutesFromTimes(hiddenTime?.value || '', hiddenEndTime.value, primaryDate, hiddenEndDate?.value || '');
-        if (delta === null || delta < 30 || delta > 24 * 60) {
+        if (delta === null || delta < MIN_EVENT_DURATION_MINUTES || delta > MAX_EVENT_DURATION_MINUTES) {
             hiddenEndTime.value = '';
             if (displayEndTime) displayEndTime.value = '';
             recalculateEventDurationFromTimes();
@@ -1367,16 +1419,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (durationDisplay.readOnly) return;
             const parsedMinutes = parseDurationDisplayToMinutes(durationDisplay.value);
             if (parsedMinutes > 0) {
-                if (parsedMinutes < 30) {
+                if (parsedMinutes < MIN_EVENT_DURATION_MINUTES) {
                     const durationHidden = document.getElementById('event-duration-minutes');
                     if (durationHidden) durationHidden.value = '';
                     setLocationStatus('Duration must be at least 30 minutes.', true);
                     return;
                 }
-                if (parsedMinutes > 24 * 60) {
+                if (parsedMinutes > MAX_EVENT_DURATION_MINUTES) {
                     const durationHidden = document.getElementById('event-duration-minutes');
                     if (durationHidden) durationHidden.value = '';
-                    setLocationStatus('Duration cannot be more than 24 hours.', true);
+                    setLocationStatus('Duration cannot be more than 10 days from the start time.', true);
                     return;
                 }
                 durationDisplay.value = formatDurationMinutes(parsedMinutes);
@@ -1386,3 +1438,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+

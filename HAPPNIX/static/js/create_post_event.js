@@ -448,10 +448,10 @@ async function handlePostSubmit(e) {
         if (
           computedDuration === null ||
           computedDuration < 30 ||
-          computedDuration > 24 * 60
+          computedDuration > (10 * 24 * 60) - 1
         ) {
           setLocationStatus(
-            "Event duration must be between 30 min and 24 hr.",
+            "Event duration must be between 30 minutes and 10 days from the start time.",
             true,
           );
           isPublishingCreatePost = false;
@@ -487,8 +487,8 @@ async function handlePostSubmit(e) {
           isPublishingCreatePost = false;
           return;
         }
-        if (parsedManualDuration > 24 * 60) {
-          setLocationStatus("Duration cannot be more than 24 hours.", true);
+        if (parsedManualDuration > (10 * 24 * 60) - 1) {
+          setLocationStatus("Duration cannot be more than 10 days from the start time.", true);
           isPublishingCreatePost = false;
           return;
         }
@@ -593,10 +593,7 @@ async function handlePostSubmit(e) {
           if (typeof loadHostedEvents === "function") {
             loadHostedEvents();
           }
-          showEventSuccessModal(
-            result.event.id || result.event._id,
-            result.event.qr_svg,
-          );
+          showEventSuccessModal(result.event.id || result.event._id);
           resetEventCreation();
 
           if (activityId && typeof finishUploadActivity === "function")
@@ -2038,26 +2035,16 @@ function showEventSuccessModal(eventId) {
   const modal = document.getElementById("qr-success-modal");
   if (!modal) return;
 
-  // 1. Construct the URL for the event
-  const eventUrl = window.location.origin + "/events/" + eventId + "/";
+  const eventUrl =
+    window.location.origin + "/home/?event=" + encodeURIComponent(eventId);
+  const generatedQr =
+    typeof HappnixQR !== "undefined"
+      ? HappnixQR.generate("happnix-qr-container", eventUrl)
+      : null;
 
-  const qrContainer = document.getElementById("happnix-qr-container");
-  if (qrContainer && svgData) {
-    qrContainer.innerHTML = svgData;
-  }
-  // 2. Generate the QR code using your centralized file
-  // "happnix-qr-container" is the ID of the div inside your modal
-  const generatedQr = HappnixQR.generate(
-    "happnix-qr-container",
-    eventUrl,
-    "event",
-  );
-
-  // 3. Show the modal
   modal.classList.remove("hidden");
   if (typeof lucide !== "undefined") lucide.createIcons();
 
-  // 4. Setup the Download Button
   const downloadBtn = document.getElementById("download-qr-btn");
   if (downloadBtn && generatedQr) {
     downloadBtn.onclick = () => {

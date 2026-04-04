@@ -15,7 +15,7 @@
       type="text/javascript"
       src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"
     ></script>
-    <script src="{% static 'js/qr_generator.js' %}"></script>
+    <script src="{% static 'js/qr_generator.js' %}?v=20260401a"></script>
   </head>
   <body
     class="bg-[#0b1121] text-white min-h-screen flex flex-col items-center justify-center p-4"
@@ -41,7 +41,13 @@
       </div>
 
       <div class="qr-bg-layer mb-6 flex items-center justify-center">
-        <div class="w-[220px] h-[220px]">{{ custom_qr_svg|safe }}</div>
+        <div
+          id="ticket-qr-container"
+          class="w-[220px] h-[220px]"
+          data-width="220"
+          data-height="220"
+          data-ticket-id="{{ ticket.id }}"
+        ></div>
       </div>
 
       <div class="space-y-1">
@@ -60,6 +66,6 @@
       </p>
     </div>
 
-    <script src="{% static 'js/ticket_view.js' %}"></script>
+    <script src="{% static 'js/ticket_view.js' %}?v=20260401a"></script>
   </body>
 </html>
