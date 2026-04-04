@@ -16,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from . import mongo_store
+from .group_chat import list_group_conversations_payload
 from .models import DirectConversation, DirectMessage, DirectMessageAttachment, DirectMessageDeletion
 from .utils import _error, _json_body
 
@@ -421,13 +422,15 @@ def conversations_api(request):
     if not request.user.is_authenticated:
         return _error("Please sign in first.", status=401)
 
-    conversations = list(
+    direct_conversations = list(
         DirectConversation.objects.filter(Q(user_one=request.user) | Q(user_two=request.user))
         .select_related("user_one", "user_two")
         .order_by("-updated_at", "-id")
         .exclude(deleted_by=request.user)
     )
-    payload = [_serialize_conversation(conversation, request.user) for conversation in conversations]
+    payload = [_serialize_conversation(conversation, request.user) for conversation in direct_conversations]
+    payload.extend([item for item in list_group_conversations_payload(request.user) if item])
+    payload.sort(key=lambda item: item.get("updatedAt") or item.get("createdAt") or "", reverse=True)
     unread_total = sum(item.get("unreadCount", 0) for item in payload)
     return JsonResponse({"count": len(payload), "unreadCount": unread_total, "conversations": payload})
 

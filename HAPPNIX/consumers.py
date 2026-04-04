@@ -41,6 +41,7 @@ class MessageConsumer(AsyncWebsocketConsumer):
         await self.update_last_active(user)
         await self.broadcast_presence_change(user.id, True)
         await self.send_pending_delivery_receipts(user.id)
+        await self.send_pending_group_delivery_receipts(user.id)
 
     async def disconnect(self, close_code):
         if hasattr(self, "user_group_name"):
@@ -83,13 +84,20 @@ class MessageConsumer(AsyncWebsocketConsumer):
             elif payload.get("type") == "messages.read":
                 user = self.scope.get("user")
                 conversation_id = payload.get("conversationId")
-                target_user_id = payload.get("targetUserId")
+                conversation_kind = str(payload.get("conversationKind") or "direct").lower()
+                if user and user.is_authenticated and conversation_kind == "group":
+                    group_id = payload.get("groupId")
+                    if group_id:
+                        await self.mark_group_messages_read(user.id, group_id)
+                    return
 
+                target_user_id = payload.get("targetUserId")
                 if user and user.is_authenticated and conversation_id and target_user_id:
-                    # 1. Update the database instantly
-                    await self.mark_messages_read(user.id, conversation_id)
-                    
-                    # 2. Notify the sender so their screen updates to "Read"
+                    read_at = timezone.now().isoformat()
+                    updated_message_ids = await self.mark_messages_read(user.id, conversation_id)
+                    if not updated_message_ids:
+                        return
+
                     await self.channel_layer.group_send(
                         f"dm_user_{target_user_id}",
                         {
@@ -97,7 +105,9 @@ class MessageConsumer(AsyncWebsocketConsumer):
                             "payload": {
                                 "type": "messages.read.receipt",
                                 "conversationId": conversation_id,
-                                "readAt": timezone.now().isoformat()
+                                "messageIds": updated_message_ids,
+                                "readAt": read_at,
+                                "readerUserId": user.id,
                             }
                         }
                     )
@@ -152,11 +162,35 @@ class MessageConsumer(AsyncWebsocketConsumer):
     def mark_messages_read(self, user_id, conversation_id):
         from .models import DirectMessage
         from django.utils import timezone
-        # Update all messages in this chat sent by the OTHER user that are currently unread
-        DirectMessage.objects.filter(
-            conversation_id=conversation_id,
-            read_at__isnull=True
-        ).exclude(sender_id=user_id).update(read_at=timezone.now())
+
+        messages = list(
+            DirectMessage.objects.filter(
+                conversation_id=conversation_id,
+                read_at__isnull=True,
+            )
+            .exclude(sender_id=user_id)
+            .values_list("id", flat=True)
+        )
+        if not messages:
+            return []
+
+        DirectMessage.objects.filter(id__in=messages).update(read_at=timezone.now())
+        return [int(message_id) for message_id in messages]
+
+    @database_sync_to_async
+    def mark_group_messages_read(self, user_id, group_id):
+        from .group_chat import mark_group_read_for_socket
+
+        return mark_group_read_for_socket(user_id, group_id)
+
+    @database_sync_to_async
+    def mark_group_messages_delivered(self, user_id):
+        from .group_chat import mark_group_delivered_for_socket
+
+        return mark_group_delivered_for_socket(user_id)
+
+    async def send_pending_group_delivery_receipts(self, user_id):
+        await self.mark_group_messages_delivered(user_id)
 
     @database_sync_to_async
     def pending_delivery_receipts(self, user_id):

@@ -13,6 +13,17 @@ class UserProfile(models.Model):
         ("mrs.", "Mrs."),
         ("other", "Other"),
     ]
+    TAG_PERMISSION_CHOICES = [
+        ("everyone", "Everyone"),
+        ("followers", "Followers only"),
+        ("no_one", "No one"),
+    ]
+    FAMILY_ROLE_CHOICES = [
+        ("member", "Member"),
+        ("parent", "Parent"),
+        ("child", "Child"),
+        ("normal_admin", "Normal admin"),
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     sex = models.CharField(max_length=10, choices=SEX_CHOICES)
@@ -23,6 +34,16 @@ class UserProfile(models.Model):
     gov_id_number = models.CharField(max_length=64, blank=True)
     gov_id_verified = models.BooleanField(default=False)
     is_private = models.BooleanField(default=False)
+    tags_and_mentions_permission = models.CharField(
+        max_length=20,
+        choices=TAG_PERMISSION_CHOICES,
+        default="everyone",
+    )
+    family_role = models.CharField(
+        max_length=20,
+        choices=FAMILY_ROLE_CHOICES,
+        default="member",
+    )
     last_active = models.DateTimeField(null=True, blank=True)
     def __str__(self):
         return f"{self.user.username} profile"
@@ -50,6 +71,54 @@ class Follow(models.Model):
 
     def __str__(self):
         return f"{self.follower.username} -> {self.following.username} ({self.status})"
+
+
+class SavedProfile(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="saved_profiles")
+    target = models.ForeignKey(User, on_delete=models.CASCADE, related_name="saved_by_profiles")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "target"], name="unique_saved_profile"),
+            models.CheckConstraint(condition=~Q(owner=F("target")), name="prevent_self_saved_profile"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner.username} saved {self.target.username}"
+
+
+class BlockedAccount(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="blocked_accounts")
+    target = models.ForeignKey(User, on_delete=models.CASCADE, related_name="blocked_by_accounts")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "target"], name="unique_blocked_account"),
+            models.CheckConstraint(condition=~Q(owner=F("target")), name="prevent_self_blocked_account"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner.username} blocked {self.target.username}"
+
+
+class RestrictedAccount(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="restricted_accounts")
+    target = models.ForeignKey(User, on_delete=models.CASCADE, related_name="restricted_by_accounts")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "target"], name="unique_restricted_account"),
+            models.CheckConstraint(condition=~Q(owner=F("target")), name="prevent_self_restricted_account"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner.username} restricted {self.target.username}"
 
 
 class Event(models.Model):
@@ -245,3 +314,118 @@ class DirectMessageDeletion(models.Model):
 
     def __str__(self):
         return f"Message {self.message_id} deleted for {self.user.username}"
+
+
+class GroupConversation(models.Model):
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="groups_created")
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    avatar_url = models.URLField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return f"Group {self.name}"
+
+
+class GroupConversationMember(models.Model):
+    class Role(models.TextChoices):
+        ADMIN = "admin", "Admin"
+        MEMBER = "member", "Member"
+
+    group = models.ForeignKey(GroupConversation, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="group_memberships")
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
+    added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="group_members_added")
+    joined_at = models.DateTimeField(auto_now_add=True)
+    last_read_at = models.DateTimeField(null=True, blank=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["joined_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["group", "user"], name="unique_group_member"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} in {self.group.name} ({self.role})"
+
+
+class GroupMessage(models.Model):
+    group = models.ForeignKey(GroupConversation, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="group_messages_sent")
+    replied_to = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="group_replies",
+    )
+    body = models.TextField(blank=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
+    unsent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.sender.username} -> group {self.group_id}"
+
+
+class GroupMessageAttachment(models.Model):
+    class AttachmentType(models.TextChoices):
+        IMAGE = "image", "Image"
+        VIDEO = "video", "Video"
+        AUDIO = "audio", "Audio"
+        FILE = "file", "File"
+
+    message = models.ForeignKey(GroupMessage, on_delete=models.CASCADE, related_name="attachments")
+    attachment_type = models.CharField(max_length=10, choices=AttachmentType.choices)
+    file_url = models.URLField(blank=True)
+    original_name = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=120, blank=True)
+    file_size = models.PositiveIntegerField(default=0)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.attachment_type} group attachment for message {self.message_id}"
+
+
+class GroupMessageDeletion(models.Model):
+    message = models.ForeignKey(GroupMessage, on_delete=models.CASCADE, related_name="deletions")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="deleted_group_messages")
+    deleted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-deleted_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["message", "user"], name="unique_group_message_delete_per_user"),
+        ]
+
+    def __str__(self):
+        return f"Group message {self.message_id} deleted for {self.user.username}"
+
+
+class GroupMessageStatus(models.Model):
+    message = models.ForeignKey(GroupMessage, on_delete=models.CASCADE, related_name="statuses")
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="group_message_statuses")
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["message", "recipient"], name="unique_group_message_recipient_status"),
+        ]
+
+    def __str__(self):
+        return f"Group message {self.message_id} -> {self.recipient.username}"

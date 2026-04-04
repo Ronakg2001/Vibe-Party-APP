@@ -1,5 +1,5 @@
 from django.urls import path
-from . import messaging, views, signin_signup
+from . import messaging, views, signin_signup, group_chat
 
 urlpatterns = [
     path('', views.index_page, name='Landing page'),
@@ -32,7 +32,10 @@ urlpatterns = [
     path('api/users/<int:user_id>/profile', views.public_profile_api, name='public-profile-api'),
     path('api/profile/me', views.current_profile_api, name='current-profile-api'),
     path('api/profile/privacy', views.profile_privacy_api, name='profile-privacy-api'),
+    path('api/profile/update', views.profile_update_api, name='profile-update-api'),
     path('api/profile/follow-requests', views.follow_requests_api, name='follow-requests-api'),
+    path('api/settings/preferences', views.settings_preferences_api, name='settings-preferences-api'),
+    path('api/settings/people/<str:category>', views.settings_people_api, name='settings-people-api'),
     path('api/notifications', views.notifications_api, name='notifications-api'),
     path('api/notifications/activity', views.log_activity_api, name='log-activity-api'),
     path('api/profile/<str:graph_type>', views.profile_follow_graph_api, name='profile-follow-graph-api'),
@@ -46,6 +49,19 @@ urlpatterns = [
     path('api/messages/messages/<int:message_id>/unsend', messaging.unsend_message_api, name='message-unsend-api'),
     path('api/messages/conversations/<int:conversation_id>/clear', messaging.clear_conversation_api, name='api_clear_conversation'),
     path('api/messages/conversations/<int:conversation_id>/delete', messaging.delete_conversation_api, name='api_delete_conversation'),
+    path('api/messages/groups/create', group_chat.create_group_api, name='message-create-group-api'),
+    path('api/messages/groups/<int:group_id>', group_chat.group_details_api, name='message-group-details-api'),
+    path('api/messages/groups/<int:group_id>/messages', group_chat.group_messages_api, name='message-group-messages-api'),
+    path('api/messages/groups/<int:group_id>/members', group_chat.add_group_members_api, name='message-group-members-api'),
+    path('api/messages/groups/<int:group_id>/members/<int:member_user_id>/role', group_chat.update_group_member_role_api, name='message-group-member-role-api'),
+    path('api/messages/groups/<int:group_id>/members/<int:member_user_id>/remove', group_chat.remove_group_member_api, name='message-group-member-remove-api'),
+    path('api/messages/groups/<int:group_id>/rename', group_chat.rename_group_api, name='message-group-rename-api'),
+    path('api/messages/groups/<int:group_id>/leave', group_chat.leave_group_api, name='message-group-leave-api'),
+    path('api/messages/groups/<int:group_id>/clear', group_chat.clear_group_conversation_api, name='message-group-clear-api'),
+    path('api/messages/groups/<int:group_id>/delete', group_chat.delete_group_api, name='message-group-delete-api'),
+    path('api/messages/group-messages/<int:message_id>/edit', group_chat.edit_group_message_api, name='message-group-edit-api'),
+    path('api/messages/group-messages/<int:message_id>/delete', group_chat.delete_group_message_for_me_api, name='message-group-delete-for-me-api'),
+    path('api/messages/group-messages/<int:message_id>/unsend', group_chat.unsend_group_message_api, name='message-group-unsend-api'),
     path('location/custom/', views.custom_location_page, name='custom-location'),
     path('party-loader-demo/', views.party_loader_demo_page, name='Party Loader Demo'),
     path('home/', views.Home_page, name='Home Page'),

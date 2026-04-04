@@ -1,6 +1,13 @@
 // --- State Management ---
-const defaultAvatar =
-  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop";
+const defaultAvatarSvg = `
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+    <rect width="96" height="96" rx="24" fill="#0f172a"/>
+    <rect x="1" y="1" width="94" height="94" rx="23" stroke="#334155" stroke-width="2"/>
+    <circle cx="48" cy="36" r="15" fill="#64748b"/>
+    <path d="M22 77c3-13 13-21 26-21s23 8 26 21" fill="#64748b"/>
+  </svg>`;
+const defaultAvatar = `data:image/svg+xml;utf8,${encodeURIComponent(defaultAvatarSvg)}`;
+const defaultEventImage = "/static/img/Happnix-logo-small.png";
 const bootConfigEl = document.getElementById("home-page-boot-config");
 let bootConfig = {};
 if (bootConfigEl) {
@@ -37,9 +44,35 @@ const state = {
     avatar: currentAvatarTemplate || defaultAvatar,
     fullName: currentUsernameTemplate,
     bio: "",
+    email: "",
+    mobile: "",
+    sex: "",
+    dateOfBirth: "",
     isPrivate: false,
     govIdVerified: false,
+    canCreateOrJoinParties: false,
+    accountRole: "member",
+    accountStatus: "limited",
+    ordersCount: 0,
+    activeOrdersCount: 0,
+    archivedOrdersCount: 0,
+    paidOrdersCount: 0,
+    followersCount: 0,
+    followingCount: 0,
+    hostedEventsCount: 0,
+    savedProfilesCount: 0,
+    blockedCount: 0,
+    restrictedCount: 0,
+    tagsAndMentionsPermission: "everyone",
+    familyRole: "member",
     pendingFollowRequestsCount: 0,
+  },
+  profileEditor: {
+    avatarUrl: "",
+    avatarFile: null,
+    previewUrl: "",
+    bio: "",
+    saving: false,
   },
   locationEnabled: true,
   customLocationName: "",
@@ -70,6 +103,26 @@ const state = {
     loading: false,
     savingPrivacy: false,
     processingRequestId: null,
+    preferences: {
+      tagsAndMentionsPermission: "everyone",
+      familyRole: "member",
+      saving: false,
+      loaded: false,
+    },
+    people: {
+      activeCategory: "saved",
+      loading: false,
+      searching: false,
+      query: "",
+      searchResults: [],
+      addingId: null,
+      removingId: null,
+      lists: {
+        saved: [],
+        blocked: [],
+        restricted: [],
+      },
+    },
   },
   liveSync: {
     timerId: null,
@@ -225,7 +278,7 @@ function normalizeStoredPost(post) {
     userId: Number(post.userId) || null,
     username: String(post.username || "").trim(),
     avatar: post.avatar || defaultAvatar,
-    image: post.image || mediaUrls[0] || defaultAvatar,
+    image: post.image || mediaUrls[0] || defaultEventImage,
     mediaUrl: post.mediaUrl || mediaUrls[0] || "",
     mediaType: post.mediaType || mediaTypes[0] || "image",
     mediaUrls,
@@ -365,7 +418,7 @@ function normalizeStoredTicket(ticket) {
     event: {
       ...normalizedEvent,
       id: String(normalizedEvent.id || event.id || ""),
-      image: normalizedEvent.image || defaultAvatar,
+      image: normalizedEvent.image || defaultEventImage,
       eventDetails: {
         ...(normalizedEvent.eventDetails || {}),
         ...eventDetails,
@@ -425,6 +478,7 @@ async function loadTickets() {
     loadStoredTickets();
   }
   renderTicketList();
+  renderSettingsOverview();
 }
 
 function persistTickets() {
@@ -751,6 +805,7 @@ function applyTheme(theme, options = {}) {
   if (options.persist) {
     setStoredTheme(nextTheme);
   }
+  renderSettingsOverview();
 }
 
 function escapeHtml(value) {
@@ -800,12 +855,173 @@ async function postJson(url, payload) {
   return data;
 }
 
+function releaseProfileEditorPreviewUrl() {
+  if (state.profileEditor.previewUrl) {
+    URL.revokeObjectURL(state.profileEditor.previewUrl);
+    state.profileEditor.previewUrl = "";
+  }
+}
+
+function isPlaceholderAvatar(value) {
+  return !value || value === defaultAvatar;
+}
+
+function renderProfileEditorState() {
+  const bioInput = document.getElementById("profile-editor-bio");
+  const previewEl = document.getElementById("profile-editor-preview");
+  const statusEl = document.getElementById("profile-editor-status");
+  const saveEl = document.getElementById("profile-editor-save");
+  if (!bioInput || !previewEl || !statusEl || !saveEl) return;
+  bioInput.value = state.profileEditor.bio || "";
+  previewEl.src =
+    state.profileEditor.previewUrl ||
+    state.profileEditor.avatarUrl ||
+    state.currentUser.avatar ||
+    defaultAvatar;
+  statusEl.textContent = state.profileEditor.saving
+    ? "Saving your profile..."
+    : state.profileEditor.avatarFile
+      ? `Photo ready to upload, ${String(state.profileEditor.bio || "").length}/280 characters`
+      : `${String(state.profileEditor.bio || "").length}/280 characters`;
+  saveEl.classList.toggle("opacity-60", !!state.profileEditor.saving);
+  saveEl.classList.toggle("pointer-events-none", !!state.profileEditor.saving);
+}
+
+function openProfileEditor() {
+  const modal = document.getElementById("profile-editor-modal");
+  const card = document.getElementById("profile-editor-card");
+  const fileInput = document.getElementById("profile-editor-file");
+  if (!modal || !card) return;
+  releaseProfileEditorPreviewUrl();
+  state.profileEditor.avatarUrl =
+    isPlaceholderAvatar(state.currentUser.avatar) ? "" : state.currentUser.avatar || "";
+  state.profileEditor.avatarFile = null;
+  state.profileEditor.bio = state.currentUser.bio || "";
+  state.profileEditor.saving = false;
+  if (fileInput) fileInput.value = "";
+  renderProfileEditorState();
+  modal.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    modal.classList.remove("opacity-0");
+    card.classList.remove("scale-95");
+  });
+}
+
+function closeProfileEditor() {
+  const modal = document.getElementById("profile-editor-modal");
+  const card = document.getElementById("profile-editor-card");
+  const fileInput = document.getElementById("profile-editor-file");
+  if (!modal || !card) return;
+  releaseProfileEditorPreviewUrl();
+  state.profileEditor.avatarFile = null;
+  if (fileInput) fileInput.value = "";
+  modal.classList.add("opacity-0");
+  card.classList.add("scale-95");
+  setTimeout(() => modal.classList.add("hidden"), 220);
+}
+
+async function saveProfileEditor() {
+  state.profileEditor.saving = true;
+  renderProfileEditorState();
+  try {
+    const formData = new FormData();
+    formData.append("bio", state.profileEditor.bio || "");
+    formData.append(
+      "profilePictureUrl",
+      state.profileEditor.avatarUrl && !isPlaceholderAvatar(state.profileEditor.avatarUrl)
+        ? state.profileEditor.avatarUrl
+        : "",
+    );
+    if (state.profileEditor.avatarFile) {
+      formData.append("profilePictureFile", state.profileEditor.avatarFile);
+    }
+    const data = await postFormData("/api/profile/update", formData);
+    state.currentUser.avatar =
+      data?.profile?.profile_picture_url ||
+      state.profileEditor.avatarUrl ||
+      defaultAvatar;
+    state.currentUser.bio = data?.profile?.bio || state.profileEditor.bio || "";
+    syncCurrentUserAvatarAcrossState();
+    renderCurrentUserProfile();
+    closeProfileEditor();
+    renderSettingsOverview();
+    releaseProfileEditorPreviewUrl();
+    state.profileEditor.avatarFile = null;
+  } catch (_error) {
+    state.profileEditor.saving = false;
+    renderProfileEditorState();
+    return;
+  }
+  state.profileEditor.saving = false;
+  renderProfileEditorState();
+}
+
+function bindProfileEditorInputs() {
+  const fileInput = document.getElementById("profile-editor-file");
+  const bioInput = document.getElementById("profile-editor-bio");
+  if (fileInput && fileInput.dataset.bound !== "true") {
+    fileInput.dataset.bound = "true";
+    fileInput.addEventListener("change", () => {
+      const selectedFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      releaseProfileEditorPreviewUrl();
+      state.profileEditor.avatarFile = selectedFile;
+      if (selectedFile) {
+        state.profileEditor.previewUrl = URL.createObjectURL(selectedFile);
+      }
+      renderProfileEditorState();
+    });
+  }
+  if (bioInput && bioInput.dataset.bound !== "true") {
+    bioInput.dataset.bound = "true";
+    bioInput.addEventListener("input", () => {
+      state.profileEditor.bio = bioInput.value.slice(0, 280);
+      renderProfileEditorState();
+    });
+  }
+}
+
+function syncCurrentUserAvatarAcrossState() {
+  const currentUserId = Number(state.currentUser.id || 0);
+  const nextAvatar = state.currentUser.avatar || defaultAvatar;
+  const updatePostList = (items) =>
+    (items || []).map((item) =>
+      Number(item?.userId || 0) === currentUserId
+        ? { ...item, avatar: nextAvatar }
+        : item,
+    );
+  state.hostedEventPosts = updatePostList(state.hostedEventPosts);
+  state.followingEventPosts = updatePostList(state.followingEventPosts);
+  state.posts = updatePostList(state.posts);
+  state.nearbyEventPosts = updatePostList(state.nearbyEventPosts);
+  state.liveNowPosts = updatePostList(state.liveNowPosts);
+  if (currentUserId && state.publicProfileEventPosts[currentUserId]) {
+    state.publicProfileEventPosts[currentUserId] = updatePostList(
+      state.publicProfileEventPosts[currentUserId],
+    );
+  }
+}
+
+function renderCurrentUserAvatarSurfaces() {
+  const nextAvatar = state.currentUser.avatar || defaultAvatar;
+  [
+    "profile-avatar",
+    "desktop-sidebar-profile-avatar",
+    "mobile-nav-profile-avatar",
+  ].forEach((id) => {
+    const imageEl = document.getElementById(id);
+    if (imageEl) {
+      imageEl.src = nextAvatar;
+    }
+  });
+}
+
 function renderCurrentUserProfile() {
   const avatarEl = document.getElementById("profile-avatar");
   const nameEl = document.getElementById("profile-display-name");
   const handleEl = document.getElementById("profile-handle");
   const bioEl = document.getElementById("profile-bio");
 
+  renderCurrentUserAvatarSurfaces();
   if (avatarEl) avatarEl.src = state.currentUser.avatar || defaultAvatar;
   if (nameEl)
     nameEl.textContent =
@@ -830,13 +1046,15 @@ async function postFormData(url, formData) {
   return data;
 }
 
-async function deleteJson(url) {
+async function deleteJson(url, body = null) {
   const response = await fetch(url, {
     method: "DELETE",
     headers: {
+      "Content-Type": "application/json",
       "X-CSRFToken": getCsrfToken(),
     },
     credentials: "same-origin",
+    body: body ? JSON.stringify(body) : null,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1395,7 +1613,648 @@ function renderSettingsPrivacyState() {
   copyEl.textContent = isPrivate
     ? "Only approved followers can view your posts and events. New followers must send a request."
     : "Anyone can follow you instantly and view your posts and events.";
+  renderSettingsOverview();
 }
+
+function getSettingsThemeLabel() {
+  return document.body.classList.contains("theme-light") ? "Light" : "Dark";
+}
+
+function getSettingsRoleMeta() {
+  if (state.currentUser.accountRole === "super_admin") {
+    return {
+      label: "Super admin",
+      familyLabel: "Admin control tower",
+      supervisionStatus: "Advanced oversight",
+    };
+  }
+  if (state.currentUser.accountRole === "admin") {
+    return {
+      label: "Admin",
+      familyLabel: "Normal admin",
+      supervisionStatus: "Team moderation ready",
+    };
+  }
+  return {
+    label: "Member",
+    familyLabel: "Parent / child ready",
+    supervisionStatus: "Available for family setup",
+  };
+}
+
+function getLocationSettingsSummary() {
+  const locationLabel = getLocationLabel();
+  if (!state.locationEnabled) {
+    return {
+      status: "Off",
+      detail: "Live and nearby party suggestions are paused until you enable location again.",
+    };
+  }
+  if (locationLabel && locationLabel !== "Location Off") {
+    return {
+      status: "Live",
+      detail: `Using ${locationLabel} for nearby discovery and event context.`,
+    };
+  }
+  return {
+    status: "Browser controlled",
+    detail: "Location can be detected from this device whenever permission is granted.",
+  };
+}
+
+function settingsToneClass(tone) {
+  switch (tone) {
+    case "success":
+      return "settings-item--success";
+    case "warning":
+      return "settings-item--warning";
+    case "danger":
+      return "settings-item--danger";
+    default:
+      return "settings-item--neutral";
+  }
+}
+
+function buildSettingsSummaryChips() {
+  return [
+    {
+      label: "Trust",
+      value: state.currentUser.govIdVerified ? "Verified" : "Verification needed",
+    },
+    {
+      label: "Privacy",
+      value: state.currentUser.isPrivate ? "Private account" : "Public account",
+    },
+    {
+      label: "Role",
+      value: getSettingsRoleMeta().label,
+    },
+    {
+      label: "Theme",
+      value: `${getSettingsThemeLabel()} mode`,
+    },
+  ];
+}
+
+function buildSettingsSections() {
+  const roleMeta = getSettingsRoleMeta();
+  const locationMeta = getLocationSettingsSummary();
+  const tagsStatus = state.currentUser.isPrivate ? "Followers" : "Everyone";
+  const ordersCount = Number(state.currentUser.ordersCount || state.tickets.length || 0);
+  const activeOrdersCount = Number(
+    state.currentUser.activeOrdersCount || state.tickets.length || 0,
+  );
+  const archivedOrdersCount = Number(state.currentUser.archivedOrdersCount || 0);
+  const paidOrdersCount = Number(state.currentUser.paidOrdersCount || 0);
+  const pendingRequests = state.currentUser.isPrivate
+    ? Number(
+        (state.settings.followRequests || []).length ||
+          state.currentUser.pendingFollowRequestsCount ||
+          0,
+      )
+    : Number(state.currentUser.pendingFollowRequestsCount || 0);
+  return [
+    {
+      title: "Account & Security",
+      description: "Core trust, authentication and access control for your Happnix identity.",
+      items: [
+        {
+          title: "Aadhaar / Identity Verification",
+          status: state.currentUser.govIdVerified ? "Verified" : "Action needed",
+          tone: state.currentUser.govIdVerified ? "success" : "warning",
+          detail: state.currentUser.govIdVerified
+            ? "Trusted identity is active for hosting and secure party participation."
+            : "Verify Aadhaar to unlock trusted hosting, safer check-ins and stronger account credibility.",
+        },
+        {
+          title: "Password & Authentication",
+          status: "Protected",
+          tone: "neutral",
+          detail: state.currentUser.email
+            ? `Primary sign-in is linked to ${state.currentUser.email}.`
+            : "Username and password login is available on this account.",
+        },
+        {
+          title: "Double Authentication",
+          status: "Recommended",
+          tone: "warning",
+          detail: "Add OTP-based second step next to password login for stronger account security.",
+        },
+        {
+          title: "Account Status",
+          status: state.currentUser.accountStatus === "verified" ? "Verified ready" : "Limited access",
+          tone: state.currentUser.accountStatus === "verified" ? "success" : "warning",
+          detail: state.currentUser.canCreateOrJoinParties
+            ? "Your account is ready for discovery, hosting and trusted party participation."
+            : "Complete identity trust checks to remove current participation limits.",
+        },
+        {
+          title: "App & Website Permissions",
+          status: "Scoped",
+          tone: "neutral",
+          detail: "Connected surfaces should only receive sign-in, session and core profile access.",
+        },
+      ],
+    },
+    {
+      title: "Privacy Controls",
+      description: "Social-first controls for visibility, interactions and safer discovery.",
+      items: [
+        {
+          title: "Private Account Toggle",
+          status: state.currentUser.isPrivate ? "Private" : "Public",
+          tone: state.currentUser.isPrivate ? "warning" : "success",
+          detail: state.currentUser.isPrivate
+            ? "Followers need approval before they can view your posts and events."
+            : "Your profile, posts and events are visible to everyone instantly.",
+          action: "toggle-private-account",
+          actionLabel: state.currentUser.isPrivate ? "Make public" : "Make private",
+        },
+        {
+          title: "Follow Request Manager",
+          status: pendingRequests > 0 ? `${pendingRequests} pending` : "Clear",
+          tone: pendingRequests > 0 ? "warning" : "neutral",
+          detail: state.currentUser.isPrivate
+            ? "Review follower access requests below in this settings panel."
+            : "Switch on private mode if you want approvals before people can follow you.",
+        },
+        {
+          title: "Blocked Accounts",
+          status: `${Number(state.currentUser.blockedCount || 0)} blocked`,
+          tone: Number(state.currentUser.blockedCount || 0) > 0 ? "warning" : "neutral",
+          detail: "People you block will not be able to discover, message or follow you.",
+        },
+        {
+          title: "Restricted Accounts",
+          status: `${Number(state.currentUser.restrictedCount || 0)} restricted`,
+          tone: Number(state.currentUser.restrictedCount || 0) > 0 ? "warning" : "neutral",
+          detail: "Use restrictions for low-friction safety without a full block.",
+        },
+        {
+          title: "Tags & Mentions",
+          status: state.currentUser.tagsAndMentionsPermission || tagsStatus,
+          tone: "neutral",
+          detail: "Control who can tag or mention you in party conversations and social moments.",
+        },
+        {
+          title: "Interested / Not Interested / Like / Share",
+          status: "Personalized",
+          tone: "neutral",
+          detail: "Your reactions help Happnix tune discovery, relevance and social recommendations.",
+        },
+        {
+          title: "Location, Live",
+          status: locationMeta.status,
+          tone: state.locationEnabled ? "success" : "warning",
+          detail: locationMeta.detail,
+          action: "open-location-settings",
+          actionLabel: "Manage",
+        },
+      ],
+    },
+    {
+      title: "Family, Roles & Admin",
+      description: "Supervision, household sharing and access tiers for safe multi-user usage.",
+      items: [
+        {
+          title: "Admin User Access",
+          status: roleMeta.label,
+          tone: state.currentUser.accountRole === "member" ? "neutral" : "success",
+          detail: "Access changes based on moderation responsibility and account trust level.",
+        },
+        {
+          title: "Parent / Child / Normal Admin",
+          status: state.currentUser.familyRole || roleMeta.familyLabel,
+          tone: "neutral",
+          detail: "Family-aware roles can support supervised discovery, approvals and shared visibility.",
+        },
+        {
+          title: "Supervision / Family Centre",
+          status: roleMeta.supervisionStatus,
+          tone: "neutral",
+          detail: "A future family center can manage child safety, check-ins and content boundaries.",
+        },
+        {
+          title: "Cross Posting (Family Subscription)",
+          status: "Ready for plans",
+          tone: "neutral",
+          detail: "Shared family plans can reuse approved event posts across linked household accounts.",
+        },
+        {
+          title: "Dashboard",
+          status: `${Number(state.currentUser.hostedEventsCount || 0)} hosted`,
+          tone: Number(state.currentUser.hostedEventsCount || 0) > 0 ? "success" : "neutral",
+          detail: "Track your hosted events, party activity and attendance performance from your main flow.",
+          action: "open-dashboard",
+          actionLabel: "Open",
+        },
+        {
+          title: "Ads Payment",
+          status: Number(state.currentUser.hostedEventsCount || 0) > 0 ? "Creator ready" : "Off",
+          tone: Number(state.currentUser.hostedEventsCount || 0) > 0 ? "success" : "neutral",
+          detail: "Sponsored party boosts and promo spends can live here for hosts and admins.",
+        },
+      ],
+    },
+    {
+      title: "Library, Payments & Experience",
+      description: "Profile presentation, saved history, orders and device-side personalization.",
+      items: [
+        {
+          title: "Edit Profile",
+          status: "Profile tab",
+          tone: "neutral",
+          detail: "Update your vibe, avatar and social presentation from your personal profile area.",
+          action: "open-profile-settings-destination",
+          actionLabel: "Open",
+        },
+        {
+          title: "About",
+          status: state.currentUser.bio ? "Custom bio" : "Needs intro",
+          tone: state.currentUser.bio ? "success" : "neutral",
+          detail: state.currentUser.bio || "Tell people what kind of parties, music or energy you bring.",
+        },
+        {
+          title: "Saved",
+          status: `${Number(state.currentUser.savedProfilesCount || 0)} saved`,
+          tone: Number(state.currentUser.savedProfilesCount || 0) > 0 ? "success" : "neutral",
+          detail: "Use this space for bookmarked parties, creators and inspiration later.",
+        },
+        {
+          title: "Archive",
+          status: `${archivedOrdersCount} archived`,
+          tone: archivedOrdersCount > 0 ? "success" : "neutral",
+          detail: "Old bookings, past party memories and archived tickets can be stored cleanly here.",
+        },
+        {
+          title: "Orders & Payments",
+          status: `${ordersCount} total / ${paidOrdersCount} paid`,
+          tone: paidOrdersCount > 0 ? "success" : "neutral",
+          detail: `${activeOrdersCount} active order${activeOrdersCount === 1 ? "" : "s"} are currently visible in your account.`,
+        },
+        {
+          title: "Theme",
+          status: `${getSettingsThemeLabel()} mode`,
+          tone: "neutral",
+          detail: "Switch the interface mood between bright clarity and late-night party contrast.",
+          action: "toggle-theme-from-settings",
+          actionLabel: "Switch",
+        },
+      ],
+    },
+    {
+      title: "Support, Permissions & Legal",
+      description: "Device access, feedback routes and important policy surfaces.",
+      items: [
+        {
+          title: "Language Support",
+          status: "English first",
+          tone: "neutral",
+          detail: "Happnix is ready to expand into regional and multilingual party communities.",
+        },
+        {
+          title: "Device Permissions",
+          status: state.locationEnabled ? "Location enabled" : "Review needed",
+          tone: state.locationEnabled ? "success" : "warning",
+          detail: "Browser-level location, camera and microphone permissions shape discovery, media and safety flows.",
+          action: "open-location-settings",
+          actionLabel: "Review",
+        },
+        {
+          title: "Help Center / Feedback",
+          status: "Always open",
+          tone: "neutral",
+          detail: "Feedback should collect bug reports, trust concerns and party-quality ideas from the community.",
+        },
+        {
+          title: "Legal & Terms",
+          status: "Available",
+          tone: "neutral",
+          detail: "Policies, community standards and payment terms belong here for transparency.",
+        },
+        {
+          title: "Logout",
+          status: "Secure sign-out",
+          tone: "danger",
+          detail: "End this session cleanly on shared or low-trust devices whenever needed.",
+          action: "logout",
+          actionLabel: "Sign out",
+        },
+      ],
+    },
+  ];
+}
+
+function renderSettingsOverview() {
+  const chipsEl = document.getElementById("settings-summary-chips");
+  const sectionsEl = document.getElementById("settings-overview-sections");
+  if (!chipsEl || !sectionsEl) return;
+  chipsEl.innerHTML = buildSettingsSummaryChips()
+    .map(
+      (chip) => `
+        <div class="settings-chip">
+          <span class="settings-chip-label">${escapeHtml(chip.label)}</span>
+          <span class="settings-chip-value">${escapeHtml(chip.value)}</span>
+        </div>`,
+    )
+    .join("");
+  sectionsEl.innerHTML = buildSettingsSections()
+    .map(
+      (section) => `
+        <section class="settings-section-card rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <div class="mb-4">
+            <h4 class="text-sm font-black uppercase tracking-[0.18em] text-white">${escapeHtml(section.title)}</h4>
+            <p class="mt-2 text-sm leading-6 text-gray-400">${escapeHtml(section.description)}</p>
+          </div>
+          <div class="space-y-3">
+            ${section.items
+              .map(
+                (item) => `
+                  <article class="settings-item ${settingsToneClass(item.tone)}">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h5 class="text-sm font-bold text-white">${escapeHtml(item.title)}</h5>
+                        <span class="settings-status-pill">${escapeHtml(item.status)}</span>
+                      </div>
+                      <p class="mt-2 text-sm leading-6 text-gray-300/85">${escapeHtml(item.detail)}</p>
+                    </div>
+                    ${item.action ? `<button type="button" data-action="${escapeHtml(item.action)}" class="settings-item-action">${escapeHtml(item.actionLabel || "Open")}</button>` : ""}
+                  </article>`,
+              )
+              .join("")}
+          </div>
+        </section>`,
+    )
+    .join("");
+}
+
+function getSettingsPeopleMeta(category) {
+  switch (category) {
+    case "blocked":
+      return { label: "Blocked", actionLabel: "Block", empty: "No blocked accounts yet." };
+    case "restricted":
+      return { label: "Restricted", actionLabel: "Restrict", empty: "No restricted accounts yet." };
+    default:
+      return { label: "Saved", actionLabel: "Save", empty: "No saved profiles yet." };
+  }
+}
+
+function syncSettingsCountsFromLists() {
+  state.currentUser.savedProfilesCount = (state.settings.people.lists.saved || []).length;
+  state.currentUser.blockedCount = (state.settings.people.lists.blocked || []).length;
+  state.currentUser.restrictedCount = (state.settings.people.lists.restricted || []).length;
+}
+
+function renderSettingsPreferencesControls() {
+  const tagsEl = document.getElementById("settings-tags-permission");
+  const familyEl = document.getElementById("settings-family-role");
+  const statusEl = document.getElementById("settings-preferences-status");
+  const saveEl = document.getElementById("settings-preferences-save");
+  if (!tagsEl || !familyEl || !statusEl || !saveEl) return;
+  tagsEl.value = state.settings.preferences.tagsAndMentionsPermission || "everyone";
+  familyEl.value = state.settings.preferences.familyRole || "member";
+  statusEl.textContent = state.settings.preferences.saving
+    ? "Saving your preferences..."
+    : "These settings shape how people can reach and categorize you.";
+  saveEl.classList.toggle("opacity-60", !!state.settings.preferences.saving);
+  saveEl.classList.toggle("pointer-events-none", !!state.settings.preferences.saving);
+}
+
+function renderSettingsPeopleManager() {
+  const tabsEl = document.getElementById("settings-people-category-tabs");
+  const resultsEl = document.getElementById("settings-people-search-results");
+  const listEl = document.getElementById("settings-people-current-list");
+  const titleEl = document.getElementById("settings-people-list-title");
+  const countEl = document.getElementById("settings-people-list-count");
+  if (!tabsEl || !resultsEl || !listEl || !titleEl || !countEl) return;
+  const activeCategory = state.settings.people.activeCategory || "saved";
+  const meta = getSettingsPeopleMeta(activeCategory);
+  const list = Array.isArray(state.settings.people.lists[activeCategory])
+    ? state.settings.people.lists[activeCategory]
+    : [];
+  tabsEl.innerHTML = ["saved", "blocked", "restricted"]
+    .map((category) => {
+      const isActive = category === activeCategory;
+      return `<button type="button" data-action="switch-settings-people-category" data-category="${category}" class="settings-category-tab ${isActive ? "settings-category-tab--active" : ""}">${escapeHtml(getSettingsPeopleMeta(category).label)}</button>`;
+    })
+    .join("");
+  titleEl.textContent = `${meta.label} profiles`;
+  countEl.textContent = String(list.length);
+  if (state.settings.people.searching) {
+    resultsEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-5 text-sm text-gray-400">Searching people...</div>';
+  } else if ((state.settings.people.query || "").trim() && state.settings.people.searchResults.length === 0) {
+    resultsEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-5 text-sm text-gray-500">No matching people found.</div>';
+  } else {
+    resultsEl.innerHTML = state.settings.people.searchResults
+      .map((user) => {
+        const isBusy = Number(state.settings.people.addingId || 0) === Number(user.sql_user_id || 0);
+        return `
+          <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10">
+            <div class="flex items-center gap-3">
+              <img src="${escapeHtml(user.profile_picture_url || defaultAvatar)}" alt="${escapeHtml(user.full_name || user.username || "User")}" class="h-12 w-12 rounded-2xl object-cover bg-slate-800">
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-bold text-white">${escapeHtml(user.full_name || user.username || "Unknown user")}</div>
+                <div class="truncate text-sm text-gray-400">${escapeHtml(user.username ? `@${user.username}` : "")}</div>
+              </div>
+              <button type="button" data-action="add-settings-person" data-category="${activeCategory}" data-user-id="${user.sql_user_id}" class="settings-item-action ${isBusy ? "pointer-events-none opacity-60" : ""}">${escapeHtml(meta.actionLabel)}</button>
+            </div>
+          </article>`;
+      })
+      .join("");
+  }
+  if (state.settings.people.loading) {
+    listEl.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-400">Loading list...</div>';
+    return;
+  }
+  if (list.length === 0) {
+    listEl.innerHTML = `<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">${escapeHtml(meta.empty)}</div>`;
+    return;
+  }
+  listEl.innerHTML = list
+    .map((user) => {
+      const isBusy = Number(state.settings.people.removingId || 0) === Number(user.sql_user_id || 0);
+      return `
+        <article class="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 shadow-lg shadow-black/10">
+          <div class="flex items-center gap-3">
+            <img src="${escapeHtml(user.profile_picture_url || defaultAvatar)}" alt="${escapeHtml(user.full_name || user.username || "User")}" class="h-12 w-12 rounded-2xl object-cover bg-slate-800">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-bold text-white">${escapeHtml(user.full_name || user.username || "Unknown user")}</div>
+              <div class="truncate text-sm text-gray-400">${escapeHtml(user.username ? `@${user.username}` : "")}</div>
+            </div>
+            <button type="button" data-action="remove-settings-person" data-category="${activeCategory}" data-user-id="${user.sql_user_id}" class="settings-item-action ${isBusy ? "pointer-events-none opacity-60" : ""}">${activeCategory === "saved" ? "Remove" : activeCategory === "blocked" ? "Unblock" : "Unrestrict"}</button>
+          </div>
+        </article>`;
+    })
+    .join("");
+}
+
+async function loadSettingsPreferences() {
+  try {
+    const data = await getJson("/api/settings/preferences");
+    state.settings.preferences.tagsAndMentionsPermission =
+      data?.tagsAndMentionsPermission || "everyone";
+    state.settings.preferences.familyRole = data?.familyRole || "member";
+    state.settings.preferences.loaded = true;
+    state.currentUser.tagsAndMentionsPermission =
+      state.settings.preferences.tagsAndMentionsPermission;
+    state.currentUser.familyRole = state.settings.preferences.familyRole;
+  } catch (_error) {
+    state.settings.preferences.loaded = false;
+  }
+  renderSettingsPreferencesControls();
+  renderSettingsOverview();
+}
+
+async function saveSettingsPreferences() {
+  const tagsEl = document.getElementById("settings-tags-permission");
+  const familyEl = document.getElementById("settings-family-role");
+  if (!tagsEl || !familyEl) return;
+  state.settings.preferences.saving = true;
+  renderSettingsPreferencesControls();
+  try {
+    const data = await postJson("/api/settings/preferences", {
+      tagsAndMentionsPermission: tagsEl.value,
+      familyRole: familyEl.value,
+    });
+    state.settings.preferences.tagsAndMentionsPermission =
+      data?.tagsAndMentionsPermission || tagsEl.value;
+    state.settings.preferences.familyRole = data?.familyRole || familyEl.value;
+    state.currentUser.tagsAndMentionsPermission =
+      state.settings.preferences.tagsAndMentionsPermission;
+    state.currentUser.familyRole = state.settings.preferences.familyRole;
+  } catch (_error) {
+    // Leave current selections visible for retry.
+  } finally {
+    state.settings.preferences.saving = false;
+    renderSettingsPreferencesControls();
+    renderSettingsOverview();
+  }
+}
+
+async function loadSettingsPeople(category = state.settings.people.activeCategory, options = {}) {
+  const safeCategory = ["saved", "blocked", "restricted"].includes(category)
+    ? category
+    : "saved";
+  state.settings.people.activeCategory = safeCategory;
+  if (!options.silent) {
+    state.settings.people.loading = true;
+  }
+  renderSettingsPeopleManager();
+  try {
+    const data = await getJson(`/api/settings/people/${safeCategory}`);
+    state.settings.people.lists[safeCategory] = Array.isArray(data?.users) ? data.users : [];
+    syncSettingsCountsFromLists();
+  } catch (_error) {
+    state.settings.people.lists[safeCategory] = [];
+  } finally {
+    state.settings.people.loading = false;
+    renderSettingsPeopleManager();
+    renderSettingsOverview();
+  }
+}
+
+async function searchSettingsPeople(query) {
+  const trimmed = String(query || "").trim();
+  state.settings.people.query = trimmed;
+  if (!trimmed) {
+    state.settings.people.searchResults = [];
+    state.settings.people.searching = false;
+    renderSettingsPeopleManager();
+    return;
+  }
+  state.settings.people.searching = true;
+  renderSettingsPeopleManager();
+  try {
+    const data = await getJson(`/api/users/search?q=${encodeURIComponent(trimmed)}&limit=8`);
+    const currentList = state.settings.people.lists[state.settings.people.activeCategory] || [];
+    const existingIds = new Set(currentList.map((user) => Number(user.sql_user_id || 0)));
+    state.settings.people.searchResults = Array.isArray(data?.users)
+      ? data.users.filter(
+          (user) =>
+            Number(user.sql_user_id || 0) !== Number(state.currentUser.id || 0) &&
+            !existingIds.has(Number(user.sql_user_id || 0)),
+        )
+      : [];
+  } catch (_error) {
+    state.settings.people.searchResults = [];
+  } finally {
+    state.settings.people.searching = false;
+    renderSettingsPeopleManager();
+  }
+}
+
+async function addSettingsPerson(category, userId) {
+  const safeUserId = Number(userId || 0);
+  if (!Number.isFinite(safeUserId) || safeUserId <= 0) return;
+  state.settings.people.addingId = safeUserId;
+  renderSettingsPeopleManager();
+  try {
+    const response = await postJson(`/api/settings/people/${category}`, {
+      targetUserId: safeUserId,
+    });
+    state.settings.people.lists[category] = Array.isArray(response?.users)
+      ? response.users
+      : state.settings.people.lists[category] || [];
+    state.settings.people.searchResults = state.settings.people.searchResults.filter(
+      (user) => Number(user.sql_user_id || 0) !== safeUserId,
+    );
+    syncSettingsCountsFromLists();
+    if (category === "blocked") {
+      state.settings.people.lists.saved = (state.settings.people.lists.saved || []).filter(
+        (user) => Number(user.sql_user_id || 0) !== safeUserId,
+      );
+      state.settings.people.lists.restricted = (state.settings.people.lists.restricted || []).filter(
+        (user) => Number(user.sql_user_id || 0) !== safeUserId,
+      );
+      syncSettingsCountsFromLists();
+    }
+  } catch (_error) {
+    // Keep current state if request fails.
+  } finally {
+    state.settings.people.addingId = null;
+    renderSettingsPeopleManager();
+    renderSettingsOverview();
+  }
+}
+
+async function removeSettingsPerson(category, userId) {
+  const safeUserId = Number(userId || 0);
+  if (!Number.isFinite(safeUserId) || safeUserId <= 0) return;
+  state.settings.people.removingId = safeUserId;
+  renderSettingsPeopleManager();
+  try {
+    await deleteJson(`/api/settings/people/${category}`, {
+      targetUserId: safeUserId,
+    });
+    state.settings.people.lists[category] = (state.settings.people.lists[category] || []).filter(
+      (user) => Number(user.sql_user_id || 0) !== safeUserId,
+    );
+    syncSettingsCountsFromLists();
+  } catch (_error) {
+    // Keep current list if removal fails.
+  } finally {
+    state.settings.people.removingId = null;
+    renderSettingsPeopleManager();
+    renderSettingsOverview();
+  }
+}
+
+function bindSettingsSearchInput() {
+  const input = document.getElementById("settings-people-search");
+  if (!input || input.dataset.bound === "true") return;
+  input.dataset.bound = "true";
+  let timerId = null;
+  input.addEventListener("input", () => {
+    const nextValue = input.value || "";
+    if (timerId) {
+      clearTimeout(timerId);
+    }
+    timerId = window.setTimeout(() => {
+      searchSettingsPeople(nextValue);
+    }, 220);
+  });
+}
+
 
 function renderSettingsFollowRequests() {
   const countEl = document.getElementById("settings-follow-requests-count");
@@ -1405,6 +2264,7 @@ function renderSettingsFollowRequests() {
     ? state.settings.followRequests
     : [];
   countEl.textContent = String(requests.length);
+  renderSettingsOverview();
   if (!state.currentUser.isPrivate) {
     listEl.innerHTML =
       '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">Turn on Private Account to review follow requests here.</div>';
@@ -1453,6 +2313,7 @@ function renderNotificationFollowRequests() {
     ? state.settings.followRequests
     : [];
   countEl.textContent = String(requests.length);
+  renderSettingsOverview();
   if (!state.currentUser.isPrivate) {
     listEl.innerHTML =
       '<div class="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-sm text-gray-500">Switch to a private account if you want follow requests to appear here.</div>';
@@ -1509,6 +2370,8 @@ async function loadFollowRequests(options = {}) {
     state.settings.followRequests = Array.isArray(data?.requests)
       ? data.requests
       : [];
+    state.currentUser.pendingFollowRequestsCount =
+      state.settings.followRequests.length;
   } catch (_error) {
     state.settings.followRequests = [];
   } finally {
@@ -1577,14 +2440,20 @@ function openSettingsModal() {
   const card = document.getElementById("settings-card");
   if (!modal || !card) return;
   renderSettingsPrivacyState();
+  renderSettingsOverview();
+  renderSettingsPreferencesControls();
+  renderSettingsPeopleManager();
   renderSettingsFollowRequests();
   renderNotificationFollowRequests();
+  bindSettingsSearchInput();
   modal.classList.remove("hidden");
   requestAnimationFrame(() => {
     modal.classList.remove("opacity-0");
     card.classList.remove("scale-95");
   });
   loadFollowRequests();
+  loadSettingsPreferences();
+  loadSettingsPeople(state.settings.people.activeCategory, { silent: false });
 }
 
 function closeSettingsModal() {
@@ -1721,10 +2590,41 @@ async function loadCurrentUserProfile() {
     state.currentUser.fullName =
       profile.full_name || state.currentUser.username;
     state.currentUser.bio = profile.bio || "";
+    state.currentUser.email = profile.email || "";
+    state.currentUser.mobile = profile.mobile || "";
+    state.currentUser.sex = profile.sex || "";
+    state.currentUser.dateOfBirth = profile.date_of_birth || "";
     state.currentUser.avatar =
       profile.profile_picture_url || state.currentUser.avatar || defaultAvatar;
     state.currentUser.isPrivate = Boolean(profile.is_private);
     state.currentUser.govIdVerified = Boolean(profile.gov_id_verified);
+    state.currentUser.canCreateOrJoinParties = Boolean(
+      profile.can_create_or_join_parties,
+    );
+    state.currentUser.accountRole = profile.account_role || "member";
+    state.currentUser.accountStatus = profile.account_status || "limited";
+    state.currentUser.ordersCount = Number(profile.orders_count || 0);
+    state.currentUser.activeOrdersCount = Number(
+      profile.active_orders_count || 0,
+    );
+    state.currentUser.archivedOrdersCount = Number(
+      profile.archived_orders_count || 0,
+    );
+    state.currentUser.paidOrdersCount = Number(profile.paid_orders_count || 0);
+    state.currentUser.followersCount = Number(profile.followers_count || 0);
+    state.currentUser.followingCount = Number(profile.following_count || 0);
+    state.currentUser.hostedEventsCount = Number(
+      profile.hosted_events_count || 0,
+    );
+    state.currentUser.savedProfilesCount = Number(profile.saved_profiles_count || 0);
+    state.currentUser.blockedCount = Number(profile.blocked_count || 0);
+    state.currentUser.restrictedCount = Number(profile.restricted_count || 0);
+    state.currentUser.tagsAndMentionsPermission =
+      profile.tags_and_mentions_permission || "everyone";
+    state.currentUser.familyRole = profile.family_role || "member";
+    state.settings.preferences.tagsAndMentionsPermission =
+      state.currentUser.tagsAndMentionsPermission;
+    state.settings.preferences.familyRole = state.currentUser.familyRole;
     state.currentUser.pendingFollowRequestsCount = Number(
       profile.pending_follow_requests_count || 0,
     );
@@ -1743,6 +2643,7 @@ async function loadCurrentUserProfile() {
       privacyStatusEl.textContent = profile.is_private ? "Private" : "Public";
       privacyStatusEl.className = `text-sm font-bold ${profile.is_private ? "text-amber-200" : "text-emerald-200"}`;
     }
+    syncCurrentUserAvatarAcrossState();
   } catch (error) {
     console.error("Failed to load current profile:", error);
     setLocationStatus(
@@ -1754,6 +2655,7 @@ async function loadCurrentUserProfile() {
   renderProfileGrid();
   renderHostedEventList();
   renderSettingsPrivacyState();
+  renderSettingsOverview();
   renderSettingsFollowRequests();
 }
 
@@ -1821,7 +2723,7 @@ function getEventHighlightPosts(eventPostId) {
 function getPostPreviewImage(post) {
   const items = getPostMediaItems(post);
   const firstImage = items.find((item) => item.type !== "video");
-  return firstImage?.url || post.image || defaultAvatar;
+  return firstImage?.url || post.image || defaultEventImage;
 }
 
 function renderLinkedPostBadge(post) {
@@ -2245,6 +3147,7 @@ function saveLocationModal() {
     localStorage.removeItem("happnix_custom_location_bounds");
   }
   renderTopLocationUi();
+  renderSettingsOverview();
   closeLocationModal();
   loadNearbyEvents();
 }
@@ -2288,6 +3191,7 @@ function clearLocationModal() {
   }
   hideLocationModalSuggestions();
   renderTopLocationUi();
+  renderSettingsOverview();
   loadNearbyEvents();
 }
 
@@ -2309,6 +3213,7 @@ function renderTopLocationUi() {
       : `Location: ${state.locationEnabled ? "On" : "Off"}`;
   }
   updateLocationModalMeta();
+  renderSettingsOverview();
 }
 
 function animateLocationToggleButton(buttonId) {
@@ -4122,6 +5027,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     }
+    const profileEditorModal = document.getElementById("profile-editor-modal");
+    if (profileEditorModal) {
+      profileEditorModal.addEventListener("click", (event) => {
+        if (event.target === profileEditorModal) {
+          closeProfileEditor();
+        }
+      });
+    }
     const notificationsModal = document.getElementById("notifications-modal");
     if (notificationsModal) {
       notificationsModal.addEventListener("click", (event) => {
@@ -4151,6 +5064,7 @@ document.addEventListener("DOMContentLoaded", () => {
     bindLocationButtonGestures("mobile-location-btn");
     bindLocationButtonGestures("desktop-location-btn");
     applyTheme(getPreferredTheme());
+    bindProfileEditorInputs();
     document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
       button.addEventListener("click", () => {
         const isLight = document.body.classList.contains("theme-light");
@@ -4590,7 +5504,7 @@ function renderDiscoverProfileEvents(events) {
         return `
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] overflow-hidden shadow-lg shadow-black/10">
                     <div class="aspect-[16/9] bg-slate-800 overflow-hidden">
-                        <img src="${escapeHtml(getPostPreviewImage(post) || defaultAvatar)}" alt="${escapeHtml(post.username || "Post")}" class="h-full w-full object-cover">
+                        <img src="${escapeHtml(getPostPreviewImage(post) || defaultEventImage)}" alt="${escapeHtml(post.username || "Post")}" class="h-full w-full object-cover">
                     </div>
                     <div class="p-4 space-y-3">
                         <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300">Post</div>
@@ -4602,7 +5516,7 @@ function renderDiscoverProfileEvents(events) {
       return `
             <article class="rounded-3xl border border-white/10 bg-white/[0.03] overflow-hidden shadow-lg shadow-black/10">
                 <div class="aspect-[16/9] bg-slate-800 overflow-hidden">
-                    <img src="${escapeHtml(post.image || defaultAvatar)}" alt="${escapeHtml(post.eventDetails?.title || "Event")}" class="h-full w-full object-cover">
+                    <img src="${escapeHtml(post.image || defaultEventImage)}" alt="${escapeHtml(post.eventDetails?.title || "Event")}" class="h-full w-full object-cover">
                 </div>
                 <div class="p-4 space-y-4">
                     <div>
@@ -4638,7 +5552,7 @@ function renderDiscoverProfileMediaGrid(events) {
               .map(
                 (post) => `
                 <div class="aspect-square overflow-hidden rounded-2xl bg-slate-800 border border-white/10">
-                    <img src="${escapeHtml(post.image || defaultAvatar)}" alt="${escapeHtml(post.eventDetails?.title || "Event")}" class="h-full w-full object-cover">
+                    <img src="${escapeHtml(post.image || defaultEventImage)}" alt="${escapeHtml(post.eventDetails?.title || "Event")}" class="h-full w-full object-cover">
                 </div>`,
               )
               .join("")}</div>
@@ -5565,8 +6479,62 @@ function bindHomePageActions() {
       case "close-settings":
         closeSettingsModal();
         break;
+      case "open-profile-editor":
+        openProfileEditor();
+        break;
+      case "close-profile-editor":
+        closeProfileEditor();
+        break;
+      case "save-profile-editor":
+        saveProfileEditor();
+        break;
+      case "choose-profile-image": {
+        const fileInput = document.getElementById("profile-editor-file");
+        if (fileInput) {
+          fileInput.click();
+        }
+        break;
+      }
       case "toggle-private-account":
         updatePrivateAccountSetting(!state.currentUser.isPrivate);
+        break;
+      case "toggle-theme-from-settings": {
+        const isLight = document.body.classList.contains("theme-light");
+        applyTheme(isLight ? "dark" : "light", { persist: true });
+        break;
+      }
+      case "save-settings-preferences":
+        saveSettingsPreferences();
+        break;
+      case "switch-settings-people-category":
+        if (actionEl.dataset.category) {
+          state.settings.people.searchResults = [];
+          state.settings.people.query = "";
+          const searchInput = document.getElementById("settings-people-search");
+          if (searchInput) searchInput.value = "";
+          loadSettingsPeople(actionEl.dataset.category, { silent: false });
+        }
+        break;
+      case "add-settings-person":
+        if (actionEl.dataset.category && actionEl.dataset.userId) {
+          addSettingsPerson(actionEl.dataset.category, actionEl.dataset.userId);
+        }
+        break;
+      case "remove-settings-person":
+        if (actionEl.dataset.category && actionEl.dataset.userId) {
+          removeSettingsPerson(actionEl.dataset.category, actionEl.dataset.userId);
+        }
+        break;
+      case "open-location-settings":
+        openLocationModal("default");
+        break;
+      case "open-profile-settings-destination":
+        closeSettingsModal();
+        switchTab("profile");
+        break;
+      case "open-dashboard":
+        closeSettingsModal();
+        switchTab("tickets");
         break;
       case "handle-follow-request":
         if (actionEl.dataset.requesterId && actionEl.dataset.requestAction) {
@@ -6020,7 +6988,7 @@ function normalizeStoredTicket(ticket) {
     event: {
       ...normalizedEvent,
       id: String(normalizedEvent.id || event.id || ""),
-      image: normalizedEvent.image || defaultAvatar,
+      image: normalizedEvent.image || defaultEventImage,
       eventDetails: {
         ...(normalizedEvent.eventDetails || {}),
         ...eventDetails,

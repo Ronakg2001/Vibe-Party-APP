@@ -265,10 +265,12 @@
             class="nav-btn group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 w-full text-left transition-all text-gray-400 hover:scale-[1.03] active:scale-[0.98]"
             data-target="profile"
           >
-            <i
-              data-lucide="user"
-              class="w-6 h-6 transition-colors group-hover:text-fuchsia-400"
-            ></i>
+            <img
+              id="desktop-sidebar-profile-avatar"
+              src=""
+              alt="Profile"
+              class="w-8 h-8 rounded-2xl object-cover border border-white/10 bg-slate-900"
+            />
             <span
               class="font-bold text-lg group-hover:text-white transition-colors"
               >{{ current_username|default:'Profile' }}</span
@@ -635,17 +637,25 @@
                 <div
                   class="flex justify-between items-end -mt-10 md:-mt-16 mb-4"
                 >
-                  <div
-                    class="w-24 h-24 md:w-32 md:h-32 rounded-2xl p-1 bg-black"
+                  <button
+                    type="button"
+                    data-action="open-profile-editor"
+                    class="relative w-24 h-24 md:w-32 md:h-32 rounded-2xl p-1 bg-black border border-white/10 hover:border-cyan-400/30 transition-colors"
                   >
                     <img
                       id="profile-avatar"
-                      src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"
-                      class="w-full h-full rounded-xl object-cover"
+                      src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"%3E%3Crect width="96" height="96" rx="24" fill="%230f172a"/%3E%3Crect x="1" y="1" width="94" height="94" rx="23" stroke="%23334155" stroke-width="2"/%3E%3Ccircle cx="48" cy="36" r="15" fill="%2364748b"/%3E%3Cpath d="M22 77c3-13 13-21 26-21s23 8 26 21" fill="%2364748b"/%3E%3C/svg%3E'
+                      class="w-full h-full rounded-xl object-cover aspect-square bg-slate-900"
                     />
-                  </div>
+                    <span class="absolute bottom-1 right-1 inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/80 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+                      <i data-lucide="pencil" class="w-3 h-3"></i>
+                      Edit
+                    </span>
+                  </button>
                   <div class="flex gap-2 mb-1">
                     <button
+                      type="button"
+                      data-action="open-profile-editor"
                       class="px-4 py-2 bg-white/10 rounded-lg text-xs md:text-sm font-bold border border-white/5 hover:bg-white/20 transition-colors"
                     >
                       Edit Profile
@@ -806,7 +816,7 @@
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden">
                 <img
-                  src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&h=100&fit=crop"
+                  src="{% static 'img/Happnix-logo-small.png' %}"
                   class="w-full h-full object-cover"
                 />
               </div>
@@ -823,7 +833,7 @@
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full bg-slate-800 overflow-hidden">
                 <img
-                  src="https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&h=100&fit=crop"
+                  src="{% static 'img/Happnix-logo-small.png' %}"
                   class="w-full h-full object-cover"
                 />
               </div>
@@ -865,9 +875,9 @@
         >
           <div class="flex items-center justify-between mb-5">
             <div>
-              <h3 class="text-xl font-black text-white">Settings</h3>
+              <h3 class="text-xl font-black text-white">Happnix Settings</h3>
               <p class="text-xs uppercase tracking-[0.24em] text-gray-500">
-                Privacy and requests
+                Safety, privacy, family and experience
               </p>
             </div>
             <button
@@ -879,6 +889,22 @@
             </button>
           </div>
           <div class="space-y-6">
+            <section class="settings-hero-panel rounded-[2rem] p-5 md:p-6">
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div class="max-w-[22rem]">
+                  <p class="settings-hero-kicker">Command Center</p>
+                  <h4 class="mt-2 text-2xl font-black text-white">
+                    Shape how Happnix feels around you.
+                  </h4>
+                  <p class="mt-3 text-sm leading-6 text-slate-200/80">
+                    Account trust, social privacy, family supervision, payment
+                    visibility, device access and party discovery preferences in
+                    one place.
+                  </p>
+                </div>
+                <div id="settings-summary-chips" class="settings-chip-wrap"></div>
+              </div>
+            </section>
             <section
               class="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
             >
@@ -907,6 +933,93 @@
                 </button>
               </div>
             </section>
+            <div id="settings-overview-sections" class="space-y-5"></div>
+            <section
+              class="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
+            >
+              <div class="mb-4">
+                <div
+                  class="text-sm font-black uppercase tracking-[0.18em] text-white"
+                >
+                  Tags, Mentions & Family Role
+                </div>
+                <p class="mt-2 text-sm leading-6 text-gray-400">
+                  Choose who can tag you and how this account behaves inside
+                  family supervision flows.
+                </p>
+              </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <label class="space-y-2">
+                  <span class="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Tags & mentions</span>
+                  <select id="settings-tags-permission" class="settings-select w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none">
+                    <option value="everyone">Everyone</option>
+                    <option value="followers">Followers only</option>
+                    <option value="no_one">No one</option>
+                  </select>
+                </label>
+                <label class="space-y-2">
+                  <span class="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Family role</span>
+                  <select id="settings-family-role" class="settings-select w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none">
+                    <option value="member">Member</option>
+                    <option value="parent">Parent</option>
+                    <option value="child">Child</option>
+                    <option value="normal_admin">Normal admin</option>
+                  </select>
+                </label>
+              </div>
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p id="settings-preferences-status" class="text-sm text-gray-500">
+                  Choose your settings and save them.
+                </p>
+                <button
+                  type="button"
+                  data-action="save-settings-preferences"
+                  id="settings-preferences-save"
+                  class="settings-item-action"
+                >
+                  Save Preferences
+                </button>
+              </div>
+            </section>
+            <section
+              class="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <div
+                    class="text-sm font-black uppercase tracking-[0.18em] text-white"
+                  >
+                    People Manager
+                  </div>
+                  <p class="mt-2 text-sm leading-6 text-gray-400">
+                    Save profiles you want to revisit, block unsafe accounts, or
+                    restrict low-priority people without a hard block.
+                  </p>
+                </div>
+                <div id="settings-people-category-tabs" class="settings-category-tabs"></div>
+              </div>
+              <div class="space-y-4">
+                <label class="space-y-2 block">
+                  <span class="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Search people</span>
+                  <input
+                    id="settings-people-search"
+                    type="search"
+                    placeholder="Search username or name"
+                    class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-gray-500 outline-none focus:border-cyan-400/40"
+                  />
+                </label>
+                <div id="settings-people-search-results" class="space-y-3"></div>
+                <div>
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <p id="settings-people-list-title" class="text-sm font-bold text-white">
+                      Saved profiles
+                    </p>
+                    <span id="settings-people-list-count" class="settings-status-pill">0</span>
+                  </div>
+                  <div id="settings-people-current-list" class="space-y-3"></div>
+                </div>
+              </div>
+            </section>
             <section
               class="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
             >
@@ -931,6 +1044,85 @@
               </div>
               <div id="settings-follow-requests-list" class="space-y-3"></div>
             </section>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="profile-editor-modal"
+        class="fixed inset-0 z-[79] hidden opacity-0 transition-opacity duration-300 bg-black/80 backdrop-blur-sm"
+      >
+        <div
+          id="profile-editor-card"
+          class="absolute left-1/2 top-1/2 w-[94%] max-w-[560px] max-h-[90vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-[2rem] border border-white/10 bg-slate-900 p-6 md:p-8 shadow-2xl transform scale-95 transition-transform duration-300"
+        >
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h3 class="text-xl font-black text-white">Edit Profile</h3>
+              <p class="text-xs uppercase tracking-[0.24em] text-gray-500">
+                Bio and profile photo
+              </p>
+            </div>
+            <button
+              type="button"
+              data-action="close-profile-editor"
+              class="text-gray-400 hover:text-white"
+            >
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="space-y-5">
+            <section class="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+              <div class="flex items-center gap-4">
+                <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-white/10">
+                  <img id="profile-editor-preview" src='data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none"%3E%3Crect width="96" height="96" rx="24" fill="%230f172a"/%3E%3Crect x="1" y="1" width="94" height="94" rx="23" stroke="%23334155" stroke-width="2"/%3E%3Ccircle cx="48" cy="36" r="15" fill="%2364748b"/%3E%3Cpath d="M22 77c3-13 13-21 26-21s23 8 26 21" fill="%2364748b"/%3E%3C/svg%3E' class="h-full w-full object-cover aspect-square bg-slate-900" />
+                </div>
+                <div class="flex-1">
+                  <div class="text-sm font-black uppercase tracking-[0.18em] text-white">Profile picture</div>
+                  <p class="mt-2 text-sm text-gray-400">Upload a square-friendly photo from your device. If you skip this, Happnix shows a neutral profile icon instead of a stock face.</p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <input id="profile-editor-file" type="file" accept="image/*" class="hidden" />
+                    <button
+                      type="button"
+                      data-action="choose-profile-image"
+                      class="settings-item-action"
+                    >
+                      Upload Photo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <label class="space-y-2 block">
+              <span class="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Bio</span>
+              <textarea
+                id="profile-editor-bio"
+                rows="5"
+                maxlength="280"
+                placeholder="Tell people your vibe, music taste, party style, or what you are into."
+                class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-gray-500 outline-none focus:border-cyan-400/40"
+              ></textarea>
+            </label>
+            <div class="flex items-center justify-between gap-3">
+              <p id="profile-editor-status" class="text-sm text-gray-500">You can update your photo and bio here.</p>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  data-action="close-profile-editor"
+                  class="px-4 py-2 rounded-xl border border-white/10 bg-white/[0.03] text-sm font-bold text-white hover:bg-white/[0.06] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-action="save-profile-editor"
+                  id="profile-editor-save"
+                  class="settings-item-action"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

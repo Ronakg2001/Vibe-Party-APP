@@ -24,7 +24,7 @@ from django.conf import settings
 from urllib.parse import urlparse
 
 from . import mongo_store
-from .models import DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, UserProfile, EventTicket
+from .models import BlockedAccount, DirectConversation, DirectMessage, Event, EventMedia, EventTicket, Follow, RestrictedAccount, SavedProfile, UserProfile
 from .messaging import _broadcast_message_created
 from .utils import _error, _json_body, generate_hybrid_happnix_qr
 
@@ -959,6 +959,7 @@ def live_events_api(request):
         .order_by('-created_at')
     )
     live_events = [event for event in queryset if _event_is_live(event, now)]
+    live_events = _filter_visible_events_for_viewer(request.user, live_events)
     serialized = []
     for event in live_events:
         data = _serialize_event(event)
@@ -1029,6 +1030,8 @@ def nearby_events_api(request):
         if distance_km <= radius_km:
             nearby.append((distance_km, event))
 
+    visible_event_ids = {event.id for event in _filter_visible_events_for_viewer(request.user, [event for _distance, event in nearby])}
+    nearby = [item for item in nearby if item[1].id in visible_event_ids]
     nearby.sort(key=lambda item: item[0])
     serialized = [_serialize_event(event, distance) for distance, event in nearby]
 
@@ -1070,6 +1073,64 @@ def _pending_follow_requests_count(user):
         return 0
 
 
+def _hidden_user_ids_for_viewer(viewer, candidate_ids=None):
+    if not getattr(viewer, "is_authenticated", False):
+        return set()
+
+    candidate_filter = Q()
+    if candidate_ids:
+        candidate_filter = Q(target_id__in=candidate_ids) | Q(owner_id__in=candidate_ids)
+
+    try:
+        blocked_ids = set(
+            BlockedAccount.objects.filter(
+                candidate_filter,
+            ).filter(
+                Q(owner=viewer) | Q(target=viewer)
+            ).values_list("owner_id", "target_id")
+        )
+        restricted_ids = set(
+            RestrictedAccount.objects.filter(
+                candidate_filter,
+            ).filter(
+                Q(owner=viewer) | Q(target=viewer)
+            ).values_list("owner_id", "target_id")
+        )
+    except (OperationalError, ProgrammingError):
+        return set()
+
+    hidden_ids = set()
+    for owner_id, target_id in blocked_ids | restricted_ids:
+        if owner_id == viewer.id and target_id:
+            hidden_ids.add(int(target_id))
+        if target_id == viewer.id and owner_id:
+            hidden_ids.add(int(owner_id))
+    return hidden_ids
+
+
+def _can_view_user_surface(viewer, target_user):
+    if target_user is None:
+        return False
+    if not getattr(viewer, "is_authenticated", False):
+        return True
+    return int(target_user.id) not in _hidden_user_ids_for_viewer(viewer, [target_user.id])
+
+
+def _filter_visible_events_for_viewer(viewer, events):
+    if not getattr(viewer, "is_authenticated", False):
+        return list(events)
+    visible = []
+    hidden_host_ids = None
+    for event in events:
+        host_id = int(getattr(event, "host_id", 0) or 0)
+        if hidden_host_ids is None:
+            hidden_host_ids = _hidden_user_ids_for_viewer(viewer)
+        if host_id and host_id in hidden_host_ids:
+            continue
+        visible.append(event)
+    return visible
+
+
 def _can_view_private_content(viewer, user):
     if not _is_private_account(user):
         return True
@@ -1103,6 +1164,12 @@ def _attach_follow_state(viewer, users):
     if not getattr(viewer, "is_authenticated", False):
         return enriched
 
+    user_ids = [int(user.get("sql_user_id") or 0) for user in enriched if user.get("sql_user_id")]
+    if not user_ids:
+        return enriched
+
+    hidden_user_ids = _hidden_user_ids_for_viewer(viewer, user_ids)
+    enriched = [user for user in enriched if int(user.get("sql_user_id") or 0) not in hidden_user_ids]
     user_ids = [int(user.get("sql_user_id") or 0) for user in enriched if user.get("sql_user_id")]
     if not user_ids:
         return enriched
@@ -1167,6 +1234,25 @@ def _basic_user_payload(user):
     }
 
 
+def _serialize_settings_user(user, *, created_at=None):
+    payload = _basic_user_payload(user)
+    if created_at is not None:
+        payload["created_at"] = created_at.isoformat() if created_at else None
+    return payload
+
+
+SETTINGS_RELATION_MODELS = {
+    "saved": SavedProfile,
+    "blocked": BlockedAccount,
+    "restricted": RestrictedAccount,
+}
+
+
+def _settings_people_queryset(user, category):
+    model = SETTINGS_RELATION_MODELS[category]
+    return model.objects.filter(owner=user).select_related("target")
+
+
 def _log_follow_notification(actor, target_user):
     mongo_store.log_notification(
         recipient_user_id=target_user.id,
@@ -1225,7 +1311,8 @@ def _serialize_public_profile(viewer, user):
         .prefetch_related("media_items")
         .order_by("-created_at")
     )
-    hosted_events_count = hosted_events_qs.count()
+    hosted_events_qs = _filter_visible_events_for_viewer(viewer, hosted_events_qs)
+    hosted_events_count = len(hosted_events_qs)
     hosted_events = [_serialize_event(event) for event in hosted_events_qs] if can_view_content else []
     payload = {
         "sql_user_id": user.id,
@@ -1307,6 +1394,8 @@ def follow_user_api(request):
     User = get_user_model()
     target_user = User.objects.filter(id=target_user_id).select_related("profile").first()
     if target_user is None:
+        return _error("User not found.", status=404)
+    if not _can_view_user_surface(request.user, target_user):
         return _error("User not found.", status=404)
 
     is_private = _is_private_account(target_user)
@@ -1456,13 +1545,61 @@ def public_profile_api(request, user_id):
 
     User = get_user_model()
     target_user = User.objects.filter(id=user_id).select_related("profile").first()
-    if target_user is None:
+    if target_user is None or not _can_view_user_surface(request.user, target_user):
         return _error("User not found.", status=404)
 
     if target_user.id == request.user.id:
         return JsonResponse({"profile": _serialize_public_profile(request.user, target_user), "is_self": True})
 
     return JsonResponse({"profile": _serialize_public_profile(request.user, target_user), "is_self": False})
+
+
+@csrf_exempt
+@require_POST
+def profile_update_api(request):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    try:
+        profile = UserProfile.objects.get(user=request.user)
+    except UserProfile.DoesNotExist:
+        return _error("Profile not found.", status=404)
+
+    content_type = str(request.content_type or "").lower()
+    uploaded_picture = request.FILES.get("profilePictureFile") if "multipart/form-data" in content_type else None
+    if "multipart/form-data" in content_type:
+        bio = str(request.POST.get("bio", "")).strip()
+        profile_picture_url = str(request.POST.get("profilePictureUrl", profile.profile_picture_url or "")).strip()
+    else:
+        payload = _json_body(request)
+        bio = str(payload.get("bio", "")).strip()
+        profile_picture_url = str(payload.get("profilePictureUrl", profile.profile_picture_url or "")).strip()
+
+    if len(bio) > 280:
+        return _error("Bio must be 280 characters or fewer.")
+    if len(profile_picture_url) > 500:
+        return _error("Profile picture reference is too long.")
+
+    if uploaded_picture is not None:
+        content_type_value = str(getattr(uploaded_picture, "content_type", "") or "").lower()
+        if not content_type_value.startswith("image/"):
+            return _error("Please upload an image file.")
+        ext = os.path.splitext(str(getattr(uploaded_picture, "name", "") or ""))[1].lower() or ".jpg"
+        storage_path = f"profiles/{request.user.id}/avatar_{uuid.uuid4().hex}{ext}"
+        saved_path = default_storage.save(storage_path, uploaded_picture)
+        profile_picture_url = default_storage.url(saved_path)
+
+    profile.bio = bio
+    profile.profile_picture_url = profile_picture_url
+    profile.save(update_fields=["bio", "profile_picture_url"])
+    mongo_store.sync_user_profile(request.user.id)
+    return JsonResponse({
+        "message": "Profile updated successfully.",
+        "profile": {
+            "bio": profile.bio,
+            "profile_picture_url": profile.profile_picture_url,
+        },
+    })
 
 
 @csrf_exempt
@@ -1565,9 +1702,11 @@ def notifications_api(request):
         return _error("limit must be an integer.")
 
     notifications = mongo_store.notifications_for_user(request.user.id, limit=limit)
+    hidden_user_ids = _hidden_user_ids_for_viewer(request.user)
     notifications = [
         item for item in notifications
         if str(item.get("activity_type", "")).strip().lower() != "message"
+        and int(item.get("actor_sql_user_id") or 0) not in hidden_user_ids
     ]
     unread_count = sum(1 for item in notifications if not item.get("is_read"))
     return JsonResponse({"count": len(notifications), "unreadCount": unread_count, "notifications": notifications})
@@ -2115,6 +2254,114 @@ def update_group_ticket_api(request, ticket_id):
     })
 
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def settings_preferences_api(request):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    profile = _safe_profile(request.user)
+    if profile is None:
+        return _error("Profile not found.", status=404)
+
+    if request.method == "GET":
+        return JsonResponse({
+            "tagsAndMentionsPermission": profile.tags_and_mentions_permission,
+            "familyRole": profile.family_role,
+        })
+
+    payload = _json_body(request)
+    tags_permission = str(payload.get("tagsAndMentionsPermission", profile.tags_and_mentions_permission)).strip() or profile.tags_and_mentions_permission
+    family_role = str(payload.get("familyRole", profile.family_role)).strip() or profile.family_role
+    allowed_tags = {choice for choice, _label in UserProfile.TAG_PERMISSION_CHOICES}
+    allowed_family_roles = {choice for choice, _label in UserProfile.FAMILY_ROLE_CHOICES}
+    if tags_permission not in allowed_tags:
+        return _error("Invalid tagsAndMentionsPermission value.")
+    if family_role not in allowed_family_roles:
+        return _error("Invalid familyRole value.")
+
+    profile.tags_and_mentions_permission = tags_permission
+    profile.family_role = family_role
+    profile.save(update_fields=["tags_and_mentions_permission", "family_role"])
+    mongo_store.sync_user_profile(request.user.id)
+    return JsonResponse({
+        "message": "Settings updated.",
+        "tagsAndMentionsPermission": profile.tags_and_mentions_permission,
+        "familyRole": profile.family_role,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST", "DELETE"])
+def settings_people_api(request, category):
+    if not request.user.is_authenticated:
+        return _error("Please sign in first.", status=401)
+
+    category = str(category or "").strip().lower()
+    if category not in SETTINGS_RELATION_MODELS:
+        return _error("category must be saved, blocked or restricted.")
+
+    if request.method == "GET":
+        entries = _settings_people_queryset(request.user, category)
+        users = [
+            _serialize_settings_user(entry.target, created_at=entry.created_at)
+            for entry in entries
+        ]
+        users = _attach_follow_state(request.user, users)
+        return JsonResponse({"category": category, "count": len(users), "users": users})
+
+    payload = _json_body(request)
+    try:
+        target_user_id = int(payload.get("targetUserId"))
+    except (TypeError, ValueError):
+        return _error("A valid targetUserId is required.")
+
+    if target_user_id == request.user.id:
+        return _error("You cannot manage yourself in this list.")
+
+    User = get_user_model()
+    target_user = User.objects.filter(id=target_user_id).select_related("profile").first()
+    if target_user is None:
+        return _error("User not found.", status=404)
+
+    model = SETTINGS_RELATION_MODELS[category]
+    if request.method == "DELETE":
+        deleted, _ = model.objects.filter(owner=request.user, target=target_user).delete()
+        return JsonResponse({
+            "message": "Removed successfully." if deleted else "Nothing to remove.",
+            "category": category,
+            "removed": bool(deleted),
+            "targetUserId": target_user.id,
+            "count": _settings_people_queryset(request.user, category).count(),
+        })
+
+    if category == "saved":
+        if BlockedAccount.objects.filter(owner=request.user, target=target_user).exists():
+            return _error("Unblock this account before saving it.")
+    if category == "blocked":
+        Follow.objects.filter(
+            Q(follower=request.user, following=target_user)
+            | Q(follower=target_user, following=request.user)
+        ).delete()
+        SavedProfile.objects.filter(owner=request.user, target=target_user).delete()
+        RestrictedAccount.objects.filter(owner=request.user, target=target_user).delete()
+
+    relation, created = model.objects.get_or_create(owner=request.user, target=target_user)
+    users = [
+        _serialize_settings_user(entry.target, created_at=entry.created_at)
+        for entry in _settings_people_queryset(request.user, category)
+    ]
+    users = _attach_follow_state(request.user, users)
+    return JsonResponse({
+        "message": "Added successfully." if created else "Already in list.",
+        "category": category,
+        "created": created,
+        "targetUserId": target_user.id,
+        "count": len(users),
+        "users": users,
+    })
+
+
 @require_GET
 def current_profile_api(request):
     if not request.user.is_authenticated:
@@ -2122,6 +2369,16 @@ def current_profile_api(request):
 
     mongo_profile = mongo_store.profile_for_user(request.user.id) or {}
     profile = _safe_profile(request.user)
+    ticket_queryset = EventTicket.objects.filter(attendee=request.user)
+    gov_id_verified = bool(
+        mongo_profile.get("gov_id_verified", getattr(profile, "gov_id_verified", False))
+    )
+    if request.user.is_superuser:
+        account_role = "super_admin"
+    elif request.user.is_staff:
+        account_role = "admin"
+    else:
+        account_role = "member"
     payload = {
         "sql_user_id": request.user.id,
         "username": request.user.username,
@@ -2136,8 +2393,20 @@ def current_profile_api(request):
         ),
         "bio": mongo_profile.get("bio") or (getattr(profile, "bio", "") if profile else ""),
         "profile_picture_url": mongo_profile.get("profile_picture_url") or (getattr(profile, "profile_picture_url", "") if profile else ""),
-        "gov_id_verified": bool(mongo_profile.get("gov_id_verified", getattr(profile, "gov_id_verified", False))),
+        "gov_id_verified": gov_id_verified,
         "is_private": bool(mongo_profile.get("is_private", getattr(profile, "is_private", False))),
+        "tags_and_mentions_permission": getattr(profile, "tags_and_mentions_permission", "everyone") if profile else "everyone",
+        "family_role": getattr(profile, "family_role", "member") if profile else "member",
+        "can_create_or_join_parties": gov_id_verified,
+        "account_role": account_role,
+        "account_status": "verified" if gov_id_verified else "limited",
+        "orders_count": ticket_queryset.count(),
+        "active_orders_count": ticket_queryset.filter(archived_at__isnull=True).count(),
+        "archived_orders_count": ticket_queryset.filter(archived_at__isnull=False).count(),
+        "paid_orders_count": ticket_queryset.exclude(payment_transaction_id="").count(),
+        "saved_profiles_count": SavedProfile.objects.filter(owner=request.user).count(),
+        "blocked_count": BlockedAccount.objects.filter(owner=request.user).count(),
+        "restricted_count": RestrictedAccount.objects.filter(owner=request.user).count(),
         "pending_follow_requests_count": _pending_follow_requests_count(request.user),
         "unread_notifications_count": mongo_store.unread_notification_count(request.user.id),
         **_profile_counts(request.user),

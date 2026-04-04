@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from Happnix_party_APP.asgi import application
 
-from .models import ActivityNotification, DirectConversation, DirectMessage, DirectMessageAttachment, DirectMessageDeletion, Event, EventTicket, Follow, UserProfile
+from .models import ActivityNotification, DirectConversation, DirectMessage, DirectMessageAttachment, DirectMessageDeletion, Event, EventTicket, Follow, GroupConversation, GroupConversationMember, GroupMessage, GroupMessageStatus, UserProfile
 class DiscoverSearchAndFollowTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -654,6 +654,123 @@ class DirectMessageApiTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 400)
+
+
+class GroupConversationApiTests(TestCase):
+    def setUp(self):
+        self.user_model = get_user_model()
+        self.alice = self.user_model.objects.create_user(username='alice_group', password='pass12345', email='alice_group@example.com')
+        self.bob = self.user_model.objects.create_user(username='bob_group', password='pass12345', email='bob_group@example.com')
+        self.carol = self.user_model.objects.create_user(username='carol_group', password='pass12345', email='carol_group@example.com')
+        UserProfile.objects.create(user=self.alice, sex='other', date_of_birth='2000-03-01', mobile='7777777721')
+        UserProfile.objects.create(user=self.bob, sex='other', date_of_birth='2000-03-02', mobile='7777777722')
+        UserProfile.objects.create(user=self.carol, sex='other', date_of_birth='2000-03-03', mobile='7777777723')
+
+    def test_can_create_group_conversation(self):
+        self.client.force_login(self.alice)
+        response = self.client.post(
+            '/api/messages/groups/create',
+            data=json.dumps({
+                'name': 'Trip Crew',
+                'memberUserIds': [self.bob.id, self.carol.id],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()['conversation']
+        self.assertEqual(payload['kind'], 'group')
+        self.assertEqual(payload['title'], 'Trip Crew')
+        self.assertEqual(payload['memberCount'], 3)
+        self.assertTrue(GroupConversation.objects.filter(name='Trip Crew').exists())
+        self.assertTrue(GroupConversationMember.objects.filter(group_id=payload['groupId'], user=self.alice, role=GroupConversationMember.Role.ADMIN).exists())
+
+    def test_group_admin_can_promote_member(self):
+        self.client.force_login(self.alice)
+        created = self.client.post(
+            '/api/messages/groups/create',
+            data=json.dumps({
+                'name': 'Host Team',
+                'memberUserIds': [self.bob.id],
+            }),
+            content_type='application/json',
+        )
+        group_id = created.json()['conversation']['groupId']
+        promoted = self.client.post(
+            f'/api/messages/groups/{group_id}/members/{self.bob.id}/role',
+            data=json.dumps({'role': 'admin'}),
+            content_type='application/json',
+        )
+        self.assertEqual(promoted.status_code, 200)
+        membership = GroupConversationMember.objects.get(group_id=group_id, user=self.bob)
+        self.assertEqual(membership.role, GroupConversationMember.Role.ADMIN)
+
+    def test_group_messages_mark_unread_and_read_for_members(self):
+        self.client.force_login(self.alice)
+        created = self.client.post(
+            '/api/messages/groups/create',
+            data=json.dumps({
+                'name': 'After Party',
+                'memberUserIds': [self.bob.id],
+            }),
+            content_type='application/json',
+        )
+        group_id = created.json()['conversation']['groupId']
+        synthetic_id = created.json()['conversation']['id']
+        sent = self.client.post(
+            f'/api/messages/groups/{group_id}/messages',
+            data=json.dumps({'body': 'Meet at 11?'}),
+            content_type='application/json',
+        )
+        self.assertEqual(sent.status_code, 200)
+        self.assertEqual(GroupMessage.objects.filter(group_id=group_id).count(), 1)
+
+        self.client.force_login(self.bob)
+        inbox = self.client.get('/api/messages/conversations')
+        self.assertEqual(inbox.status_code, 200)
+        group_conversation = next(item for item in inbox.json()['conversations'] if item['id'] == synthetic_id)
+        self.assertEqual(group_conversation['unreadCount'], 1)
+
+        thread = self.client.get(f'/api/messages/groups/{group_id}/messages')
+        self.assertEqual(thread.status_code, 200)
+        self.assertEqual(len(thread.json()['messages']), 1)
+        inbox_after = self.client.get('/api/messages/conversations')
+        group_after = next(item for item in inbox_after.json()['conversations'] if item['id'] == synthetic_id)
+        self.assertEqual(group_after['unreadCount'], 0)
+
+    def test_group_message_status_payload_includes_delivered_and_read_members(self):
+        self.client.force_login(self.alice)
+        created = self.client.post(
+            '/api/messages/groups/create',
+            data=json.dumps({
+                'name': 'Status Group',
+                'memberUserIds': [self.bob.id, self.carol.id],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(created.status_code, 200)
+        group_id = created.json()['conversation']['groupId']
+
+        sent = self.client.post(
+            f'/api/messages/groups/{group_id}/messages',
+            data=json.dumps({'body': 'Track this'}),
+            content_type='application/json',
+        )
+        self.assertEqual(sent.status_code, 200)
+        message_id = sent.json()['message']['id']
+        self.assertEqual(GroupMessageStatus.objects.filter(message_id=message_id).count(), 2)
+
+        self.client.force_login(self.bob)
+        opened = self.client.get(f'/api/messages/groups/{group_id}/messages')
+        self.assertEqual(opened.status_code, 200)
+
+        self.client.force_login(self.alice)
+        thread = self.client.get(f'/api/messages/groups/{group_id}/messages')
+        self.assertEqual(thread.status_code, 200)
+        payload = next(item for item in thread.json()['messages'] if item['id'] == message_id)
+        self.assertEqual(payload['readCount'], 1)
+        self.assertGreaterEqual(payload['deliveredCount'], 1)
+        self.assertEqual(payload['readBy'][0]['username'], self.bob.username)
+
 
 
 class DirectMessageWebSocketTests(TransactionTestCase):
